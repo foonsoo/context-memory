@@ -2,7 +2,7 @@
 
 A small, client-neutral context memory server for any MCP agent, including Claude Code, Craft Agents, Codex, Cursor, VS Code, and local-model clients. It keeps immutable evidence separate from derived memories and the FTS search projection, so a generated summary never becomes the only source of truth.
 
-This MVP is usable now: Python 3.9+, SQLite with WAL/FTS5, zero runtime dependencies, stdio MCP, local HTTP MCP, migrations, lifecycle hooks, and a standard-library test suite.
+This MVP is usable now: Python 3.11+ (Python 3.14 recommended), SQLite with WAL/FTS5, zero runtime dependencies, stdio MCP, local HTTP MCP, migrations, lifecycle hooks, and a standard-library test suite.
 
 > **Sensitive-data warning:** this database is local, not encrypted. Do not record secrets, tokens, private keys, raw environment dumps, or unrelated personal data. The data directory is mode `0700`, but other processes running as your OS user and backups may still access it.
 
@@ -34,7 +34,7 @@ Until the first PyPI release, use the source install below and replace the defau
 ```bash
 git clone https://github.com/foonsoo/context-memory.git context-memory
 cd context-memory
-python3 -m venv .venv
+python3.14 -m venv .venv  # recommended; Python 3.11+ is supported
 .venv/bin/pip install -e .
 .venv/bin/context-memory init --launcher installed
 ```
@@ -119,6 +119,8 @@ PYTHONPATH=src python3 benchmarks/run_benchmark.py --items 1000 --repeats 200
 ```
 
 It compares Context Memory with `@modelcontextprotocol/server-memory` and `@ideadesignmedia/memory-mcp`. The runner measures exact recall, query latency, changed-fact behavior, source recovery, history preservation, multi-hop support, ingest time, and local storage. `npx` and network access are required the first time competitors are downloaded. Treat the checked-in local result as a reproducibility artifact, not a universal ranking.
+
+The checked-in final result was produced with CPython 3.14.6 and records Python, SQLite, OS, architecture, Node, and npm versions. Competitor npm versions are pinned in the runner.
 
 ### Optional local HTTP
 

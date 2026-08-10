@@ -1,22 +1,28 @@
 {
   "environment": {
-    "python": "3.9.6"
+    "machine": "arm64",
+    "node": "v25.6.1",
+    "npm": "11.9.0",
+    "platform": "macOS-26.3.1-arm64-arm-64bit-Mach-O",
+    "python": "3.14.6",
+    "python_implementation": "CPython",
+    "sqlite": "3.53.4"
   },
   "items": 1000,
   "query_repeats": 200,
   "results": {
     "context-memory": {
       "configured_alias_recall": true,
-      "db_bytes": 2695168,
+      "db_bytes": 2711552,
       "default_paraphrase_recall": false,
       "exact_recall": true,
       "history_preserved": true,
-      "ingest_s": 0.391,
+      "ingest_s": 0.222,
       "items": 1000,
       "multi_hop": true,
       "query": {
-        "p50_ms": 0.098,
-        "p95_ms": 0.125
+        "p50_ms": 0.068,
+        "p95_ms": 0.085
       },
       "source_recovery": true,
       "stale_hidden": true,
@@ -24,17 +30,18 @@
     },
     "memory-mcp": {
       "configured_alias_recall": false,
-      "db_bytes": 311296,
+      "db_bytes": 319488,
       "default_paraphrase_recall": false,
       "exact_recall": true,
       "history_preserved": false,
-      "ingest_s": 0.34,
+      "ingest_s": 0.338,
       "items": 1000,
       "multi_hop": false,
       "query": {
-        "p50_ms": 0.26,
-        "p95_ms": 0.305
+        "p50_ms": 0.258,
+        "p95_ms": 0.295
       },
+      "server_version": "0.1.0",
       "source_recovery": false,
       "stale_hidden": true,
       "version": "2.0.3"
@@ -49,12 +56,13 @@
       "items": 1000,
       "multi_hop": true,
       "query": {
-        "p50_ms": 0.498,
-        "p95_ms": 0.66
+        "p50_ms": 0.489,
+        "p95_ms": 0.704
       },
+      "server_version": "0.6.3",
       "source_recovery": false,
       "stale_hidden": false,
-      "version": "0.6.3"
+      "version": "2026.7.4"
     }
   },
   "schema_version": 1

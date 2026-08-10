@@ -60,15 +60,17 @@ An initial synthetic run on 2026-08-10 inserted 1,000 events and 1,000 sourced a
 
 ### MCP competitor run (2026-08-10)
 
-The reproducible runner used 1,000 synthetic policy records and 200 exact-query repetitions. Every product ran as an MCP stdio subprocess without API keys. Results are stored in `benchmarks/results/local-2026-08-10.json`.
+The reproducible runner used 1,000 synthetic policy records and 200 exact-query repetitions. Every product ran as an MCP stdio subprocess without API keys. The final run used CPython 3.14.6, SQLite 3.53.4, Node 25.6.1, and npm 11.9.0 on arm64 macOS 26.3.1. Results and full environment metadata are stored in `benchmarks/results/local-2026-08-10.json`.
 
 | Product | Query p50 / p95 | Ingest | Storage | Exact recall | Stale hidden | Source recovery | History retained | Multi-hop |
 |---|---:|---:|---:|---|---|---|---|---|
-| Context Memory 0.2.0 | 0.098 / 0.125 ms | 0.391 s | 2,695,168 B | yes | yes | yes | yes | yes |
-| `@ideadesignmedia/memory-mcp` 2.0.3 | 0.260 / 0.305 ms | 0.340 s | 311,296 B | yes | yes | no | no | no |
-| `@modelcontextprotocol/server-memory` 0.6.3 | 0.498 / 0.660 ms | 0.005 s | 132,987 B | yes | no | no | yes | yes |
+| Context Memory 0.2.0 | 0.068 / 0.085 ms | 0.222 s | 2,711,552 B | yes | yes | yes | yes | yes |
+| `@ideadesignmedia/memory-mcp` 2.0.3 | 0.258 / 0.295 ms | 0.338 s | 319,488 B | yes | yes | no | no | no |
+| `@modelcontextprotocol/server-memory` 2026.7.4 | 0.489 / 0.704 ms | 0.005 s | 132,987 B | yes | no | no | yes | yes |
 
 Interpretation requires care. The graph server supports batch entity creation, while the other two were ingested through individual MCP calls, so its ingestion time is not directly comparable. Context Memory stores source events, provenance joins, and append-only audit snapshots, explaining much of its larger file. The simple SQLite tool is compact and updates stale values effectively, but overwrites history and cannot recover a source. Both Context Memory and the graph server pass a two-hop relation test; Context Memory additionally filters superseded nodes by lifecycle status. Adding a new observation to the graph server leaves the old observation visible. Exact lexical retrieval succeeded in all three products.
+
+The official graph package uses npm version `2026.7.4` while its MCP `serverInfo.version` reports `0.6.3`; the result records both values. Competitor npm versions are pinned by the runner so a future `latest` release cannot silently change a checked result.
 
 All three default lexical modes missed the deliberately disjoint paraphrase `database durability repository` for `PostgreSQL persistence engine`. Context Memory recovered it after three explicit vocabulary aliases were configured. This demonstrates deterministic domain query expansion, not general semantic understanding; the benchmark records `default_paraphrase_recall=false` and `configured_alias_recall=true` separately.
 

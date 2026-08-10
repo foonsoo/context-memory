@@ -7,10 +7,19 @@ name = "context-memory"
 version = "0.2.0"
 description = "Local-first, provenance-preserving context memory MCP server"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [{name = "Context Memory contributors"}]
 dependencies = []
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Operating System :: OS Independent",
+  "Topic :: Database",
+]
 
 [project.scripts]
 context-memory = "context_memory.cli:main"

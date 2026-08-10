@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import platform
+import sqlite3
 import statistics
 import subprocess
 import sys
@@ -17,12 +19,18 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def command_version(command: list[str]) -> str | None:
+    try: return subprocess.run(command,check=True,capture_output=True,text=True,timeout=5).stdout.strip().splitlines()[0]
+    except (OSError,subprocess.SubprocessError,IndexError): return None
+
+
 class MCP:
     def __init__(self, command: list[str], cwd: Path, env: dict[str, str] | None = None):
         merged = os.environ.copy(); merged.update(env or {})
         self.proc = subprocess.Popen(command, cwd=cwd, env=merged, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                      stderr=subprocess.PIPE, text=True, bufsize=1)
-        self.request("initialize", {"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"context-memory-benchmark","version":"1"}})
+        initialized=self.request("initialize", {"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"context-memory-benchmark","version":"1"}})
+        self.server_info=initialized.get("serverInfo",{})
         self.notify("notifications/initialized", {})
         self.next_id = 2
 
@@ -120,7 +128,7 @@ def benchmark_context_memory(temp: Path, count: int, repeats: int) -> dict[str, 
 
 def benchmark_server_memory(temp: Path, count: int, repeats: int) -> dict[str, Any]:
     temp.mkdir(parents=True, exist_ok=True)
-    graph_file=temp/"graph.json"; m=MCP(["npx","--yes","@modelcontextprotocol/server-memory"],temp,{"MEMORY_FILE_PATH":str(graph_file)})
+    graph_file=temp/"graph.json"; m=MCP(["npx","--yes","@modelcontextprotocol/server-memory@2026.7.4"],temp,{"MEMORY_FILE_PATH":str(graph_file)})
     try:
         entities=[{"name":f"policy-{i:04d}","entityType":"policy","observations":[f"Policy policy-{i:04d} selects storage engine engine-{i%17}."]} for i in range(count)]
         start=time.perf_counter(); m.call("create_entities",{"entities":entities}); ingest=time.perf_counter()-start
@@ -133,7 +141,7 @@ def benchmark_server_memory(temp: Path, count: int, repeats: int) -> dict[str, A
         m.call("create_relations",{"relations":[{"from":"service","to":"service-port","relationType":"uses"},{"from":"service-port","to":"runtime","relationType":"configures"}]})
         stale=json.dumps(query() if False else content(m.call("search_nodes",{"query":"Service port"})))
         multi=json.dumps(content(m.call("open_nodes",{"names":["service","service-port","runtime"]})))
-        return {"version":"0.6.3","items":count,"ingest_s":round(ingest,3),"db_bytes":graph_file.stat().st_size if graph_file.exists() else None,
+        return {"version":"2026.7.4","server_version":m.server_info.get("version"),"items":count,"ingest_s":round(ingest,3),"db_bytes":graph_file.stat().st_size if graph_file.exists() else None,
                 "query":timed_queries(query,repeats),"exact_recall":found,"stale_hidden":("8765" in stale and "8000" not in stale),
                 "source_recovery":False,"history_preserved":True,"default_paraphrase_recall":default_paraphrase,
                 "configured_alias_recall":False,"multi_hop":all(x in multi for x in ["service","service-port","runtime","configures"])}
@@ -142,7 +150,7 @@ def benchmark_server_memory(temp: Path, count: int, repeats: int) -> dict[str, A
 
 def benchmark_memory_mcp(temp: Path, count: int, repeats: int) -> dict[str, Any]:
     temp.mkdir(parents=True, exist_ok=True)
-    db=temp/"memory-mcp.db"; m=MCP(["npx","--yes","@ideadesignmedia/memory-mcp",f"--db={db}","--topk=10"],temp)
+    db=temp/"memory-mcp.db"; m=MCP(["npx","--yes","@ideadesignmedia/memory-mcp@2.0.3",f"--db={db}","--topk=10"],temp)
     try:
         start=time.perf_counter()
         for i in range(count): m.call("memory-create",{"subject":f"policy-{i:04d}","content":f"Policy policy-{i:04d} selects storage engine engine-{i%17}."})
@@ -159,7 +167,7 @@ def benchmark_memory_mcp(temp: Path, count: int, repeats: int) -> dict[str, Any]
             old_id=next((x.get("id") for x in pool if isinstance(x,dict) and "8000" in x.get("content","")),None)
         if old_id: m.call("memory-update",{"id":old_id,"content":"Service port is 8765."})
         stale=json.dumps(content(m.call("memory-search",{"query":"Service port","k":10})))
-        return {"version":"2.0.3","items":count,"ingest_s":round(ingest,3),"db_bytes":db.stat().st_size if db.exists() else None,
+        return {"version":"2.0.3","server_version":m.server_info.get("version"),"items":count,"ingest_s":round(ingest,3),"db_bytes":db.stat().st_size if db.exists() else None,
                 "query":timed_queries(query,repeats),"exact_recall":found,"stale_hidden":("8765" in stale and "8000" not in stale),
                 "source_recovery":False,"history_preserved":False,"default_paraphrase_recall":default_paraphrase,
                 "configured_alias_recall":False,"multi_hop":False}
@@ -171,7 +179,10 @@ def main() -> None:
     args=parser.parse_args()
     with tempfile.TemporaryDirectory() as directory:
         root=Path(directory)
-        result={"schema_version":1,"items":args.items,"query_repeats":args.repeats,"environment":{"python":sys.version.split()[0]},"results":{}}
+        result={"schema_version":1,"items":args.items,"query_repeats":args.repeats,
+                "environment":{"python":sys.version.split()[0],"python_implementation":platform.python_implementation(),
+                "sqlite":sqlite3.sqlite_version,"platform":platform.platform(),"machine":platform.machine(),
+                "node":command_version(["node","--version"]),"npm":command_version(["npm","--version"])},"results":{}}
         runners=[("context-memory",benchmark_context_memory),("server-memory",benchmark_server_memory),("memory-mcp",benchmark_memory_mcp)]
         for name,runner in runners:
             try: result["results"][name]=runner(root/name,args.items,args.repeats)

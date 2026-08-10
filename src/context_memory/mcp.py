@@ -4,6 +4,7 @@ import json
 import os
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from socketserver import TCPServer
 from typing import Any
 
 from . import __version__
@@ -38,6 +39,16 @@ TOOLS = [
     {"name": "get_source", "description": "Retrieve the immutable raw event behind a memory citation.", "inputSchema": obj({"event_id":{"type":"string"}}, ["event_id"]), "annotations":{"readOnlyHint":True}},
     {"name": "get_audit", "description": "Read append-only history for an event, memory, session, project, or scope.", "inputSchema": obj({"entity_type":{"type":"string"},"entity_id":{"type":"string"}}, ["entity_type","entity_id"]), "annotations":{"readOnlyHint":True}},
 ]
+
+
+class LocalThreadingHTTPServer(ThreadingHTTPServer):
+    """HTTPServer without a startup-time reverse DNS lookup for its bind address."""
+
+    def server_bind(self) -> None:
+        TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name = host
+        self.server_port = port
 
 
 class MCPServer:
@@ -101,4 +112,4 @@ class MCPServer:
                 body = json.dumps(response, ensure_ascii=False).encode()
                 self.send_response(200); self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
             def log_message(self, fmt: str, *args: Any) -> None: print("context-memory http: " + fmt % args, file=sys.stderr)
-        ThreadingHTTPServer((host, port), Handler).serve_forever()
+        LocalThreadingHTTPServer((host, port), Handler).serve_forever()
