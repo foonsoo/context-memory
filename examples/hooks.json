@@ -1,0 +1,29 @@
+{
+  "description": "Load verified local context and preserve the final assistant output as unverified evidence.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -m context_memory.hooks start",
+            "statusMessage": "Loading verified project context",
+            "additionalContextLimit": 5000
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -m context_memory.hooks end",
+            "timeout": 3
+          }
+        ]
+      }
+    ]
+  }
+}

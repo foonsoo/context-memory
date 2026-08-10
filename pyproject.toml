@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "context-memory"
+version = "0.2.0"
+description = "Local-first, provenance-preserving context memory MCP server"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [{name = "Context Memory contributors"}]
+dependencies = []
+
+[project.scripts]
+context-memory = "context_memory.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/context_memory"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"migrations" = "migrations"

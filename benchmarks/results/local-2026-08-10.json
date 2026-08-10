@@ -1,0 +1,61 @@
+{
+  "environment": {
+    "python": "3.9.6"
+  },
+  "items": 1000,
+  "query_repeats": 200,
+  "results": {
+    "context-memory": {
+      "configured_alias_recall": true,
+      "db_bytes": 2695168,
+      "default_paraphrase_recall": false,
+      "exact_recall": true,
+      "history_preserved": true,
+      "ingest_s": 0.391,
+      "items": 1000,
+      "multi_hop": true,
+      "query": {
+        "p50_ms": 0.098,
+        "p95_ms": 0.125
+      },
+      "source_recovery": true,
+      "stale_hidden": true,
+      "version": "0.2.0"
+    },
+    "memory-mcp": {
+      "configured_alias_recall": false,
+      "db_bytes": 311296,
+      "default_paraphrase_recall": false,
+      "exact_recall": true,
+      "history_preserved": false,
+      "ingest_s": 0.34,
+      "items": 1000,
+      "multi_hop": false,
+      "query": {
+        "p50_ms": 0.26,
+        "p95_ms": 0.305
+      },
+      "source_recovery": false,
+      "stale_hidden": true,
+      "version": "2.0.3"
+    },
+    "server-memory": {
+      "configured_alias_recall": false,
+      "db_bytes": 132987,
+      "default_paraphrase_recall": false,
+      "exact_recall": true,
+      "history_preserved": true,
+      "ingest_s": 0.005,
+      "items": 1000,
+      "multi_hop": true,
+      "query": {
+        "p50_ms": 0.498,
+        "p95_ms": 0.66
+      },
+      "source_recovery": false,
+      "stale_hidden": false,
+      "version": "0.6.3"
+    }
+  },
+  "schema_version": 1
+}
