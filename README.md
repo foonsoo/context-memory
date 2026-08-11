@@ -6,6 +6,38 @@ This MVP is usable now: Python 3.11+ (Python 3.14 recommended), SQLite with WAL/
 
 > **Sensitive-data warning:** this database is local, not encrypted. Do not record secrets, tokens, private keys, raw environment dumps, or unrelated personal data. The data directory is mode `0700`, but other processes running as your OS user and backups may still access it.
 
+## Quick start: one database, every MCP client
+
+Install one launcher, choose one database path, and register that exact pair with every client on the same computer. Until the first PyPI release, a stable source installation can be created with:
+
+```bash
+git clone https://github.com/foonsoo/context-memory.git
+cd context-memory
+python3.14 -m venv ~/.local/share/context-memory/runtime
+~/.local/share/context-memory/runtime/bin/pip install --no-deps .
+chmod 700 ~/.local/share/context-memory
+
+~/.local/share/context-memory/runtime/bin/context-memory \
+  --db ~/.local/share/context-memory/memory.db \
+  init --workspace "$PWD" --launcher installed \
+  --clients claude-code,codex,cursor,vscode,craft --register
+
+~/.local/share/context-memory/runtime/bin/context-memory \
+  --db ~/.local/share/context-memory/memory.db doctor
+```
+
+Restart each registered client. At the beginning of **every new task/session**, the agent should perform this client-neutral sequence:
+
+1. `project_resolve(cwd)` with the current workspace.
+2. `session_start` with the returned project/scope, actual client name, and task/session ID when available.
+3. `get_context` using the current request as a focused query and a 4,000–8,000 character budget.
+4. During work, preserve durable evidence with `record_event`; derive sourced knowledge with `memory_upsert`.
+5. Before finishing, record reusable verified results and call `session_end`.
+
+Copy the appropriate instruction template into the consumer project: [`AGENTS.md`](AGENTS.md) or [`examples/AGENTS.md`](examples/AGENTS.md), [`examples/CLAUDE.md`](examples/CLAUDE.md), or [`examples/cursor-context-memory.mdc`](examples/cursor-context-memory.mdc). Generic clients can use [`examples/mcp.json`](examples/mcp.json). Hooks are optional convenience automation; the lifecycle above remains the correctness contract.
+
+If `init --register` reports a client as unavailable, install that client's CLI and rerun the same command. Craft Agents currently returns a guided workspace-source step and portable JSON rather than editing its configuration automatically. See [docs/CLIENTS.md](docs/CLIENTS.md) for registration and migration details.
+
 ## Install
 
 ### Published package (recommended)
