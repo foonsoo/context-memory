@@ -17,6 +17,9 @@ from .embeddings import EmbeddingProvider, LocalHashEmbedding
 TYPES = {"fact", "decision", "preference", "constraint", "procedure", "summary", "task", "other"}
 STATUSES = {"proposed", "active", "superseded", "disputed", "expired", "rejected"}
 RELATIONS = {"supersedes", "disputes", "supports", "depends_on", "related_to"}
+DISCOVERY_MIN_CONFIDENCE = .45
+DISCOVERY_AUTO_SELECT_CONFIDENCE = .60
+DISCOVERY_MIN_MARGIN = .12
 
 
 def now() -> str:
@@ -497,10 +500,10 @@ class MemoryStore:
     def search(self, project_id: str, query: str, limit: int = 10, statuses: list[str] | None = None,
                scope_id: str | None = None, discover_projects: bool = False) -> list[dict[str, Any]]:
         if not query.strip(): return []
-        tokens = re.findall(r"[\w-]+", query.casefold(), flags=re.UNICODE)
-        if not tokens: return []
-        expanded=list(tokens)
-        for token in tokens:
+        query_tokens = list(dict.fromkeys(re.findall(r"[\w-]+", query.casefold(), flags=re.UNICODE)))
+        if not query_tokens: return []
+        expanded=list(query_tokens)
+        for token in query_tokens:
             row=self._row("SELECT aliases_json FROM search_aliases WHERE project_id=? AND term=?",(project_id,token))
             if row:
                 for alias in json.loads(row["aliases_json"]): expanded.extend(re.findall(r"[\w-]+",alias,flags=re.UNICODE))
@@ -566,8 +569,12 @@ class MemoryStore:
         rows = sorted(candidates.values(), key=lambda row: (-components[row["id"]]["total"], row["id"]))[:max(1, min(limit, 100))]
         lexical_ranks = {row["id"]: rank for rank, row in enumerate(lexical, 1)}
         for r in rows:
+            searchable_tokens = set(re.findall(
+                r"[\w-]+", f"{r['title']} {r['content']} {r['tags_json']}".casefold(), flags=re.UNICODE))
+            query_coverage = sum(token in searchable_tokens for token in query_tokens) / len(query_tokens)
             r["retrieval"] = {"score": components[r["id"]]["total"], "components": components[r["id"]],
                               "lexical_rank": lexical_ranks.get(r["id"]),
+                              "query_coverage":query_coverage,
                               "semantic_similarity": semantic_scores.get(r["id"]), "embedding_provider": self._provider_name()}
             r["usage"] = usage.get(r["id"], {"retrieved_count":0,"used_count":0,"helpful_count":0,"incorrect_count":0})
             r["sources"] = [dict(x) for x in self.conn.execute("SELECT e.id,e.kind,e.source_uri,e.created_at FROM memory_sources s JOIN events e ON e.id=s.event_id WHERE s.memory_id=?", (r["id"],))]
@@ -580,6 +587,8 @@ class MemoryStore:
             if memory["project_id"] != current_project_id and memory["visibility"] == "project":
                 grouped.setdefault(memory["project_id"], []).append(memory)
         candidates = []
+        source_aliases = {(row["kind"], row["normalized"]) for row in self.conn.execute(
+            "SELECT kind,normalized FROM project_aliases WHERE project_id=?", (current_project_id,))}
         current = datetime.now(timezone.utc)
         for candidate_id, matches in grouped.items():
             project = self._row("SELECT id,slug,name,description FROM projects WHERE id=?", (candidate_id,))
@@ -592,17 +601,48 @@ class MemoryStore:
               ORDER BY updated_at DESC,id LIMIT 1""", (candidate_id,))
             relevance_scores = sorted((m["retrieval"]["score"] for m in matches), reverse=True)
             relevance = sum(score / (index + 1) for index, score in enumerate(relevance_scores))
+            evidence_quality = max(max(m["retrieval"].get("query_coverage", 0.0),
+                                       m["retrieval"].get("semantic_similarity") or 0.0) for m in matches)
             activity_at = activity["activity_at"] if activity else None
             try:
                 age_days = max(0.0, (current - datetime.fromisoformat(activity_at)).total_seconds() / 86400) if activity_at else None
             except ValueError:
                 age_days = None
             recency = 0.0 if age_days is None else 1.0 / (1.0 + age_days / 30.0)
+            candidate_aliases = {(row["kind"], row["normalized"]) for row in self.conn.execute(
+                "SELECT kind,normalized FROM project_aliases WHERE project_id=?", (candidate_id,))}
+            shared_aliases = source_aliases & candidate_aliases
+            identity_prior = .35 if any(kind == "path" for kind, _ in shared_aliases) else (
+                .15 if any(kind == "name" for kind, _ in shared_aliases) else 0.0)
+            # A single strong lexical/local-vector hit is approximately 1/61.
+            # Normalize the aggregate before adding bounded identity and activity
+            # priors so registry size and raw RRF scale do not leak into confidence.
+            relevance_confidence = min(1.0, relevance / .02) * evidence_quality
+            confidence = min(1.0, relevance_confidence * .75 + identity_prior + recency * .05)
+            reasons = ["memory_relevance"]
+            if identity_prior: reasons.append("shared_path" if identity_prior == .35 else "shared_name")
+            if recency: reasons.append("recent_activity")
             candidates.append({**project, "relevance":relevance, "matching_memory_count":len(matches),
                                "top_memory_score":relevance_scores[0], "recent_activity_at":activity_at,
-                               "recency":recency, "latest_checkpoint":checkpoint,
-                               "score":relevance + recency * .00025})
-        return sorted(candidates, key=lambda item: (-item["score"], item["id"]))
+                               "recency":recency, "identity_prior":identity_prior,
+                               "evidence_quality":evidence_quality,
+                               "confidence":confidence, "confidence_reasons":reasons,
+                               "latest_checkpoint":checkpoint})
+        return sorted(candidates, key=lambda item: (-item["confidence"], -item["relevance"], item["id"]))
+
+    @staticmethod
+    def _select_project_candidate(candidates: list[dict[str, Any]]) -> tuple[str | None, str, float]:
+        """Select only a sufficiently strong and separated project candidate."""
+        if not candidates: return None, "no_candidates", 0.0
+        top = candidates[0]
+        if top["confidence"] < DISCOVERY_MIN_CONFIDENCE:
+            return None, "low_confidence", top["confidence"]
+        if len(candidates) == 1:
+            return top["id"], "single_confident_candidate", top["confidence"]
+        margin = top["confidence"] - candidates[1]["confidence"]
+        if top["confidence"] >= DISCOVERY_AUTO_SELECT_CONFIDENCE and margin >= DISCOVERY_MIN_MARGIN:
+            return top["id"], "dominant_candidate", top["confidence"]
+        return None, "ambiguous_candidates", top["confidence"]
 
     def record_memory_feedback(self, memory_id: str, signal: str) -> dict[str, Any]:
         if signal not in {"retrieved", "used", "helpful", "incorrect"}:
@@ -664,10 +704,11 @@ class MemoryStore:
             seen = {m["id"] for m in candidates}
             candidates.extend(m for m in discovery_candidates if m["id"] not in seen)
         project_candidates = self._aggregate_project_candidates(discovery_candidates, project_id)
-        discovered_owned = [candidate["id"] for candidate in project_candidates]
-        discovery_ambiguous = len(project_candidates) > 1
-        if discovery_ambiguous:
-            candidates = [m for m in candidates if m["project_id"] == project_id or m["visibility"] == "global"]
+        selected_project_id, selection_reason, discovery_confidence = self._select_project_candidate(project_candidates)
+        discovery_ambiguous = selection_reason == "ambiguous_candidates"
+        if discovery_used:
+            candidates = [m for m in candidates if m["project_id"] == project_id or m["visibility"] == "global"
+                          or m["project_id"] == selected_project_id]
         for m in candidates:
             block = f"[{m['status']}/{m['type']}] {m['title']}\n{m['content']}\nsource_events: {', '.join(s['id'] for s in m['sources']) or 'none'}"
             comparable = f"{m['title']} {m['content']}"
@@ -684,7 +725,8 @@ class MemoryStore:
                 "items": selected, "context": "\n\n".join(i["text"] for i in selected),"recent_events":recent_events,
                 "project_discovery":{"enabled":discover_projects,"used":discovery_used,"ambiguous":discovery_ambiguous,
                                      "project_ids":list(dict.fromkeys(i["project_id"] for i in selected if i["project_id"] != project_id)),
-                                     "candidates":project_candidates},
+                                     "selected_project_id":selected_project_id,"confidence":discovery_confidence,
+                                     "selection_reason":selection_reason,"candidates":project_candidates},
                 "event_cursor":event_cursor,"next_event_cursor":event_result["next_cursor"] if event_result else None,
                 "event_snapshot_cursor":event_result["snapshot_cursor"] if event_result else None,
                 "has_more_events":event_result["has_more"] if event_result else False}

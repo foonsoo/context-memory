@@ -119,6 +119,8 @@ class StoreTests(unittest.TestCase):
                                                 "Cross project replies use Korean", "preference", "active", visibility="global")
         result = self.store.get_context(empty["id"], "Cross project", 2000)
         self.assertTrue(result["project_discovery"]["used"])
+        self.assertEqual(result["project_discovery"]["selected_project_id"], official["id"])
+        self.assertEqual(result["project_discovery"]["selection_reason"], "single_confident_candidate")
         self.assertEqual({item["memory_id"] for item in result["items"]}, {checkpoint["id"], global_memory["id"]})
         self.assertEqual(set(result["project_discovery"]["project_ids"]), {official["id"], shared["id"]})
 
@@ -141,14 +143,18 @@ class StoreTests(unittest.TestCase):
         expected = self.store.upsert_memory(official["id"], "Next checkpoint", "Implement project discovery discovery", "task", "active")
         self.store.upsert_memory(unrelated["id"], "Next checkpoint", "Implement project discovery", "task", "active")
         result = self.store.get_context(hinted["id"], "project discovery", 2000)
-        self.assertTrue(result["project_discovery"]["ambiguous"])
-        self.assertEqual(result["items"], [])
+        self.assertFalse(result["project_discovery"]["ambiguous"])
+        self.assertEqual(result["project_discovery"]["selected_project_id"], official["id"])
+        self.assertEqual(result["project_discovery"]["selection_reason"], "dominant_candidate")
+        self.assertEqual([item["memory_id"] for item in result["items"]], [expected["id"]])
         candidates = result["project_discovery"]["candidates"]
         self.assertEqual({candidate["id"] for candidate in candidates}, {official["id"], unrelated["id"]})
         official_candidate = next(candidate for candidate in candidates if candidate["id"] == official["id"])
         self.assertEqual(official_candidate["latest_checkpoint"]["id"], expected["id"])
         self.assertEqual(official_candidate["recent_activity_at"], session["started_at"])
         self.assertGreater(official_candidate["relevance"], 0)
+        self.assertEqual(official_candidate["identity_prior"], .15)
+        self.assertGreater(official_candidate["confidence"], candidates[1]["confidence"])
 
     def test_memory_search_discovery_is_not_limited_by_matching_project_name(self):
         hinted = self.store.create_project("whole-db-hint", "context-memory")
@@ -167,6 +173,33 @@ class StoreTests(unittest.TestCase):
         self.assertTrue(result["project_discovery"]["ambiguous"])
         self.assertEqual(result["items"], [])
         self.assertEqual({p["id"] for p in result["project_discovery"]["candidates"]}, {first["id"], second["id"]})
+
+    def test_shared_path_prior_selects_matching_project_without_prefiltering(self):
+        hinted = self.store.create_project("path-prior-hint", "checkout")
+        matching = self.store.create_project("path-prior-match", "different-name")
+        competing = self.store.create_project("path-prior-competitor", "checkout")
+        shared_path = str(Path(self.temp.name) / "shared-checkout")
+        self.store.set_project_alias(hinted["id"], "path", shared_path)
+        self.store.set_project_alias(matching["id"], "path", shared_path)
+        expected = self.store.upsert_memory(matching["id"], "Checkpoint", "alpha release checkpoint", "task", "active")
+        self.store.upsert_memory(competing["id"], "Checkpoint", "alpha release checkpoint", "task", "active")
+        result = self.store.get_context(hinted["id"], "alpha release checkpoint", 2000)
+        self.assertEqual(result["project_discovery"]["selected_project_id"], matching["id"])
+        self.assertEqual([item["memory_id"] for item in result["items"]], [expected["id"]])
+        winner = result["project_discovery"]["candidates"][0]
+        self.assertEqual(winner["identity_prior"], .35)
+        self.assertIn("shared_path", winner["confidence_reasons"])
+
+    def test_low_confidence_discovery_returns_candidates_without_memory(self):
+        hinted = self.store.create_project("low-confidence-hint")
+        target = self.store.create_project("low-confidence-target")
+        self.store.upsert_memory(target["id"], "Weak clue", "quasar", "fact", "active",
+                                 confidence=0, importance=0)
+        result = self.store.get_context(hinted["id"], "unrelated quasar tokens", 2000)
+        self.assertTrue(result["project_discovery"]["used"])
+        self.assertIsNone(result["project_discovery"]["selected_project_id"])
+        self.assertEqual(result["project_discovery"]["selection_reason"], "low_confidence")
+        self.assertEqual(result["items"], [])
 
     def test_export_project_contains_provenance_and_audit(self):
         p = self.store.create_project("export-demo")

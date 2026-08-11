@@ -2,7 +2,7 @@
 
 ## Near term
 
-- Tune cross-project discovery thresholds and project identity confidence on larger multi-project fixtures. Exact paths, unambiguous project names, explicit ambiguity candidates, global-memory merging, and sparse-project fallback are implemented.
+- Tune cross-project discovery confidence thresholds on larger real-world multi-project fixtures. Normalized relevance, bounded path/name identity priors, recency, dominant-candidate selection, explicit low-confidence/ambiguity results, global-memory merging, and sparse-project fallback are implemented.
 - Add optional encrypted backup envelopes and scheduled maintenance. Online consistent snapshots, policy-based retention, and checkpointed audit compaction are implemented.
 - Add an offline audit-checkpoint verification/export utility. Checkpoint chaining is implemented.
 - Add optional durable per-client cursor receipts and message acknowledgement/expiry policy. Stateless cursor polling is implemented.

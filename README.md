@@ -30,7 +30,7 @@ Restart each registered client. At the beginning of **every new task/session**, 
 
 1. `project_resolve(cwd)` with the current workspace. The path is a preferred identity hint; an unambiguous registered project name can resolve another workspace path to the same project.
 2. `session_start` with the returned project/scope, actual client name, and task/session ID when available.
-3. `get_context` using the current request as a focused query and a 4,000–8,000 character budget. If the selected project has no matching project memory, retrieval searches memory candidates across the shared database and aggregates relevance, recent activity, and the latest checkpoint by project; global memories are always merged. If several projects remain relevant, inspect `project_discovery.candidates` and ask the user which project they mean.
+3. `get_context` using the current request as a focused query and a 4,000–8,000 character budget. If the selected project has no matching project memory, retrieval searches memory candidates across the shared database and aggregates normalized relevance, project-identity priors, recent activity, and the latest checkpoint by project; global memories are always merged. A sufficiently strong and separated candidate is selected automatically. For low-confidence or ambiguous results, inspect `project_discovery.candidates` and ask the user which project they mean.
 4. During work, preserve durable evidence with `record_event`; derive sourced knowledge with `memory_upsert`.
 5. Before finishing, record reusable verified results and call `session_end`.
 
