@@ -38,6 +38,10 @@ jobs:
           python -m venv wheel-test
           wheel-test/bin/pip install --no-deps dist/*.whl
           wheel-test/bin/python tests/installed_e2e.py
+      - name: Verify official MCP SDK and multi-client interoperability
+        run: |
+          wheel-test/bin/pip install 'mcp==2.0.0'
+          wheel-test/bin/python tests/official_sdk_e2e.py
       - uses: actions/upload-artifact@v4
         with:
           name: context-memory-wheel

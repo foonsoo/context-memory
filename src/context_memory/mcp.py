@@ -153,13 +153,13 @@ class MCPServer:
             elif method == "tools/list":
                 params = req.get("params", {})
                 if not isinstance(params, dict): raise ValueError("params must be object")
-                extra = sorted(set(params) - {"cursor"})
+                extra = sorted(set(params) - {"cursor", "_meta"})
                 if extra: raise ValueError(f"params has unknown properties: {', '.join(extra)}")
                 result = tool_page(params.get("cursor"))
             elif method == "tools/call":
                 p = req.get("params", {})
                 if not isinstance(p, dict): raise ValueError("params must be object")
-                extra = sorted(set(p) - {"name", "arguments"})
+                extra = sorted(set(p) - {"name", "arguments", "_meta"})
                 if extra: raise ValueError(f"params has unknown properties: {', '.join(extra)}")
                 if not isinstance(p.get("name"), str): raise ValueError("params.name must be string")
                 arguments = p.get("arguments", {})

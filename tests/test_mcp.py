@@ -44,6 +44,14 @@ class MCPTests(unittest.TestCase):
         non_object = self.server.handle({"jsonrpc":"2.0", "id":2, "method":"tools/list", "params":[]})
         self.assertEqual(non_object["error"]["code"], -32602)
 
+    def test_reserved_request_metadata_is_accepted_and_ignored(self):
+        listed = self.server.handle({"jsonrpc":"2.0", "id":1, "method":"tools/list", "params":{"_meta":{"progressToken":"sdk"}}})
+        self.assertIn("tools", listed["result"])
+        called = self.server.handle({"jsonrpc":"2.0", "id":2, "method":"tools/call", "params":{
+            "name":"project_resolve", "arguments":{"cwd":"/tmp"}, "_meta":{"progressToken":"sdk"},
+        }})
+        self.assertNotIn("error", called)
+
     def test_tool_arguments_are_validated_against_declared_schema(self):
         cases = [
             {"name":"project_resolve", "arguments":{}},

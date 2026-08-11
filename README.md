@@ -371,6 +371,8 @@ PYTHONPATH=src python3 -m unittest discover -s tests -v
 
 Tests cover WAL persistence and permissions, append-only enforcement, FTS and alias-expanded retrieval, provenance, budget selection, state transitions, verified graph traversal, export/import, rollback, idempotency, MCP discovery/calls, stdio process handshake, HTTP process handshake, and external-bind refusal.
 
+CI also installs the built wheel beside the pinned official MCP Python SDK and runs `tests/official_sdk_e2e.py`. That black-box check exercises initialization, paginated tool discovery, structured tool calls, protocol validation errors, and two concurrent SDK clients sharing one database; the production package itself retains zero runtime dependencies.
+
 Candidate approval remains explicit through MCP review actions; session extraction never promotes memories automatically.
 
 ## Design and limits

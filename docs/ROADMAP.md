@@ -7,7 +7,7 @@
 - Add an offline audit-checkpoint verification/export utility. Checkpoint chaining is implemented.
 - Add optional durable per-client cursor receipts and message acknowledgement/expiry policy. Stateless cursor polling is implemented.
 - Expand cursor pagination beyond the MCP tool catalog when additional unbounded list endpoints are introduced. Tool arguments are validated against their advertised JSON Schemas and `tools/list` is cursor-paginated.
-- Test interoperability against the official MCP SDK conformance suite and additional clients.
+- Keep official MCP SDK conformance and concurrent multi-client stdio E2E coverage current as SDK protocol support evolves. The installed-wheel CI test covers SDK initialization, paginated tool discovery, structured tool calls, JSON-RPC validation errors, and two simultaneous clients sharing one WAL database.
 - Add direct registration adapters when Craft Agents and other workspace-scoped clients publish stable non-interactive configuration APIs. Portable JSON and guided setup are implemented.
 
 ## Optional retrieval improvements
