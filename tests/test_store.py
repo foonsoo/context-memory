@@ -30,6 +30,36 @@ class StoreTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.store.record_event(p["id"], "observation", "Different", idempotency_key="evt-1")
         with self.assertRaises(sqlite3.IntegrityError): self.store.conn.execute("UPDATE events SET content='changed' WHERE id=?", (first["id"],))
 
+    def test_message_events_have_stable_project_cursors_and_paginate(self):
+        p = self.store.create_project("messages")
+        other = self.store.create_project("other")
+        first = self.store.record_event(p["id"], "message", "session A is editing schema.py", metadata={"to":"all"})
+        self.store.record_event(p["id"], "decision", "unrelated event")
+        second = self.store.record_event(p["id"], "message", "session A finished")
+        other_first = self.store.record_event(other["id"], "message", "separate project")
+        self.assertEqual((first["event_seq"], second["event_seq"], other_first["event_seq"]), (1, 3, 1))
+        page = self.store.read_events_since(p["id"], 0, ["message"], limit=1)
+        self.assertEqual([event["id"] for event in page["events"]], [first["id"]])
+        self.assertTrue(page["has_more"]); self.assertEqual(page["next_cursor"], 1)
+        final = self.store.read_events_since(p["id"], page["next_cursor"], ["message"])
+        self.assertEqual([event["id"] for event in final["events"]], [second["id"]])
+        self.assertFalse(final["has_more"]); self.assertEqual(final["next_cursor"], 3)
+        self.assertEqual(final["events"][0]["metadata"], {})
+
+    def test_get_context_keeps_recent_messages_separate_and_budgeted(self):
+        p = self.store.create_project("message-context")
+        self.store.upsert_memory(p["id"], "Stable choice", "SQLite remains authoritative", "decision", "active")
+        message = self.store.record_event(p["id"], "message", "Do not edit schema.py while migration is running")
+        result = self.store.get_context(p["id"], "SQLite", 1000, event_cursor=0, event_char_budget=120)
+        self.assertEqual(result["items"][0]["memory_id"], self.store.search(p["id"], "SQLite")[0]["id"])
+        self.assertEqual(result["recent_events"][0]["event_id"], message["id"])
+        self.assertEqual(result["next_event_cursor"], message["event_seq"])
+        self.assertLessEqual(result["used"], result["budget"])
+        self.assertEqual(self.store.search(p["id"], "schema"), [], "messages must not enter memory FTS")
+        caught_up = self.store.get_context(p["id"], "SQLite", 1000, event_cursor=message["event_seq"])
+        self.assertEqual(caught_up["recent_events"], [])
+        self.assertEqual(caught_up["memory_budget"], caught_up["budget"], "unused event allowance must remain available")
+
     def test_search_context_provenance_and_budget(self):
         p = self.store.create_project("demo")
         e = self.store.record_event(p["id"], "decision", "Use SQLite WAL for durable local writes")

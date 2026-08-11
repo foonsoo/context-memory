@@ -279,17 +279,40 @@ Project hooks require a trusted project and explicit review in Codex. Use `/hook
 |---|---|
 | `project_create`, `project_list`, `scope_create` | Project and path/module boundaries |
 | `session_start`, `session_end` | Cross-client session lifecycle |
-| `record_event` | Immutable raw evidence with optional URI and idempotency key |
+| `record_event` | Immutable raw evidence; `kind=message` is unverified inter-session coordination |
+| `read_events_since` | Cursor-based incremental event/message polling with pagination |
 | `memory_upsert` | Proposed/active derived memory with source event IDs |
 | `memory_transition` | Activate, supersede, dispute, expire, or reject; add relationship edge |
 | `search_alias_set`, `search_alias_list` | Manage deterministic project vocabulary for paraphrase expansion |
 | `relation_create`, `graph_traverse` | Link verified memories and traverse active/disputed relations up to five hops |
 | `memory_search` | Local FTS5/BM25 ranking plus confidence and importance |
-| `get_context` | Strict character-budget selection of active/disputed context |
+| `get_context` | Strict shared-budget selection of active/disputed context plus optional recent events |
 | `get_source` | Retrieve original event evidence |
 | `get_audit` | Inspect append-only entity history |
 
 Writes respond only after commit. Repeating a supported operation with the same idempotency key and identical arguments returns the original response; reusing the key with different arguments fails.
+
+### Cursor-based session messages
+
+Use immutable `message` events for short-lived, unverified coordination between sessions or MCP clients. They remain source events and are never promoted into ranked memory automatically:
+
+```bash
+context-memory event PROJECT_UUID message "schema.py is being migrated; avoid editing it" --key msg-session-a-1
+context-memory events-since PROJECT_UUID --cursor 0 --kind message
+```
+
+Every event receives a project-local monotonic `event_seq`. `read_events_since` returns events in sequence order with `next_cursor`, `snapshot_cursor`, and `has_more`; persist `next_cursor` per client/workflow and pass it on the next call. Cursor state belongs to the exact project, scope, and kind-filter combination and must not be reused with another stream definition.
+
+`get_context` can combine ranked memory with bounded polling while keeping the two result sections separate:
+
+```bash
+context-memory context PROJECT_UUID "database migration" \
+  --event-cursor 42 \
+  --event-kind message \
+  --event-budget 1500
+```
+
+The response places verified memory in `context`/`items` and unverified stream entries in `recent_events`. The event allowance is capped at 4,000 characters and consumes the same effective project context budget; unused event allowance remains available to memories. If an event body is truncated, retrieve the immutable full event with `get_source(event_id)`.
 
 ## Test and smoke test
 

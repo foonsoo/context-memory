@@ -195,9 +195,12 @@ def main() -> None:
     project = sub.add_parser("project-create"); project.add_argument("slug"); project.add_argument("--name"); project.add_argument("--description", default="")
     sub.add_parser("project-list")
     event = sub.add_parser("event"); event.add_argument("project_id"); event.add_argument("kind"); event.add_argument("content"); event.add_argument("--session-id"); event.add_argument("--key")
+    events_since = sub.add_parser("events-since", help="Read immutable project events after a cursor")
+    events_since.add_argument("project_id"); events_since.add_argument("--cursor", type=int, default=0); events_since.add_argument("--kind", action="append"); events_since.add_argument("--scope-id"); events_since.add_argument("--limit", type=int, default=100)
     memory = sub.add_parser("memory"); memory.add_argument("project_id"); memory.add_argument("title"); memory.add_argument("content"); memory.add_argument("--type", default="other"); memory.add_argument("--status", default="proposed"); memory.add_argument("--source", action="append", default=[]); memory.add_argument("--confidence", type=float, default=.5); memory.add_argument("--importance", type=float, default=.5)
     search = sub.add_parser("search"); search.add_argument("project_id"); search.add_argument("query"); search.add_argument("--limit", type=int, default=10)
     context = sub.add_parser("context"); context.add_argument("project_id"); context.add_argument("query"); context.add_argument("--budget", type=int, default=6000)
+    context.add_argument("--event-cursor", type=int); context.add_argument("--event-kind", action="append"); context.add_argument("--event-limit", type=int, default=20); context.add_argument("--event-budget", type=int, default=2000)
     source = sub.add_parser("source"); source.add_argument("event_id")
     export = sub.add_parser("export", help="Export one project as deterministic JSON Lines")
     export.add_argument("project_id"); export.add_argument("--output", required=True)
@@ -228,9 +231,12 @@ def main() -> None:
         elif args.command == "project-create": output(store.create_project(args.slug, args.name, args.description))
         elif args.command == "project-list": output(store.list_projects())
         elif args.command == "event": output(store.record_event(args.project_id, args.kind, args.content, session_id=args.session_id, idempotency_key=args.key))
+        elif args.command == "events-since": output(store.read_events_since(args.project_id, args.cursor, args.kind, args.scope_id, args.limit))
         elif args.command == "memory": output(store.upsert_memory(args.project_id, args.title, args.content, args.type, args.status, args.confidence, args.importance, source_event_ids=args.source))
         elif args.command == "search": output(store.search(args.project_id, args.query, args.limit))
-        elif args.command == "context": output(store.get_context(args.project_id, args.query, args.budget))
+        elif args.command == "context": output(store.get_context(args.project_id, args.query, args.budget, event_cursor=args.event_cursor,
+                                                                   event_kinds=args.event_kind, event_limit=args.event_limit,
+                                                                   event_char_budget=args.event_budget))
         elif args.command == "source": output(store.get_source(args.event_id))
         elif args.command == "export":
             destination = Path(args.output).expanduser().resolve()

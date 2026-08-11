@@ -166,16 +166,49 @@ class MemoryStore:
                      scope_id: str | None = None, source_uri: str | None = None, metadata: dict | None = None,
                      idempotency_key: str | None = None) -> dict[str, Any]:
         request = locals().copy(); request.pop("self"); request.pop("idempotency_key")
-        if hit := self._idem("record_event", idempotency_key, request): return hit
+        if hit := self._idem("record_event", idempotency_key, request):
+            if "event_seq" not in hit:
+                migrated = self._row("SELECT event_seq FROM events WHERE id=?", (hit["id"],))
+                if migrated: hit["event_seq"] = migrated["event_seq"]
+            return hit
         if not content.strip(): raise ValueError("event content cannot be empty")
-        item = {"id": uid(), "project_id": project_id, "scope_id": scope_id, "session_id": session_id, "kind": kind,
-                "content": content, "source_uri": source_uri, "metadata_json": canonical(metadata or {}),
-                "content_hash": hashlib.sha256(content.encode()).hexdigest(), "created_at": now()}
         with self.tx() as cx:
-            cx.execute("INSERT INTO events VALUES(:id,:project_id,:scope_id,:session_id,:kind,:content,:source_uri,:metadata_json,:content_hash,:created_at)", item)
+            cursor = cx.execute("UPDATE project_event_cursors SET next_seq=next_seq+1 WHERE project_id=? RETURNING next_seq-1", (project_id,)).fetchone()
+            if not cursor: raise KeyError("project not found")
+            item = {"id": uid(), "project_id": project_id, "scope_id": scope_id, "session_id": session_id, "kind": kind,
+                    "content": content, "source_uri": source_uri, "metadata_json": canonical(metadata or {}),
+                    "content_hash": hashlib.sha256(content.encode()).hexdigest(), "created_at": now(), "event_seq": cursor[0]}
+            cx.execute("""INSERT INTO events(id,project_id,scope_id,session_id,kind,content,source_uri,metadata_json,content_hash,created_at,event_seq)
+              VALUES(:id,:project_id,:scope_id,:session_id,:kind,:content,:source_uri,:metadata_json,:content_hash,:created_at,:event_seq)""", item)
             self._audit(cx, project_id, "event", item["id"], "recorded", item)
             self._save_idem(cx, "record_event", idempotency_key, request, item)
         return item
+
+    def read_events_since(self, project_id: str, cursor: int = 0, kinds: list[str] | None = None,
+                          scope_id: str | None = None, limit: int = 100) -> dict[str, Any]:
+        """Read immutable events after a project cursor without mixing them into memory ranking."""
+        if cursor < 0: raise ValueError("cursor must be non-negative")
+        if not 1 <= limit <= 1000: raise ValueError("limit must be 1..1000")
+        if kinds is not None and (not kinds or any(not kind.strip() for kind in kinds)):
+            raise ValueError("kinds must contain non-empty values")
+        state = self._row("SELECT next_seq-1 AS snapshot_cursor FROM project_event_cursors WHERE project_id=?", (project_id,))
+        if not state: raise KeyError("project not found")
+        snapshot = state["snapshot_cursor"]
+        sql = "SELECT * FROM events WHERE project_id=? AND event_seq>? AND event_seq<=?"
+        args: list[Any] = [project_id, cursor, snapshot]
+        if kinds:
+            unique_kinds = list(dict.fromkeys(kinds))
+            sql += " AND kind IN (" + ",".join("?" for _ in unique_kinds) + ")"; args.extend(unique_kinds)
+        if scope_id:
+            sql += " AND (scope_id=? OR scope_id IS NULL)"; args.append(scope_id)
+        sql += " ORDER BY event_seq LIMIT ?"; args.append(limit + 1)
+        rows = [dict(row) for row in self.conn.execute(sql, args)]
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        for row in rows: row["metadata"] = json.loads(row.pop("metadata_json"))
+        next_cursor = rows[-1]["event_seq"] if has_more else snapshot
+        return {"project_id":project_id,"cursor":cursor,"snapshot_cursor":snapshot,"next_cursor":next_cursor,
+                "has_more":has_more,"events":rows}
 
     def upsert_memory(self, project_id: str, title: str, content: str, memory_type: str = "other", status: str = "proposed",
                       confidence: float = .5, importance: float = .5, scope_id: str | None = None, source_event_ids: list[str] | None = None,
@@ -314,17 +347,45 @@ class MemoryStore:
             r["sources"] = [dict(x) for x in self.conn.execute("SELECT e.id,e.kind,e.source_uri,e.created_at FROM memory_sources s JOIN events e ON e.id=s.event_id WHERE s.memory_id=?", (r["id"],))]
         return rows
 
-    def get_context(self, project_id: str, query: str, char_budget: int = 6000, statuses: list[str] | None = None, scope_id: str | None = None) -> dict[str, Any]:
+    def get_context(self, project_id: str, query: str, char_budget: int = 6000, statuses: list[str] | None = None,
+                    scope_id: str | None = None, event_cursor: int | None = None, event_kinds: list[str] | None = None,
+                    event_limit: int = 20, event_char_budget: int = 2000) -> dict[str, Any]:
         policy = self.get_policy(project_id)
         requested = max(0, char_budget)
         budget = min(requested, policy["max_context_chars"]); selected, used = [], 0
+        recent_events: list[dict[str, Any]] = []; event_used = 0; event_result = None
+        reserved = 0
+        if event_cursor is not None:
+            reserved = min(max(0, event_char_budget), 4000, budget)
+            selected_kinds = ["message"] if event_kinds is None else event_kinds
+            event_result = self.read_events_since(project_id, event_cursor, selected_kinds, scope_id, event_limit)
+            for event in event_result["events"]:
+                prefix = f"[{event['event_seq']}/{event['kind']}] "
+                remaining = reserved - event_used - len(prefix)
+                if remaining <= 0: break
+                content = event["content"]
+                truncated = len(content) > remaining
+                text = prefix + (content[:max(0, remaining - 1)] + "…" if truncated and remaining else content)
+                recent_events.append({"event_id":event["id"],"event_seq":event["event_seq"],"kind":event["kind"],
+                                      "text":text,"created_at":event["created_at"],"session_id":event["session_id"],
+                                      "scope_id":event["scope_id"],"metadata":event["metadata"],"content_truncated":truncated})
+                event_used += len(text)
+            fully_consumed = len(recent_events) == len(event_result["events"])
+            event_result["next_cursor"] = event_result["next_cursor"] if fully_consumed else (recent_events[-1]["event_seq"] if recent_events else event_cursor)
+            event_result["has_more"] = event_result["has_more"] or not fully_consumed
+        memory_budget = budget - event_used
         for m in self.search(project_id, query, policy["max_context_items"], statuses or ["active", "disputed"], scope_id):
             block = f"[{m['status']}/{m['type']}] {m['title']}\n{m['content']}\nsource_events: {', '.join(s['id'] for s in m['sources']) or 'none'}"
-            if used + len(block) + 2 > budget: continue
+            if used + len(block) + 2 > memory_budget: continue
             selected.append({"memory_id": m["id"], "text": block, "confidence": m["confidence"], "importance": m["importance"]})
             used += len(block) + 2
         return {"query": query, "requested_budget": requested, "budget": budget, "budget_capped": requested > budget,
-                "max_items": policy["max_context_items"], "used": used, "items": selected, "context": "\n\n".join(i["text"] for i in selected)}
+                "max_items": policy["max_context_items"], "memory_budget":memory_budget,"event_budget":reserved,
+                "used": used + event_used, "memory_used":used,"event_used":event_used,
+                "items": selected, "context": "\n\n".join(i["text"] for i in selected),"recent_events":recent_events,
+                "event_cursor":event_cursor,"next_event_cursor":event_result["next_cursor"] if event_result else None,
+                "event_snapshot_cursor":event_result["snapshot_cursor"] if event_result else None,
+                "has_more_events":event_result["has_more"] if event_result else False}
 
     def get_policy(self, project_id: str) -> dict[str, Any]:
         item = self._row("SELECT * FROM project_policies WHERE project_id=?", (project_id,))
@@ -443,7 +504,7 @@ class MemoryStore:
         queries = [
             ("scope", "SELECT * FROM scopes WHERE project_id=? ORDER BY created_at,id"),
             ("session", "SELECT * FROM sessions WHERE project_id=? ORDER BY started_at,id"),
-            ("event", "SELECT * FROM events WHERE project_id=? ORDER BY created_at,id"),
+            ("event", "SELECT * FROM events WHERE project_id=? ORDER BY event_seq"),
             ("memory", "SELECT * FROM memories WHERE project_id=? ORDER BY created_at,id"),
             ("memory_source", "SELECT ms.* FROM memory_sources ms JOIN memories m ON m.id=ms.memory_id WHERE m.project_id=? ORDER BY ms.created_at,ms.memory_id,ms.event_id"),
             ("edge", "SELECT * FROM edges WHERE project_id=? ORDER BY created_at,id"),
@@ -470,7 +531,7 @@ class MemoryStore:
             "project": ("projects", ["id","slug","name","description","created_at"]),
             "scope": ("scopes", ["id","project_id","name","path","created_at"]),
             "session": ("sessions", ["id","project_id","scope_id","client","external_id","started_at","ended_at","metadata_json"]),
-            "event": ("events", ["id","project_id","scope_id","session_id","kind","content","source_uri","metadata_json","content_hash","created_at"]),
+            "event": ("events", ["id","project_id","scope_id","session_id","kind","content","source_uri","metadata_json","content_hash","created_at","event_seq"]),
             "memory": ("memories", ["id","project_id","scope_id","type","status","title","content","confidence","importance","valid_from","valid_until","tags_json","created_at","updated_at"]),
             "memory_source": ("memory_sources", ["memory_id","event_id","note","created_at"]),
             "edge": ("edges", ["id","project_id","from_memory_id","to_memory_id","relation","note","created_at"]),
@@ -478,9 +539,13 @@ class MemoryStore:
             "audit_checkpoint": ("audit_checkpoints", ["id","project_id","from_seq","through_seq","entry_count","previous_digest","digest","created_at"]),
         }
         counts: dict[str, int] = {}
+        imported_event_seq = 0
         with self.tx() as cx:
             for record in records:
-                kind, data = record["record_type"], record["data"]
+                kind, data = record["record_type"], dict(record["data"])
+                if kind == "event":
+                    imported_event_seq += 1
+                    data["event_seq"] = data.get("event_seq") or imported_event_seq
                 if kind == "audit":
                     names = ["project_id","entity_type","entity_id","action","snapshot_json","created_at"]
                     cx.execute(f"INSERT INTO audit_log({','.join(names)}) VALUES({','.join('?' for _ in names)})", tuple(data[name] for name in names))
@@ -492,6 +557,7 @@ class MemoryStore:
                     table, names = columns[kind]
                     cx.execute(f"INSERT INTO {table}({','.join(names)}) VALUES({','.join('?' for _ in names)})", tuple(data[name] for name in names))
                 counts[kind] = counts.get(kind, 0) + 1
+            cx.execute("UPDATE project_event_cursors SET next_seq=? WHERE project_id=?", (imported_event_seq + 1, project["id"]))
         return {"project_id": project["id"], "slug": project["slug"], "records": len(records), "counts": counts}
 
     def rebuild_fts(self, project_id: str | None = None) -> dict[str, Any]:

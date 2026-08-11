@@ -16,11 +16,16 @@ class MCPTests(unittest.TestCase):
         init = self.server.handle({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1"}}})
         self.assertEqual(init["result"]["capabilities"]["tools"], {"listChanged": False})
         tools = self.server.handle({"jsonrpc":"2.0","id":2,"method":"tools/list"})
-        self.assertTrue({"record_event", "get_context", "get_source", "memory_transition", "graph_traverse", "search_alias_set",
+        self.assertTrue({"record_event", "read_events_since", "get_context", "get_source", "memory_transition", "graph_traverse", "search_alias_set",
                          "policy_set", "maintenance_run", "search_health", "backup_create"} <= {t["name"] for t in tools["result"]["tools"]})
         created = self.server.handle({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"project_create","arguments":{"slug":"mcp-demo"}}})
         value = created["result"]["structuredContent"]["result"]
         self.assertEqual(value["slug"], "mcp-demo"); self.assertEqual(json.loads(created["result"]["content"][0]["text"])["id"], value["id"])
+        recorded = self.server.handle({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"record_event","arguments":{"project_id":value["id"],"kind":"message","content":"hello next session"}}})
+        event = recorded["result"]["structuredContent"]["result"]
+        polled = self.server.handle({"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"read_events_since","arguments":{"project_id":value["id"],"cursor":0,"kinds":["message"]}}})
+        stream = polled["result"]["structuredContent"]["result"]
+        self.assertEqual(stream["events"][0]["id"], event["id"]); self.assertEqual(stream["next_cursor"], event["event_seq"])
 
     def test_notification_has_no_response(self):
         self.assertIsNone(self.server.handle({"jsonrpc":"2.0","method":"notifications/initialized"}))
