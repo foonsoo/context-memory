@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "context-memory": {
+      "type": "stdio",
+      "command": "/absolute/path/to/context-memory",
+      "args": ["--db", "/absolute/path/to/memory.db", "serve", "--transport", "stdio"]
+    }
+  }
+}

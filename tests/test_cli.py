@@ -1,5 +1,9 @@
 import tempfile
 import unittest
+import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 from context_memory.cli import doctor, init_workspace, init_workspaces, mcp_config
@@ -75,6 +79,37 @@ class CLITests(unittest.TestCase):
                 self.assertEqual(result["clients"][1]["status"], "manual")
             finally:
                 store.close()
+
+    def test_init_prints_client_neutral_retrieval_workflow(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "workspace"; root.mkdir()
+            store = MemoryStore(Path(temp) / "memory.db")
+            try:
+                result = init_workspaces(store, str(root), ["generic"], "python", False)
+                self.assertEqual(result["workflow"][0], "project_resolve(cwd)")
+                self.assertIn("get_context", result["workflow"][2])
+                self.assertIn("session_end", result["workflow"][-1])
+            finally: store.close()
+
+    def test_migrate_db_captures_live_wal_and_refuses_overwrite(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "old" / "memory.db"
+            destination = Path(temp) / "shared" / "memory.db"
+            store = MemoryStore(source)
+            try:
+                project = store.create_project("migration-test")
+                store.record_event(project["id"], "fact", "committed while source remains open")
+                env = {**os.environ, "PYTHONPATH": str(Path(__file__).parents[1] / "src")}
+                command = [sys.executable, "-m", "context_memory.cli", "--db", str(destination), "migrate-db", str(source)]
+                first = subprocess.run(command, cwd=Path(__file__).parents[1], env=env, check=True, capture_output=True, text=True)
+                self.assertTrue(json.loads(first.stdout)["migrated"])
+                migrated = MemoryStore(destination)
+                try: self.assertEqual(migrated.list_projects()[0]["slug"], "migration-test")
+                finally: migrated.close()
+                second = subprocess.run(command, cwd=Path(__file__).parents[1], env=env, capture_output=True, text=True)
+                self.assertNotEqual(second.returncode, 0)
+                self.assertIn("destination exists", second.stderr)
+            finally: store.close()
 
 
 if __name__ == "__main__":

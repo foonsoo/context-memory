@@ -7,6 +7,7 @@
 - Add optional durable per-client cursor receipts and message acknowledgement/expiry policy. Stateless cursor polling is implemented.
 - Validate all MCP arguments with a small JSON Schema validator and add pagination.
 - Test interoperability against the official MCP SDK conformance suite and additional clients.
+- Add direct registration adapters when Craft Agents and other workspace-scoped clients publish stable non-interactive configuration APIs. Portable JSON and guided setup are implemented.
 
 ## Optional retrieval improvements
 

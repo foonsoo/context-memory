@@ -31,7 +31,10 @@ def mcp_config(db_path: str, launcher: str = "uvx", package: str = "context-memo
         prefix = ["context-memory"] if package == "context-memory" else ["--from", package, "context-memory"]
         command, args = "uvx", [*prefix, "--db", db_path, "serve", "--transport", "stdio"]
     elif launcher == "installed":
-        command, args = "context-memory", ["--db", db_path, "serve", "--transport", "stdio"]
+        installed = shutil.which("context-memory")
+        invoked = Path(sys.argv[0]).expanduser().resolve() if Path(sys.argv[0]).name == "context-memory" else None
+        command = str(invoked) if invoked and invoked.is_file() else (installed or "context-memory")
+        args = ["--db", db_path, "serve", "--transport", "stdio"]
     else:
         command, args = sys.executable, ["-m", "context_memory.cli", "--db", db_path, "serve", "--transport", "stdio"]
     return {"type": "stdio", "command": command, "args": args}
@@ -145,6 +148,13 @@ def init_workspaces(store: MemoryStore, workspace: str, clients: list[str], laun
         "project": resolved["project"],
         "scope_id": resolved["scope_id"],
         "mcp": {"mcpServers": {"context-memory": config}},
+        "workflow": [
+            "project_resolve(cwd)",
+            "session_start(project_id, scope_id, client, external_id)",
+            "get_context(project_id, scope_id, focused query, char_budget=4000..8000)",
+            "record_event -> memory_upsert(source_event_ids) for durable verified knowledge",
+            "session_end(session_id)",
+        ],
         "clients": [_safe_register_client(client, config, root, register, cursor_config) for client in dict.fromkeys(expanded)],
     }
     return result
@@ -217,7 +227,25 @@ def main() -> None:
     status_cmd.add_argument("project_id")
     backup = sub.add_parser("backup", help="Create one consistent integrity-checked SQLite snapshot")
     backup.add_argument("--output", required=True)
+    migrate = sub.add_parser("migrate-db", help="Safely migrate a live SQLite database with the Online Backup API")
+    migrate.add_argument("source"); migrate.add_argument("--replace", action="store_true")
     args = p.parse_args()
+    if args.command == "migrate-db":
+        source = Path(args.source).expanduser().resolve(); destination = Path(args.db).expanduser().resolve()
+        if source == destination: p.error("migration source and destination must differ")
+        if not source.is_file(): p.error(f"migration source does not exist: {source}")
+        if destination.exists() and not args.replace: p.error(f"migration destination exists; use --replace after backing it up: {destination}")
+        existing_backup = None
+        if destination.exists():
+            previous = MemoryStore(destination)
+            try:
+                existing_backup = previous.backup_to(destination.with_suffix(destination.suffix + ".pre-migration.bak"))
+            finally: previous.close()
+        source_store = MemoryStore(source)
+        try: result = source_store.backup_to(destination)
+        finally: source_store.close()
+        output({"migrated": True, "previous_destination_backup": existing_backup, **result})
+        return
     store = MemoryStore(args.db)
     try:
         if args.command == "serve":

@@ -11,7 +11,8 @@ from . import __version__
 from .store import MemoryStore
 
 PROTOCOL = "2025-06-18"
-INSTRUCTIONS = ("Use get_context at task start with a focused query. Preserve evidence with record_event before proposing memories. "
+INSTRUCTIONS = ("At task start call project_resolve with the current workspace, then session_start using its project/scope, then get_context with a focused query. "
+                "Use the actual MCP client name and its session/task ID when available. Preserve evidence with record_event before proposing memories. "
                 "New inferred memories should remain proposed until verified; use active only for confirmed facts/decisions. "
                 "Retrieve original evidence with get_source. Record consequential decisions during work and end the session when done.")
 

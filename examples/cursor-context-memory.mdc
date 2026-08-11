@@ -1,0 +1,6 @@
+---
+description: Client-neutral Context Memory lifecycle
+alwaysApply: true
+---
+
+At task start, call `project_resolve` for the current workspace, `session_start` with client `cursor`, and `get_context` using the request as a focused 4,000–8,000 character query. Use returned IDs, inspect consequential sources, preserve durable evidence with `record_event`, derive only sourced memories, and call `session_end` before finishing. Keep unverified inference proposed and never store secrets. Do not depend on hooks for correctness.

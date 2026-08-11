@@ -55,6 +55,8 @@ python3.14 -m venv .venv  # recommended; Python 3.11+ is supported
 
 The default database is `~/.local/share/context-memory/memory.db`. Pass `--db .context-memory/memory.db` if repository-local isolation is preferred and add `.context-memory/` to the consumer repository's `.gitignore`.
 
+For a previous live WAL database, use the integrity-checked `migrate-db` flow in [docs/CLIENTS.md](docs/CLIENTS.md); do not copy only the main SQLite file.
+
 Run without installing, if preferred:
 
 ```bash
@@ -97,6 +99,8 @@ Context Memory uses standard MCP stdio and Streamable HTTP-shaped JSON-RPC messa
 - Remote or sandboxed clients that cannot spawn a local process: run the optional HTTP transport and connect to `http://127.0.0.1:8765/mcp`
 
 Client-specific hooks are optional convenience integrations. Correctness must not depend on them: the MCP initialization instructions and tool descriptions carry the portable workflow.
+
+See [docs/CLIENTS.md](docs/CLIENTS.md) for the exact shared lifecycle contract and client configuration behavior.
 
 ### Two different sharing scenarios
 
