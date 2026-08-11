@@ -351,6 +351,8 @@ class MemoryStore:
         if mode not in CHECKPOINT_MODES: raise ValueError("mode must be interim or final")
         if reason not in CHECKPOINT_REASONS:
             raise ValueError("reason must be context_budget, elapsed, material_change, completed, or manual")
+        if mode == "interim" and reason == "completed":
+            raise ValueError("interim checkpoints cannot claim completed work")
         if not goal.strip(): raise ValueError("goal cannot be empty")
         if not idempotency_key.strip(): raise ValueError("idempotency_key cannot be empty")
         completed = completed or []; blockers = blockers or []
@@ -364,9 +366,11 @@ class MemoryStore:
         project = self._row("SELECT id FROM projects WHERE id=?", (project_id,))
         if not project: raise KeyError("project not found")
         if session_id:
-            session = self._row("SELECT project_id,scope_id FROM sessions WHERE id=?", (session_id,))
+            session = self._row("SELECT project_id,scope_id,ended_at FROM sessions WHERE id=?", (session_id,))
             if not session: raise KeyError("session not found")
             if session["project_id"] != project_id: raise ValueError("session belongs to a different project")
+            if mode == "interim" and session["ended_at"] is not None:
+                raise ValueError("interim checkpoints require an active session")
             if scope_id is None: scope_id = session["scope_id"]
         if scope_id:
             scope = self._row("SELECT project_id FROM scopes WHERE id=?", (scope_id,))
@@ -378,12 +382,13 @@ class MemoryStore:
             raise ValueError("source_event_cursor must reference an existing project event cursor")
         recovery_hash = self._checkpoint_recovery_hash(
             project_id, source_event_cursor, goal, completed, next_step, blockers, repository)
-        payload = {"schema_version": 3, "mode": mode, "reason": reason, "goal": goal.strip(),
+        payload = {"schema_version": 4, "mode": mode, "reason": reason, "goal": goal.strip(),
                    "completed": [item.strip() for item in completed],
                    "next_step": next_step.strip() if next_step else None,
                    "blockers": [item.strip() for item in blockers],
                    "source_event_cursor": source_event_cursor, "context_usage": context_usage,
                    "recovery_hash": recovery_hash,
+                   "claims": {"completion": False, "verification": False} if mode == "interim" else None,
                    "objective": {"repository": repository, "test_results": tests}}
         content = canonical(payload); created_at = now()
         with self.tx() as cx:

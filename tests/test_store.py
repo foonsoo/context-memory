@@ -78,13 +78,51 @@ class StoreTests(unittest.TestCase):
                 {"name":"integration", "status":"skipped"},
             ])
         objective = result["objective"]
-        self.assertEqual(result["schema_version"], 3)
+        self.assertEqual(result["schema_version"], 4)
         self.assertEqual(objective["repository"]["branch"], "main")
         self.assertTrue(objective["repository"]["dirty"])
         self.assertEqual({item["path"] for item in objective["repository"]["changed_files"]}, {"tracked.txt", "new.txt"})
         self.assertEqual(objective["test_results"][0]["status"], "passed")
         event = self.store.get_source(result["checkpoint_id"])
         self.assertEqual(json.loads(event["content"])["objective"], objective)
+
+    def test_interim_checkpoint_cannot_end_session_mutate_git_or_promote_working_state(self):
+        p = self.store.create_project("checkpoint-interim-guardrails")
+        session = self.store.start_session(p["id"], "test", external_id="interim-guardrails")
+        proposed = self.store.upsert_memory(
+            p["id"], "Unverified working state", "Implementation may be ready", "task", "proposed")
+        repository = Path(self.temp.name) / "guarded-repo"; repository.mkdir()
+        subprocess.run(["git", "init", "-b", "main"], cwd=repository, check=True, capture_output=True)
+        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repository, check=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=repository, check=True)
+        (repository / "working.txt").write_text("baseline\n", encoding="utf-8")
+        subprocess.run(["git", "add", "working.txt"], cwd=repository, check=True)
+        subprocess.run(["git", "commit", "-m", "baseline"], cwd=repository, check=True, capture_output=True)
+        (repository / "working.txt").write_text("uncommitted\n", encoding="utf-8")
+        before_git = subprocess.run(
+            ["git", "status", "--porcelain=v2", "--branch"], cwd=repository,
+            check=True, capture_output=True, text=True).stdout
+
+        checkpoint = self.store.create_checkpoint(
+            p["id"], "interim", "material_change", "Continue implementation", "interim-guardrails",
+            session_id=session["id"], repository_path=str(repository),
+            completed=["Drafted implementation"], next_step="Verify behavior",
+            test_results=[{"name":"focused tests", "status":"passed"}])
+
+        after_git = subprocess.run(
+            ["git", "status", "--porcelain=v2", "--branch"], cwd=repository,
+            check=True, capture_output=True, text=True).stdout
+        self.assertEqual(before_git, after_git)
+        self.assertIsNone(self.store._row("SELECT ended_at FROM sessions WHERE id=?", (session["id"],))["ended_at"])
+        self.assertEqual(self.store._row("SELECT status FROM memories WHERE id=?", (proposed["id"],))["status"], "proposed")
+        self.assertEqual(checkpoint["claims"], {"completion": False, "verification": False})
+        self.assertEqual(checkpoint["objective"]["test_results"][0]["status"], "passed")
+        with self.assertRaisesRegex(ValueError, "cannot claim completed"):
+            self.store.create_checkpoint(p["id"], "interim", "completed", "Done", "interim-completed")
+        self.store.end_session(session["id"])
+        with self.assertRaisesRegex(ValueError, "active session"):
+            self.store.create_checkpoint(
+                p["id"], "interim", "manual", "Resume", "interim-ended-session", session_id=session["id"])
 
     def test_checkpoint_rejects_invalid_objective_evidence(self):
         p = self.store.create_project("checkpoint-invalid-objective")
