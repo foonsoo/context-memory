@@ -53,6 +53,62 @@ TOOLS = [
     {"name": "get_audit", "description": "Read append-only history for an event, memory, session, project, or scope.", "inputSchema": obj({"entity_type":{"type":"string"},"entity_id":{"type":"string"}}, ["entity_type","entity_id"]), "annotations":{"readOnlyHint":True}},
 ]
 
+TOOL_PAGE_SIZE = 10
+TOOL_BY_NAME = {tool["name"]: tool for tool in TOOLS}
+
+
+def validate_json(value: Any, schema: dict[str, Any], path: str = "arguments") -> None:
+    """Validate the small JSON Schema subset used by MCP tool declarations."""
+    expected = schema.get("type")
+    matches = {
+        "object": lambda item: isinstance(item, dict),
+        "array": lambda item: isinstance(item, list),
+        "string": lambda item: isinstance(item, str),
+        "boolean": lambda item: isinstance(item, bool),
+        "integer": lambda item: isinstance(item, int) and not isinstance(item, bool),
+        "number": lambda item: isinstance(item, (int, float)) and not isinstance(item, bool),
+    }
+    if expected in matches and not matches[expected](value):
+        raise ValueError(f"{path} must be {expected}")
+    if "enum" in schema and value not in schema["enum"]:
+        raise ValueError(f"{path} must be one of {schema['enum']}")
+    if expected in {"integer", "number"}:
+        if "minimum" in schema and value < schema["minimum"]:
+            raise ValueError(f"{path} must be >= {schema['minimum']}")
+        if "maximum" in schema and value > schema["maximum"]:
+            raise ValueError(f"{path} must be <= {schema['maximum']}")
+    if expected == "array" and "items" in schema:
+        for index, item in enumerate(value):
+            validate_json(item, schema["items"], f"{path}[{index}]")
+    if expected == "object":
+        properties = schema.get("properties", {})
+        missing = [name for name in schema.get("required", []) if name not in value]
+        if missing:
+            raise ValueError(f"{path} missing required properties: {', '.join(missing)}")
+        if schema.get("additionalProperties") is False:
+            extra = sorted(set(value) - set(properties))
+            if extra:
+                raise ValueError(f"{path} has unknown properties: {', '.join(extra)}")
+        for name, item in value.items():
+            if name in properties:
+                validate_json(item, properties[name], f"{path}.{name}")
+
+
+def tool_page(cursor: Any = None) -> dict[str, Any]:
+    if cursor is None:
+        offset = 0
+    elif not isinstance(cursor, str) or not cursor.isascii() or not cursor.isdigit():
+        raise ValueError("params.cursor must be an opaque cursor returned by tools/list")
+    else:
+        offset = int(cursor)
+    if offset < 0 or offset >= len(TOOLS):
+        raise ValueError("params.cursor is invalid or expired")
+    end = min(offset + TOOL_PAGE_SIZE, len(TOOLS))
+    result: dict[str, Any] = {"tools": TOOLS[offset:end]}
+    if end < len(TOOLS):
+        result["nextCursor"] = str(end)
+    return result
+
 
 class LocalThreadingHTTPServer(ThreadingHTTPServer):
     """HTTPServer without a startup-time reverse DNS lookup for its bind address."""
@@ -83,6 +139,7 @@ class MCPServer:
             "get_source": self.store.get_source, "get_audit": self.store.audit,
         }
         if name not in mapping: raise KeyError(f"unknown tool: {name}")
+        validate_json(a, TOOL_BY_NAME[name]["inputSchema"])
         return mapping[name](**a)
 
     def handle(self, req: dict[str, Any]) -> dict[str, Any] | None:
@@ -93,9 +150,21 @@ class MCPServer:
                 result = {"protocolVersion": PROTOCOL, "capabilities":{"tools":{"listChanged":False}},
                           "serverInfo":{"name":"context-memory","version":__version__}, "instructions":INSTRUCTIONS}
             elif method == "ping": result = {}
-            elif method == "tools/list": result = {"tools": TOOLS}
+            elif method == "tools/list":
+                params = req.get("params", {})
+                if not isinstance(params, dict): raise ValueError("params must be object")
+                extra = sorted(set(params) - {"cursor"})
+                if extra: raise ValueError(f"params has unknown properties: {', '.join(extra)}")
+                result = tool_page(params.get("cursor"))
             elif method == "tools/call":
-                p = req.get("params") or {}; value = self.call(p.get("name", ""), p.get("arguments") or {})
+                p = req.get("params", {})
+                if not isinstance(p, dict): raise ValueError("params must be object")
+                extra = sorted(set(p) - {"name", "arguments"})
+                if extra: raise ValueError(f"params has unknown properties: {', '.join(extra)}")
+                if not isinstance(p.get("name"), str): raise ValueError("params.name must be string")
+                arguments = p.get("arguments", {})
+                if not isinstance(arguments, dict): raise ValueError("params.arguments must be object")
+                value = self.call(p["name"], arguments)
                 result = {"content":[{"type":"text","text":json.dumps(value, ensure_ascii=False, indent=2)}], "structuredContent":{"result":value}}
             else: return {"jsonrpc":"2.0","id":rid,"error":{"code":-32601,"message":"Method not found"}}
             return {"jsonrpc":"2.0","id":rid,"result":result}

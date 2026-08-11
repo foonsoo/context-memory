@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from context_memory.mcp import MCPServer
+from context_memory.mcp import MCPServer, TOOLS
 from context_memory.store import MemoryStore
 
 
@@ -15,9 +15,14 @@ class MCPTests(unittest.TestCase):
     def test_initialize_list_and_tool_call(self):
         init = self.server.handle({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1"}}})
         self.assertEqual(init["result"]["capabilities"]["tools"], {"listChanged": False})
-        tools = self.server.handle({"jsonrpc":"2.0","id":2,"method":"tools/list"})
-        self.assertTrue({"record_event", "read_events_since", "get_context", "get_source", "memory_transition", "graph_traverse", "search_alias_set", "project_alias_list", "memory_feedback",
-                         "policy_set", "maintenance_run", "search_health", "backup_create"} <= {t["name"] for t in tools["result"]["tools"]})
+        tool_names, cursor = [], None
+        while True:
+            params = {"cursor": cursor} if cursor is not None else {}
+            page = self.server.handle({"jsonrpc":"2.0","id":2,"method":"tools/list","params":params})["result"]
+            tool_names.extend(tool["name"] for tool in page["tools"])
+            cursor = page.get("nextCursor")
+            if cursor is None: break
+        self.assertEqual(tool_names, [tool["name"] for tool in TOOLS])
         created = self.server.handle({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"project_create","arguments":{"slug":"mcp-demo"}}})
         value = created["result"]["structuredContent"]["result"]
         self.assertEqual(value["slug"], "mcp-demo"); self.assertEqual(json.loads(created["result"]["content"][0]["text"])["id"], value["id"])
@@ -32,6 +37,29 @@ class MCPTests(unittest.TestCase):
 
     def test_external_http_requires_token(self):
         with self.assertRaisesRegex(ValueError, "refusing external bind"): self.server.serve_http("0.0.0.0", 0)
+
+    def test_tools_list_rejects_invalid_cursor(self):
+        response = self.server.handle({"jsonrpc":"2.0", "id":1, "method":"tools/list", "params":{"cursor":"not-a-cursor"}})
+        self.assertEqual(response["error"]["code"], -32602)
+        non_object = self.server.handle({"jsonrpc":"2.0", "id":2, "method":"tools/list", "params":[]})
+        self.assertEqual(non_object["error"]["code"], -32602)
+
+    def test_tool_arguments_are_validated_against_declared_schema(self):
+        cases = [
+            {"name":"project_resolve", "arguments":{}},
+            {"name":"project_resolve", "arguments":{"cwd":"/tmp", "unexpected":True}},
+            {"name":"read_events_since", "arguments":{"project_id":"p", "limit":0}},
+            {"name":"memory_upsert", "arguments":{"project_id":"p", "title":"t", "content":"c", "confidence":True}},
+            {"name":"memory_upsert", "arguments":{"project_id":"p", "title":"t", "content":"c", "memory_type":"unknown"}},
+            {"name":"search_alias_set", "arguments":{"project_id":"p", "term":"db", "aliases":["database", 7]}},
+            {"name":"project_resolve", "arguments":[]},
+        ]
+        for index, params in enumerate(cases, 1):
+            with self.subTest(params=params):
+                response = self.server.handle({"jsonrpc":"2.0", "id":index, "method":"tools/call", "params":params})
+                self.assertEqual(response["error"]["code"], -32602)
+        valid = self.server.handle({"jsonrpc":"2.0", "id":100, "method":"tools/call", "params":{"name":"project_resolve", "arguments":{"cwd":"/tmp"}}})
+        self.assertNotIn("error", valid)
 
 
 if __name__ == "__main__": unittest.main()

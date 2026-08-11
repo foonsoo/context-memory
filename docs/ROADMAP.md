@@ -6,7 +6,7 @@
 - Add optional encrypted backup envelopes and scheduled maintenance. Online consistent snapshots, policy-based retention, and checkpointed audit compaction are implemented.
 - Add an offline audit-checkpoint verification/export utility. Checkpoint chaining is implemented.
 - Add optional durable per-client cursor receipts and message acknowledgement/expiry policy. Stateless cursor polling is implemented.
-- Validate all MCP arguments with a small JSON Schema validator and add pagination.
+- Expand cursor pagination beyond the MCP tool catalog when additional unbounded list endpoints are introduced. Tool arguments are validated against their advertised JSON Schemas and `tools/list` is cursor-paginated.
 - Test interoperability against the official MCP SDK conformance suite and additional clients.
 - Add direct registration adapters when Craft Agents and other workspace-scoped clients publish stable non-interactive configuration APIs. Portable JSON and guided setup are implemented.
 

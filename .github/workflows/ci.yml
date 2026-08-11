@@ -33,6 +33,11 @@ jobs:
           python-version: "3.14"
       - name: Build wheel
         run: python -m pip wheel --no-deps --wheel-dir dist .
+      - name: Verify installed wheel, empty workspace, and restart persistence
+        run: |
+          python -m venv wheel-test
+          wheel-test/bin/pip install --no-deps dist/*.whl
+          wheel-test/bin/python tests/installed_e2e.py
       - uses: actions/upload-artifact@v4
         with:
           name: context-memory-wheel
