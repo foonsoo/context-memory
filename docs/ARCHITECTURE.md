@@ -55,6 +55,8 @@ Memories normally move `proposed → active`. They can later become `superseded`
 
 At session end, events with explicit durable kinds (`fact`, `decision`, `preference`, `constraint`, `procedure`, `task`, or `summary`) can be converted deterministically into evidence-linked `proposed` memories. Similar active memories are attached as review conflicts. Nothing is autonomously promoted: review actions approve, reject, supersede, or dispute candidates.
 
+Automatic handoff persistence must separate portable storage semantics from completion detection. A future client-neutral checkpoint operation can atomically write evidence, derive or replace a sourced handoff, and close the memory session through the same store service from MCP, CLI, or a local scheduler. Objective repository state can also be captured without a client SDK. MCP does not, however, define a portable semantic “agent task completed” notification: stdio EOF and Streamable HTTP session termination describe transport lifetime and may occur on crashes, restarts, or application exit. Consequently, hooks are optional completion-signal adapters only; the core checkpoint contract cannot depend on them, and unattended fallbacks must label snapshots as checkpoints rather than verified completion.
+
 ## Maintenance and backup
 
 Project policy controls context limits, retained audit detail, and terminal-memory age. `maintain` is dry-run by default; `--apply` performs terminal cleanup and audit checkpointing in one write transaction. Maintenance never deletes raw events.
