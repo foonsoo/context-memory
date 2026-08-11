@@ -28,9 +28,9 @@ chmod 700 ~/.local/share/context-memory
 
 Restart each registered client. At the beginning of **every new task/session**, the agent should perform this client-neutral sequence:
 
-1. `project_resolve(cwd)` with the current workspace.
+1. `project_resolve(cwd)` with the current workspace. The path is a preferred identity hint; an unambiguous registered project name can resolve another workspace path to the same project.
 2. `session_start` with the returned project/scope, actual client name, and task/session ID when available.
-3. `get_context` using the current request as a focused query and a 4,000–8,000 character budget.
+3. `get_context` using the current request as a focused query and a 4,000–8,000 character budget. If the selected project has no matching project memory, retrieval searches memory candidates across the shared database and aggregates relevance, recent activity, and the latest checkpoint by project; global memories are always merged. If several projects remain relevant, inspect `project_discovery.candidates` and ask the user which project they mean.
 4. During work, preserve durable evidence with `record_event`; derive sourced knowledge with `memory_upsert`.
 5. Before finishing, record reusable verified results and call `session_end`.
 
@@ -157,7 +157,7 @@ For occasional transfer, use `export`/`import`. Continuous multi-machine sharing
 
 ### Portable backup and restore
 
-Export includes the project, scopes, sessions, immutable events, memories, provenance links, graph edges, and audit history. It intentionally excludes local idempotency caches and FTS internals.
+Export includes the project, project identity aliases, scopes, sessions, immutable events, memories, provenance links, graph edges, and audit history. It intentionally excludes local idempotency caches and FTS internals.
 
 ```bash
 context-memory export PROJECT_UUID --output project-memory.jsonl
@@ -324,7 +324,7 @@ Project hooks require a trusted project and explicit review in Codex. Use `/hook
 
 | Tool | Purpose |
 |---|---|
-| `project_create`, `project_list`, `scope_create` | Project and path/module boundaries |
+| `project_create`, `project_list`, `project_resolve`, `project_alias_list`, `scope_create` | Project discovery, repository identity, and path/module boundaries |
 | `session_start`, `session_end` | Cross-client session lifecycle |
 | `record_event` | Immutable raw evidence; `kind=message` is unverified inter-session coordination |
 | `read_events_since` | Cursor-based incremental event/message polling with pagination |
@@ -335,7 +335,7 @@ Project hooks require a trusted project and explicit review in Codex. Use `/hook
 | `memory_search` | Local FTS5/BM25 ranking plus confidence and importance |
 | `review_queue`, `review_action` | Inspect and resolve proposed memories and conflict flags |
 | `memory_correct` | Create a sourced correction candidate without overwriting history |
-| `get_context` | Strict shared-budget selection of active/disputed context plus optional recent events |
+| `get_context` | Strict shared-budget local/global selection, registry fallback, and optional recent events |
 | `get_source` | Retrieve original event evidence |
 | `get_audit` | Inspect append-only entity history |
 

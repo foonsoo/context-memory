@@ -10,9 +10,9 @@ Run `context-memory init --launcher installed --clients claude-code,codex,cursor
 
 Every client must follow the same lifecycle, independently of hooks:
 
-1. `project_resolve(cwd)` using the canonical current workspace.
+1. `project_resolve(cwd)` using the canonical current workspace as the preferred identity hint.
 2. `session_start` with the returned project/scope, actual client name, and client session ID when available.
-3. `get_context` using the user's request as a focused query and a 4,000–8,000 character budget.
+3. `get_context` using the user's request as a focused query and a 4,000–8,000 character budget. Global memory is merged, and an empty local result triggers bounded discovery across the shared project registry.
 4. `record_event`, then `memory_upsert` with source provenance for durable knowledge.
 5. `session_end` before finishing.
 

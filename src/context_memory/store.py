@@ -114,12 +114,59 @@ class MemoryStore:
         item = {"id": uid(), "slug": slug, "name": name or slug, "description": description, "created_at": now()}
         with self.tx() as cx:
             cx.execute("INSERT INTO projects VALUES(:id,:slug,:name,:description,:created_at)", item)
+            normalized_name = self._normalize_project_alias("name", item["name"])
+            cx.execute("INSERT INTO project_aliases VALUES(?,?,?,?,?,?)",
+                       (item["id"], "name", item["name"], normalized_name, item["created_at"], item["created_at"]))
             self._audit(cx, item["id"], "project", item["id"], "created", item)
             self._save_idem(cx, "create_project", idempotency_key, request, item)
         return item
 
     def list_projects(self) -> list[dict[str, Any]]:
         return [dict(r) for r in self.conn.execute("SELECT * FROM projects ORDER BY slug")]
+
+    @staticmethod
+    def _normalize_project_alias(kind: str, value: str) -> str:
+        value = value.strip()
+        if kind == "path": return str(Path(value).expanduser().resolve())
+        return value.casefold()
+
+    def set_project_alias(self, project_id: str, kind: str, value: str) -> dict[str, Any]:
+        if kind not in {"path", "name"}: raise ValueError("invalid project alias kind")
+        if not self._row("SELECT id FROM projects WHERE id=?", (project_id,)): raise KeyError("project not found")
+        normalized = self._normalize_project_alias(kind, value)
+        if not normalized: raise ValueError("project alias cannot be empty")
+        ts = now(); item = {"project_id":project_id,"kind":kind,"value":value,"normalized":normalized,"created_at":ts,"updated_at":ts}
+        current = self._row("SELECT * FROM project_aliases WHERE project_id=? AND kind=? AND normalized=?",
+                            (project_id, kind, normalized))
+        if current and current["value"] == value: return current
+        with self.tx() as cx:
+            existing = cx.execute("SELECT created_at FROM project_aliases WHERE project_id=? AND kind=? AND normalized=?",
+                                  (project_id, kind, normalized)).fetchone()
+            if existing: item["created_at"] = existing["created_at"]
+            cx.execute("""INSERT INTO project_aliases(project_id,kind,value,normalized,created_at,updated_at)
+              VALUES(:project_id,:kind,:value,:normalized,:created_at,:updated_at)
+              ON CONFLICT(project_id,kind,normalized) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at""", item)
+            self._audit(cx, project_id, "project_alias", f"{kind}:{normalized}", "updated" if existing else "created", item)
+        return item
+
+    def list_project_aliases(self, project_id: str) -> list[dict[str, Any]]:
+        return [dict(row) for row in self.conn.execute(
+            "SELECT * FROM project_aliases WHERE project_id=? ORDER BY kind,normalized", (project_id,))]
+
+    def _workspace_identities(self, path: str) -> dict[str, str]:
+        return {"path":path, "name":Path(path).name}
+
+    def _register_project_identities(self, project_id: str, identities: dict[str, str]) -> None:
+        for kind, value in identities.items(): self.set_project_alias(project_id, kind, value)
+
+    def _related_project_ids(self, project_id: str) -> list[str]:
+        """Find registry projects sharing the hinted repository/workspace name."""
+        rows = self.conn.execute("""SELECT DISTINCT candidate.project_id
+          FROM project_aliases source JOIN project_aliases candidate
+            ON candidate.kind=source.kind AND candidate.normalized=source.normalized
+          WHERE source.project_id=? AND candidate.project_id<>? AND source.kind='name'
+          ORDER BY candidate.project_id""", (project_id, project_id))
+        return list(dict.fromkeys(row["project_id"] for row in rows))
 
     def create_scope(self, project_id: str, name: str, path: str | None = None) -> dict[str, Any]:
         item = {"id": uid(), "project_id": project_id, "name": name, "path": path, "created_at": now()}
@@ -129,13 +176,26 @@ class MemoryStore:
         return item
 
     def resolve_project(self, cwd: str) -> dict[str, Any]:
-        """Resolve one canonical workspace folder to one memory project."""
+        """Resolve a workspace hint using paths first, then stable repository identities."""
         path = str(Path(cwd).expanduser().resolve())
+        identities = self._workspace_identities(path)
         row = self.conn.execute("""SELECT p.*, s.id AS scope_id FROM scopes s
           JOIN projects p ON p.id=s.project_id WHERE s.path=?""", (path,)).fetchone()
         if row:
             item = dict(row); scope_id = item.pop("scope_id")
+            self._register_project_identities(item["id"], identities)
             return {"project": item, "scope_id": scope_id, "created": False}
+        # A repository name resolves ownership only when it identifies one project.
+        # Ambiguous names remain separate and are handled by retrieval discovery.
+        for kind in ("name",):
+            if kind not in identities: continue
+            normalized = self._normalize_project_alias(kind, identities[kind])
+            matches = list(self.conn.execute("SELECT DISTINCT project_id FROM project_aliases WHERE kind=? AND normalized=?", (kind, normalized)))
+            if len(matches) != 1: continue
+            project = self._row("SELECT * FROM projects WHERE id=?", (matches[0]["project_id"],))
+            scope = self.create_scope(project["id"], f"__workspace__:{hashlib.sha256(path.encode()).hexdigest()[:12]}", path)
+            self._register_project_identities(project["id"], identities)
+            return {"project": project, "scope_id": scope["id"], "created": False, "matched_by": kind}
         base = re.sub(r"[^a-z0-9._-]+", "-", Path(path).name.lower()).strip("-._") or "workspace"
         slug = base[:54]
         existing = self._row("SELECT * FROM projects WHERE slug=?", (slug,))
@@ -147,6 +207,7 @@ class MemoryStore:
             slug = f"{slug}-{hashlib.sha256(path.encode()).hexdigest()[:8]}"
         project = self.create_project(slug, Path(path).name, f"Automatically mapped from agent workspace: {path}")
         scope = self.create_scope(project["id"], "__root__", path)
+        self._register_project_identities(project["id"], identities)
         return {"project": project, "scope_id": scope["id"], "created": True}
 
     def start_session(self, project_id: str, client: str = "codex", scope_id: str | None = None, external_id: str | None = None, metadata: dict | None = None) -> dict[str, Any]:
@@ -433,7 +494,8 @@ class MemoryStore:
         return {"start_memory_id":memory_id,"max_depth":max_depth,"direction":direction,
                 "nodes":sorted(nodes.values(),key=lambda x:(x["depth"],x["id"])),"edges":selected_edges}
 
-    def search(self, project_id: str, query: str, limit: int = 10, statuses: list[str] | None = None, scope_id: str | None = None) -> list[dict[str, Any]]:
+    def search(self, project_id: str, query: str, limit: int = 10, statuses: list[str] | None = None,
+               scope_id: str | None = None, discover_projects: bool = False) -> list[dict[str, Any]]:
         if not query.strip(): return []
         tokens = re.findall(r"[\w-]+", query.casefold(), flags=re.UNICODE)
         if not tokens: return []
@@ -447,12 +509,17 @@ class MemoryStore:
         allowed = statuses or ["active", "proposed", "disputed"]
         placeholders = ",".join("?" for _ in allowed)
         timestamp = now()
+        # Discovery is deliberately whole-database. Project identity hints are a
+        # later prior, not a candidate-generation boundary: filtering here can
+        # make the actually relevant project impossible to retrieve.
+        boundary = "1=1" if discover_projects else "(m.project_id=? OR m.visibility='global')"
+        boundary_args: list[Any] = [] if discover_projects else [project_id]
         sql = f"""SELECT m.*, bm25(memories_fts, 0, 5, 1, .5) AS fts_rank
           FROM memories_fts JOIN memories m ON m.id=memories_fts.memory_id
-          WHERE memories_fts MATCH ? AND (m.project_id=? OR m.visibility='global') AND m.status IN ({placeholders})
+          WHERE memories_fts MATCH ? AND {boundary} AND m.status IN ({placeholders})
           AND (m.valid_from IS NULL OR m.valid_from<=?) AND (m.valid_until IS NULL OR m.valid_until>?)"""
-        args: list[Any] = [match, project_id, *allowed, timestamp, timestamp]
-        if scope_id: sql += " AND (m.scope_id=? OR m.scope_id IS NULL)"; args.append(scope_id)
+        args: list[Any] = [match, *boundary_args, *allowed, timestamp, timestamp]
+        if scope_id and not discover_projects: sql += " AND (m.scope_id=? OR m.scope_id IS NULL)"; args.append(scope_id)
         candidate_limit = max(20, min(max(1, limit) * 4, 200))
         sql += " ORDER BY bm25(memories_fts,0,5,1,.5) ASC LIMIT ?"; args.append(candidate_limit)
         lexical = [dict(r) for r in self.conn.execute(sql, args)]
@@ -464,11 +531,12 @@ class MemoryStore:
         semantic_scores: dict[str, float] = {}
         if self.embedding_provider:
             query_vector = self.embedding_provider.embed([query])[0]
+            sem_boundary = boundary
             sem_sql = f"""SELECT m.*, e.vector_json FROM memory_embeddings e JOIN memories m ON m.id=e.memory_id
-              WHERE (m.project_id=? OR m.visibility='global') AND m.status IN ({placeholders}) AND e.provider=? AND e.dimensions=?
+              WHERE {sem_boundary} AND m.status IN ({placeholders}) AND e.provider=? AND e.dimensions=?
               AND (m.valid_from IS NULL OR m.valid_from<=?) AND (m.valid_until IS NULL OR m.valid_until>?)"""
-            sem_args: list[Any] = [project_id, *allowed, self._provider_name(), self.embedding_provider.dimensions, timestamp, timestamp]
-            if scope_id: sem_sql += " AND (m.scope_id=? OR m.scope_id IS NULL)"; sem_args.append(scope_id)
+            sem_args: list[Any] = [*boundary_args, *allowed, self._provider_name(), self.embedding_provider.dimensions, timestamp, timestamp]
+            if scope_id and not discover_projects: sem_sql += " AND (m.scope_id=? OR m.scope_id IS NULL)"; sem_args.append(scope_id)
             semantic = []
             for row in self.conn.execute(sem_sql, sem_args):
                 item = dict(row); vector = json.loads(item.pop("vector_json"))
@@ -505,6 +573,37 @@ class MemoryStore:
             r["sources"] = [dict(x) for x in self.conn.execute("SELECT e.id,e.kind,e.source_uri,e.created_at FROM memory_sources s JOIN events e ON e.id=s.event_id WHERE s.memory_id=?", (r["id"],))]
         return rows
 
+    def _aggregate_project_candidates(self, memories: list[dict[str, Any]], current_project_id: str) -> list[dict[str, Any]]:
+        """Aggregate whole-DB memory relevance and recent project activity."""
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for memory in memories:
+            if memory["project_id"] != current_project_id and memory["visibility"] == "project":
+                grouped.setdefault(memory["project_id"], []).append(memory)
+        candidates = []
+        current = datetime.now(timezone.utc)
+        for candidate_id, matches in grouped.items():
+            project = self._row("SELECT id,slug,name,description FROM projects WHERE id=?", (candidate_id,))
+            activity = self._row("""SELECT MAX(activity_at) AS activity_at FROM (
+              SELECT MAX(COALESCE(ended_at,started_at)) AS activity_at FROM sessions WHERE project_id=?
+              UNION ALL SELECT MAX(created_at) FROM events WHERE project_id=?
+            )""", (candidate_id, candidate_id))
+            checkpoint = self._row("""SELECT id,title,type,status,updated_at FROM memories
+              WHERE project_id=? AND status IN ('active','disputed') AND type IN ('task','summary')
+              ORDER BY updated_at DESC,id LIMIT 1""", (candidate_id,))
+            relevance_scores = sorted((m["retrieval"]["score"] for m in matches), reverse=True)
+            relevance = sum(score / (index + 1) for index, score in enumerate(relevance_scores))
+            activity_at = activity["activity_at"] if activity else None
+            try:
+                age_days = max(0.0, (current - datetime.fromisoformat(activity_at)).total_seconds() / 86400) if activity_at else None
+            except ValueError:
+                age_days = None
+            recency = 0.0 if age_days is None else 1.0 / (1.0 + age_days / 30.0)
+            candidates.append({**project, "relevance":relevance, "matching_memory_count":len(matches),
+                               "top_memory_score":relevance_scores[0], "recent_activity_at":activity_at,
+                               "recency":recency, "latest_checkpoint":checkpoint,
+                               "score":relevance + recency * .00025})
+        return sorted(candidates, key=lambda item: (-item["score"], item["id"]))
+
     def record_memory_feedback(self, memory_id: str, signal: str) -> dict[str, Any]:
         if signal not in {"retrieved", "used", "helpful", "incorrect"}:
             raise ValueError("signal must be retrieved, used, helpful, or incorrect")
@@ -530,7 +629,7 @@ class MemoryStore:
 
     def get_context(self, project_id: str, query: str, char_budget: int = 6000, statuses: list[str] | None = None,
                     scope_id: str | None = None, event_cursor: int | None = None, event_kinds: list[str] | None = None,
-                    event_limit: int = 20, event_char_budget: int = 2000) -> dict[str, Any]:
+                    event_limit: int = 20, event_char_budget: int = 2000, discover_projects: bool = True) -> dict[str, Any]:
         policy = self.get_policy(project_id)
         requested = max(0, char_budget)
         budget = min(requested, policy["max_context_chars"]); selected, used = [], 0
@@ -556,12 +655,26 @@ class MemoryStore:
             event_result["has_more"] = event_result["has_more"] or not fully_consumed
         memory_budget = budget - event_used
         selected_texts: list[str] = []
-        for m in self.search(project_id, query, policy["max_context_items"] * 3, statuses or ["active", "disputed"], scope_id):
+        candidates = self.search(project_id, query, policy["max_context_items"] * 3, statuses or ["active", "disputed"], scope_id)
+        local_matches = [m for m in candidates if m["project_id"] == project_id]
+        discovery_used = bool(discover_projects and not local_matches)
+        discovery_candidates: list[dict[str, Any]] = []
+        if discovery_used:
+            discovery_candidates = self.search(project_id, query, policy["max_context_items"] * 3, statuses or ["active", "disputed"], None, True)
+            seen = {m["id"] for m in candidates}
+            candidates.extend(m for m in discovery_candidates if m["id"] not in seen)
+        project_candidates = self._aggregate_project_candidates(discovery_candidates, project_id)
+        discovered_owned = [candidate["id"] for candidate in project_candidates]
+        discovery_ambiguous = len(project_candidates) > 1
+        if discovery_ambiguous:
+            candidates = [m for m in candidates if m["project_id"] == project_id or m["visibility"] == "global"]
+        for m in candidates:
             block = f"[{m['status']}/{m['type']}] {m['title']}\n{m['content']}\nsource_events: {', '.join(s['id'] for s in m['sources']) or 'none'}"
             comparable = f"{m['title']} {m['content']}"
             if any(self._text_similarity(comparable, previous) >= .8 for previous in selected_texts): continue
             if used + len(block) + 2 > memory_budget: continue
-            selected.append({"memory_id": m["id"], "text": block, "confidence": m["confidence"], "importance": m["importance"]})
+            selected.append({"memory_id": m["id"], "project_id":m["project_id"], "visibility":m["visibility"],
+                             "text": block, "confidence": m["confidence"], "importance": m["importance"]})
             selected_texts.append(comparable)
             used += len(block) + 2
             if len(selected) >= policy["max_context_items"]: break
@@ -569,6 +682,9 @@ class MemoryStore:
                 "max_items": policy["max_context_items"], "memory_budget":memory_budget,"event_budget":reserved,
                 "used": used + event_used, "memory_used":used,"event_used":event_used,
                 "items": selected, "context": "\n\n".join(i["text"] for i in selected),"recent_events":recent_events,
+                "project_discovery":{"enabled":discover_projects,"used":discovery_used,"ambiguous":discovery_ambiguous,
+                                     "project_ids":list(dict.fromkeys(i["project_id"] for i in selected if i["project_id"] != project_id)),
+                                     "candidates":project_candidates},
                 "event_cursor":event_cursor,"next_event_cursor":event_result["next_cursor"] if event_result else None,
                 "event_snapshot_cursor":event_result["snapshot_cursor"] if event_result else None,
                 "has_more_events":event_result["has_more"] if event_result else False}
@@ -707,6 +823,7 @@ class MemoryStore:
             ("review_conflict", "SELECT c.* FROM review_conflicts c JOIN memories m ON m.id=c.candidate_memory_id WHERE m.project_id=? ORDER BY c.created_at,c.candidate_memory_id,c.existing_memory_id"),
             ("edge", "SELECT * FROM edges WHERE project_id=? ORDER BY created_at,id"),
             ("search_alias", "SELECT * FROM search_aliases WHERE project_id=? ORDER BY term"),
+            ("project_alias", "SELECT * FROM project_aliases WHERE project_id=? ORDER BY kind,normalized"),
             ("policy", "SELECT * FROM project_policies WHERE project_id=?"),
             ("audit_checkpoint", "SELECT * FROM audit_checkpoints WHERE project_id=? ORDER BY through_seq"),
             ("audit", "SELECT * FROM audit_log WHERE project_id=? ORDER BY seq"),
@@ -719,7 +836,7 @@ class MemoryStore:
         """Restore one exported project. Existing project IDs are never overwritten."""
         if not records or records[0].get("record_type") != "project":
             raise ValueError("export must begin with a project record")
-        allowed = {"project", "scope", "session", "event", "memory", "memory_source", "memory_usage", "review_conflict", "edge", "search_alias", "policy", "audit_checkpoint", "audit"}
+        allowed = {"project", "scope", "session", "event", "memory", "memory_source", "memory_usage", "review_conflict", "edge", "search_alias", "project_alias", "policy", "audit_checkpoint", "audit"}
         if any(record.get("record_type") not in allowed or not isinstance(record.get("data"), dict) for record in records):
             raise ValueError("invalid export record")
         project = records[0]["data"]
@@ -736,6 +853,7 @@ class MemoryStore:
             "review_conflict": ("review_conflicts", ["candidate_memory_id","existing_memory_id","similarity","reason","created_at"]),
             "edge": ("edges", ["id","project_id","from_memory_id","to_memory_id","relation","note","created_at"]),
             "search_alias": ("search_aliases", ["project_id","term","aliases_json","created_at","updated_at"]),
+            "project_alias": ("project_aliases", ["project_id","kind","value","normalized","created_at","updated_at"]),
             "audit_checkpoint": ("audit_checkpoints", ["id","project_id","from_seq","through_seq","entry_count","previous_digest","digest","created_at"]),
         }
         counts: dict[str, int] = {}

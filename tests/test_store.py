@@ -98,6 +98,76 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(first["project"]["id"], again["project"]["id"])
         self.assertNotEqual(first["project"]["id"], other["project"]["id"])
 
+    def test_project_identity_resolves_unique_registered_name_to_another_path(self):
+        first_path = Path(self.temp.name) / "first" / "context-memory"
+        second_path = Path(self.temp.name) / "second" / "context-memory"
+        first_path.mkdir(parents=True); second_path.mkdir(parents=True)
+        first = self.store.resolve_project(str(first_path))
+        second = self.store.resolve_project(str(second_path))
+        self.assertEqual(second["project"]["id"], first["project"]["id"])
+        self.assertEqual(second["matched_by"], "name")
+        aliases = self.store.list_project_aliases(first["project"]["id"])
+        self.assertEqual(len([alias for alias in aliases if alias["kind"] == "path"]), 2)
+
+    def test_context_falls_back_to_cross_project_and_always_merges_global(self):
+        official = self.store.create_project("official")
+        empty = self.store.create_project("empty")
+        shared = self.store.create_project("shared")
+        checkpoint = self.store.upsert_memory(official["id"], "Implementation checkpoint",
+                                              "Cross project discovery is the next implementation checkpoint", "task", "active")
+        global_memory = self.store.upsert_memory(shared["id"], "Global preference",
+                                                "Cross project replies use Korean", "preference", "active", visibility="global")
+        result = self.store.get_context(empty["id"], "Cross project", 2000)
+        self.assertTrue(result["project_discovery"]["used"])
+        self.assertEqual({item["memory_id"] for item in result["items"]}, {checkpoint["id"], global_memory["id"]})
+        self.assertEqual(set(result["project_discovery"]["project_ids"]), {official["id"], shared["id"]})
+
+    def test_context_keeps_project_boundary_when_local_results_exist(self):
+        local = self.store.create_project("local-boundary")
+        other = self.store.create_project("other-boundary")
+        own = self.store.upsert_memory(local["id"], "Local checkpoint", "Use SQLite checkpoint", "task", "active")
+        self.store.upsert_memory(other["id"], "Other checkpoint", "Use SQLite checkpoint", "task", "active")
+        result = self.store.get_context(local["id"], "SQLite checkpoint", 2000)
+        self.assertFalse(result["project_discovery"]["used"])
+        self.assertFalse(result["project_discovery"]["ambiguous"])
+        self.assertEqual(result["project_discovery"]["project_ids"], [])
+        self.assertEqual([item["memory_id"] for item in result["items"]], [own["id"]])
+
+    def test_cross_project_discovery_searches_whole_db_and_aggregates_projects(self):
+        hinted = self.store.create_project("hinted-empty", "context-memory")
+        official = self.store.create_project("official-memory", "context-memory")
+        unrelated = self.store.create_project("asset-manager", "asset-manager")
+        session = self.store.start_session(official["id"], "codex", external_id="whole-db")
+        expected = self.store.upsert_memory(official["id"], "Next checkpoint", "Implement project discovery discovery", "task", "active")
+        self.store.upsert_memory(unrelated["id"], "Next checkpoint", "Implement project discovery", "task", "active")
+        result = self.store.get_context(hinted["id"], "project discovery", 2000)
+        self.assertTrue(result["project_discovery"]["ambiguous"])
+        self.assertEqual(result["items"], [])
+        candidates = result["project_discovery"]["candidates"]
+        self.assertEqual({candidate["id"] for candidate in candidates}, {official["id"], unrelated["id"]})
+        official_candidate = next(candidate for candidate in candidates if candidate["id"] == official["id"])
+        self.assertEqual(official_candidate["latest_checkpoint"]["id"], expected["id"])
+        self.assertEqual(official_candidate["recent_activity_at"], session["started_at"])
+        self.assertGreater(official_candidate["relevance"], 0)
+
+    def test_memory_search_discovery_is_not_limited_by_matching_project_name(self):
+        hinted = self.store.create_project("whole-db-hint", "context-memory")
+        unrelated = self.store.create_project("whole-db-target", "asset-manager")
+        expected = self.store.upsert_memory(unrelated["id"], "Rare deployment clue", "quasar zebrafish rollout", "fact", "active")
+        results = self.store.search(hinted["id"], "quasar zebrafish", discover_projects=True)
+        self.assertEqual([memory["id"] for memory in results], [expected["id"]])
+
+    def test_ambiguous_project_discovery_returns_candidates_without_mixing_memories(self):
+        hinted = self.store.create_project("ambiguous-hint", "context-memory")
+        first = self.store.create_project("ambiguous-first", "context-memory")
+        second = self.store.create_project("ambiguous-second", "context-memory")
+        self.store.upsert_memory(first["id"], "Checkpoint", "Implement registry discovery", "task", "active")
+        self.store.upsert_memory(second["id"], "Checkpoint", "Implement registry discovery", "task", "active")
+        result = self.store.get_context(hinted["id"], "registry discovery", 2000)
+        self.assertTrue(result["project_discovery"]["ambiguous"])
+        self.assertEqual(result["items"], [])
+        self.assertEqual({p["id"] for p in result["project_discovery"]["candidates"]}, {first["id"], second["id"]})
+
     def test_export_project_contains_provenance_and_audit(self):
         p = self.store.create_project("export-demo")
         e = self.store.record_event(p["id"], "decision", "Use an evidence ledger")
