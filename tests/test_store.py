@@ -78,7 +78,7 @@ class StoreTests(unittest.TestCase):
                 {"name":"integration", "status":"skipped"},
             ])
         objective = result["objective"]
-        self.assertEqual(result["schema_version"], 2)
+        self.assertEqual(result["schema_version"], 3)
         self.assertEqual(objective["repository"]["branch"], "main")
         self.assertTrue(objective["repository"]["dirty"])
         self.assertEqual({item["path"] for item in objective["repository"]["changed_files"]}, {"tracked.txt", "new.txt"})
@@ -125,6 +125,30 @@ class StoreTests(unittest.TestCase):
         subprocess.run(["git", "commit", "-m", "initial"], cwd=repository, check=True, capture_output=True)
         repository_signal = self.store.evaluate_checkpoint(p["id"], repository_path=str(repository))
         self.assertTrue(repository_signal["signals"]["repository_changed"])
+
+    def test_checkpoint_evaluation_suppresses_unchanged_cooldown_and_hysteresis(self):
+        p = self.store.create_project("checkpoint-storm-control")
+        self.store.set_policy(p["id"], checkpoint_cooldown_seconds=300, checkpoint_hysteresis=.05)
+        self.store.record_event(p["id"], "observation", "initial progress")
+        created = self.store.create_checkpoint(
+            p["id"], "interim", "context_budget", "Ship safely", "storm-1",
+            completed=["core"], next_step="tests", context_usage=.61)
+        unchanged = self.store.evaluate_checkpoint(
+            p["id"], context_usage=.8, goal="Ship safely", completed=["core"], next_step="tests")
+        self.assertFalse(unchanged["should_checkpoint"])
+        self.assertEqual(unchanged["suppression"], "unchanged_recovery_state")
+        self.assertEqual(unchanged["recovery_hash"], created["recovery_hash"])
+        self.assertEqual(unchanged["suggested_idempotency_key"],
+                         self.store.evaluate_checkpoint(p["id"], context_usage=.8, goal="Ship safely", completed=["core"], next_step="tests")["suggested_idempotency_key"])
+        self.store.record_event(p["id"], "observation", "more progress")
+        cooldown = self.store.evaluate_checkpoint(p["id"], context_usage=.8, goal="Ship safely", completed=["core"], next_step="tests")
+        self.assertEqual(cooldown["suppression"], "cooldown")
+        self.store.set_policy(p["id"], checkpoint_cooldown_seconds=0)
+        hysteresis = self.store.evaluate_checkpoint(p["id"], context_usage=.64, goal="Ship safely", completed=["core"], next_step="tests")
+        self.assertEqual(hysteresis["suppression"], "hysteresis")
+        advanced = self.store.evaluate_checkpoint(p["id"], context_usage=.67, goal="Ship safely", completed=["core"], next_step="tests")
+        self.assertTrue(advanced["should_checkpoint"])
+        self.assertEqual(advanced["trigger"], "soft_context_usage_after_material_change")
 
 
     def test_message_events_have_stable_project_cursors_and_paginate(self):

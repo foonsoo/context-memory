@@ -127,6 +127,12 @@ class CLITests(unittest.TestCase):
             self.assertEqual(checkpoint["mode"], "final")
             self.assertEqual(checkpoint["completed"], ["All tests passed"])
             self.assertEqual(checkpoint["objective"]["test_results"][0]["name"], "CLI test")
+            evaluated_command = [sys.executable, "-m", "context_memory.cli", "--db", str(database), "checkpoint-evaluate",
+                                 project["id"], "--context-usage", ".9", "--goal", "Ship checkpoint core",
+                                 "--completed", "All tests passed", "--next-step", "Add repository facts"]
+            evaluated = json.loads(subprocess.run(evaluated_command, cwd=Path(__file__).parents[1], env=env,
+                                                  check=True, capture_output=True, text=True).stdout)
+            self.assertEqual(evaluated["suppression"], "unchanged_recovery_state")
 
 
 if __name__ == "__main__":

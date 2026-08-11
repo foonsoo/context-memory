@@ -38,6 +38,12 @@ class MCPTests(unittest.TestCase):
         checkpoint = checkpointed["result"]["structuredContent"]["result"]
         self.assertEqual(checkpoint["mode"], "interim")
         self.assertEqual(checkpoint["objective"]["test_results"][0]["status"], "passed")
+        evaluated = self.server.handle({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"checkpoint_evaluate","arguments":{
+            "project_id":value["id"],"context_usage":.9,"goal":"Resume MCP test"
+        }}})["result"]["structuredContent"]["result"]
+        self.assertFalse(evaluated["should_checkpoint"])
+        self.assertEqual(evaluated["suppression"], "unchanged_recovery_state")
+        self.assertTrue(evaluated["suggested_idempotency_key"].startswith("checkpoint:"))
 
     def test_notification_has_no_response(self):
         self.assertIsNone(self.server.handle({"jsonrpc":"2.0","method":"notifications/initialized"}))

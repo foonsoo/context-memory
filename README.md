@@ -293,7 +293,7 @@ Bearer authentication without TLS is not safe across an untrusted network. Remot
 }
 ```
 
-4. For long-running work, call `checkpoint_evaluate` to apply configurable soft/hard context thresholds or client-neutral elapsed/event/repository/age fallbacks, then explicitly call `checkpoint_create` with a unique idempotency key when recommended. Creation records caller-supplied recovery state as an immutable checkpoint event without mutating Git, memories, or session lifecycle. Pass `repository_path` to capture HEAD, branch, dirty state, and changed files directly from Git, and pass structured `test_results` for explicitly observed test outcomes. These objective facts live under `objective`, separate from semantic goal/progress summaries.
+4. For long-running work, call `checkpoint_evaluate` to apply configurable soft/hard context thresholds or client-neutral elapsed/event/repository/age fallbacks. It suppresses unchanged recovery state and repeated signals using content hashing, cooldown, and hysteresis, and returns a stable `suggested_idempotency_key`. When recommended, pass that key to `checkpoint_create`. Creation records caller-supplied recovery state as an immutable checkpoint event without mutating Git, memories, or session lifecycle. Pass `repository_path` to capture HEAD, branch, dirty state, and changed files directly from Git, and pass structured `test_results` for explicitly observed test outcomes. These objective facts live under `objective`, separate from semantic goal/progress summaries.
 5. End the session. In a new Codex task, call `get_context` with `query: "HTTP server configuration"` and `char_budget: 4000`. The returned block cites `EVENT_UUID`; call `get_source` before relying on it when accuracy matters.
 
 For a shell-only demo, IDs can be captured with a short Python script or inspected from the JSON output:
@@ -329,7 +329,7 @@ Project hooks require a trusted project and explicit review in Codex. Use `/hook
 | `session_start`, `session_end` | Cross-client session lifecycle |
 | `record_event` | Immutable raw evidence; `kind=message` is unverified inter-session coordination |
 | `checkpoint_create` | Idempotent explicit interim/final recovery marker with semantic progress, cursor, optional context usage, objective Git facts, and supplied test results |
-| `checkpoint_evaluate` | Read-only configured context threshold and client-neutral fallback evaluation |
+| `checkpoint_evaluate` | Read-only threshold/fallback evaluation with cooldown, hysteresis, recovery hashing, and a stable idempotency key |
 | `read_events_since` | Cursor-based incremental event/message polling with pagination |
 | `memory_upsert` | Proposed/active derived memory with source event IDs |
 | `memory_transition` | Activate, supersede, dispute, expire, or reject; add relationship edge |

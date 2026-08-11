@@ -376,11 +376,14 @@ class MemoryStore:
         if source_event_cursor is None: source_event_cursor = cursor
         if source_event_cursor < 0 or source_event_cursor > cursor:
             raise ValueError("source_event_cursor must reference an existing project event cursor")
-        payload = {"schema_version": 2, "mode": mode, "reason": reason, "goal": goal.strip(),
+        recovery_hash = self._checkpoint_recovery_hash(
+            project_id, source_event_cursor, goal, completed, next_step, blockers, repository)
+        payload = {"schema_version": 3, "mode": mode, "reason": reason, "goal": goal.strip(),
                    "completed": [item.strip() for item in completed],
                    "next_step": next_step.strip() if next_step else None,
                    "blockers": [item.strip() for item in blockers],
                    "source_event_cursor": source_event_cursor, "context_usage": context_usage,
+                   "recovery_hash": recovery_hash,
                    "objective": {"repository": repository, "test_results": tests}}
         content = canonical(payload); created_at = now()
         with self.tx() as cx:
@@ -411,7 +414,9 @@ class MemoryStore:
 
     def evaluate_checkpoint(self, project_id: str, context_usage: float | None = None,
                             session_id: str | None = None,
-                            repository_path: str | None = None) -> dict[str, Any]:
+                            repository_path: str | None = None, goal: str = "",
+                            completed: list[str] | None = None, next_step: str | None = None,
+                            blockers: list[str] | None = None) -> dict[str, Any]:
         """Evaluate portable checkpoint triggers without writing a checkpoint."""
         if context_usage is not None and not 0 <= context_usage <= 1:
             raise ValueError("context_usage must be between 0 and 1")
@@ -425,9 +430,10 @@ class MemoryStore:
         cursor = self._row("SELECT next_seq-1 AS value FROM project_event_cursors WHERE project_id=?", (project_id,))
         if not cursor: raise KeyError("project not found")
         current_repository = self._repository_facts(repository_path) if repository_path else None
+        latest_payload = json.loads(latest["metadata_json"]).get("checkpoint", {}) if latest else {}
         prior_repository = None
         if latest:
-            prior_repository = json.loads(latest["metadata_json"]).get("checkpoint", {}).get("objective", {}).get("repository")
+            prior_repository = latest_payload.get("objective", {}).get("repository")
         repository_changed = bool(current_repository and (
             prior_repository is None or any(current_repository.get(key) != prior_repository.get(key)
                                              for key in ("head", "dirty", "changed_files"))))
@@ -439,6 +445,9 @@ class MemoryStore:
         checkpoint_age = int((current_time - datetime.fromisoformat(latest["created_at"])).total_seconds()) if latest else None
         session_elapsed = int((current_time - datetime.fromisoformat(session["started_at"])).total_seconds()) if session else None
         material_change = repository_changed or durable_event_count > 0
+        recovery_hash = self._checkpoint_recovery_hash(
+            project_id, cursor["value"], goal, completed or [], next_step, blockers or [], current_repository)
+        unchanged = latest_payload.get("recovery_hash") == recovery_hash
         signals = {
             "context_usage": context_usage,
             "material_change": material_change,
@@ -446,6 +455,7 @@ class MemoryStore:
             "durable_event_count": durable_event_count,
             "session_elapsed_seconds": session_elapsed,
             "checkpoint_age_seconds": checkpoint_age,
+            "recoverable_state_changed": not unchanged,
         }
         trigger = None
         mode = None
@@ -463,11 +473,35 @@ class MemoryStore:
             ]
             trigger = next((name for matched, name in fallback if matched), None)
             if trigger: mode = "interim"
+        suppression = None
+        if trigger and unchanged:
+            suppression = "unchanged_recovery_state"
+        elif trigger and checkpoint_age is not None and checkpoint_age < policy["checkpoint_cooldown_seconds"]:
+            suppression = "cooldown"
+        elif trigger == "soft_context_usage_after_material_change" and latest_payload.get("context_usage") is not None:
+            rearm_usage = min(1.0, latest_payload["context_usage"] + policy["checkpoint_hysteresis"])
+            if context_usage < rearm_usage: suppression = "hysteresis"
+        if suppression:
+            trigger, mode = None, None
+        suggested_key = f"checkpoint:{project_id}:{recovery_hash}"
         return {"project_id": project_id, "should_checkpoint": trigger is not None,
                 "recommended_mode": mode, "recommended_reason": "context_budget" if context_usage is not None and trigger else ("elapsed" if trigger in {"elapsed", "checkpoint_age"} else "material_change" if trigger else None),
-                "trigger": trigger, "signals": signals,
-                "thresholds": {key: policy[key] for key in ("checkpoint_soft_usage", "checkpoint_hard_usage", "checkpoint_elapsed_seconds", "checkpoint_event_count", "checkpoint_max_age_seconds")},
+                "trigger": trigger, "suppression": suppression, "signals": signals,
+                "thresholds": {key: policy[key] for key in ("checkpoint_soft_usage", "checkpoint_hard_usage", "checkpoint_elapsed_seconds", "checkpoint_event_count", "checkpoint_max_age_seconds", "checkpoint_cooldown_seconds", "checkpoint_hysteresis")},
+                "recovery_hash": recovery_hash, "suggested_idempotency_key": suggested_key,
                 "latest_checkpoint_id": latest["id"] if latest else None, "event_cursor": cursor["value"]}
+
+    def _checkpoint_recovery_hash(self, project_id: str, cursor: int, goal: str,
+                                  completed: list[str], next_step: str | None,
+                                  blockers: list[str], repository: dict[str, Any] | None) -> str:
+        event_hashes = [row[0] for row in self.conn.execute(
+            "SELECT content_hash FROM events WHERE project_id=? AND event_seq<=? AND kind<>'checkpoint' ORDER BY event_seq",
+            (project_id, cursor))]
+        state = {"goal":goal.strip(), "completed":[item.strip() for item in completed],
+                 "next_step":next_step.strip() if next_step else None,
+                 "blockers":[item.strip() for item in blockers], "repository":repository,
+                 "event_hashes":event_hashes}
+        return hashlib.sha256(canonical(state).encode()).hexdigest()
 
     @staticmethod
     def _normalize_test_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -926,16 +960,19 @@ class MemoryStore:
                    audit_keep_entries: int | None = None, terminal_memory_days: int | None = None,
                    checkpoint_soft_usage: float | None = None, checkpoint_hard_usage: float | None = None,
                    checkpoint_elapsed_seconds: int | None = None, checkpoint_event_count: int | None = None,
-                   checkpoint_max_age_seconds: int | None = None) -> dict[str, Any]:
+                   checkpoint_max_age_seconds: int | None = None, checkpoint_cooldown_seconds: int | None = None,
+                   checkpoint_hysteresis: float | None = None) -> dict[str, Any]:
         current = self.get_policy(project_id)
         values = {"max_context_chars":max_context_chars,"max_context_items":max_context_items,
                   "audit_keep_entries":audit_keep_entries,"terminal_memory_days":terminal_memory_days,
                   "checkpoint_soft_usage":checkpoint_soft_usage,"checkpoint_hard_usage":checkpoint_hard_usage,
                   "checkpoint_elapsed_seconds":checkpoint_elapsed_seconds,"checkpoint_event_count":checkpoint_event_count,
-                  "checkpoint_max_age_seconds":checkpoint_max_age_seconds}
+                  "checkpoint_max_age_seconds":checkpoint_max_age_seconds,"checkpoint_cooldown_seconds":checkpoint_cooldown_seconds,
+                  "checkpoint_hysteresis":checkpoint_hysteresis}
         limits = {"max_context_chars":(1000,20000),"max_context_items":(1,50),"audit_keep_entries":(100,100000),"terminal_memory_days":(1,3650),
                   "checkpoint_soft_usage":(0,1),"checkpoint_hard_usage":(0,1),"checkpoint_elapsed_seconds":(60,86400),
                   "checkpoint_event_count":(1,10000),"checkpoint_max_age_seconds":(60,604800)}
+        limits.update({"checkpoint_cooldown_seconds":(0,86400),"checkpoint_hysteresis":(0,.5)})
         for key, value in values.items():
             if value is not None:
                 low, high = limits[key]
@@ -949,7 +986,8 @@ class MemoryStore:
               audit_keep_entries=:audit_keep_entries,terminal_memory_days=:terminal_memory_days,
               checkpoint_soft_usage=:checkpoint_soft_usage,checkpoint_hard_usage=:checkpoint_hard_usage,
               checkpoint_elapsed_seconds=:checkpoint_elapsed_seconds,checkpoint_event_count=:checkpoint_event_count,
-              checkpoint_max_age_seconds=:checkpoint_max_age_seconds,updated_at=:updated_at WHERE project_id=:project_id""", current)
+              checkpoint_max_age_seconds=:checkpoint_max_age_seconds,checkpoint_cooldown_seconds=:checkpoint_cooldown_seconds,
+              checkpoint_hysteresis=:checkpoint_hysteresis,updated_at=:updated_at WHERE project_id=:project_id""", current)
             self._audit(cx, project_id, "policy", project_id, "updated", current)
         return current
 
@@ -1112,14 +1150,17 @@ class MemoryStore:
                 elif kind == "policy":
                     defaults = {"checkpoint_soft_usage":.60,"checkpoint_hard_usage":.75,
                                 "checkpoint_elapsed_seconds":1800,"checkpoint_event_count":25,
-                                "checkpoint_max_age_seconds":3600}
+                                "checkpoint_max_age_seconds":3600,"checkpoint_cooldown_seconds":300,
+                                "checkpoint_hysteresis":.05}
                     for name, value in defaults.items(): data.setdefault(name, value)
                     names = ["max_context_chars","max_context_items","audit_keep_entries","terminal_memory_days",
                              "checkpoint_soft_usage","checkpoint_hard_usage","checkpoint_elapsed_seconds",
-                             "checkpoint_event_count","checkpoint_max_age_seconds","updated_at","project_id"]
+                             "checkpoint_event_count","checkpoint_max_age_seconds","checkpoint_cooldown_seconds",
+                             "checkpoint_hysteresis","updated_at","project_id"]
                     cx.execute("""UPDATE project_policies SET max_context_chars=?,max_context_items=?,audit_keep_entries=?,
                       terminal_memory_days=?,checkpoint_soft_usage=?,checkpoint_hard_usage=?,checkpoint_elapsed_seconds=?,
-                      checkpoint_event_count=?,checkpoint_max_age_seconds=?,updated_at=? WHERE project_id=?""", tuple(data[name] for name in names))
+                      checkpoint_event_count=?,checkpoint_max_age_seconds=?,checkpoint_cooldown_seconds=?,checkpoint_hysteresis=?,
+                      updated_at=? WHERE project_id=?""", tuple(data[name] for name in names))
                 else:
                     table, names = columns[kind]
                     cx.execute(f"INSERT INTO {table}({','.join(names)}) VALUES({','.join('?' for _ in names)})", tuple(data[name] for name in names))
