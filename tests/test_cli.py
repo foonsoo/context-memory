@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from context_memory.cli import doctor, init_workspace, mcp_config
+from context_memory.cli import doctor, init_workspace, init_workspaces, mcp_config
 from context_memory.store import MemoryStore
 
 
@@ -12,6 +12,10 @@ class CLITests(unittest.TestCase):
         self.assertEqual(value["type"], "stdio")
         self.assertEqual(value["command"], "uvx")
         self.assertEqual(value["args"][:2], ["context-memory", "--db"])
+        pinned = mcp_config("/tmp/memory.db", package="git+https://github.com/example/context-memory.git@" + "a" * 40)
+        self.assertEqual(pinned["args"][:2], ["--from", "git+https://github.com/example/context-memory.git@" + "a" * 40])
+        with self.assertRaisesRegex(ValueError, "pinned"):
+            mcp_config("/tmp/memory.db", package="git+https://github.com/example/context-memory.git")
 
     def test_init_is_idempotent_and_client_neutral(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -34,8 +38,41 @@ class CLITests(unittest.TestCase):
             store = MemoryStore(Path(temp) / "memory.db")
             try:
                 value = init_workspace(store, str(root), "claude-code", "uvx", False)
-                self.assertEqual(value["register_command"][:5], ["claude", "mcp", "add-json", "--scope", "project"])
-                self.assertNotIn("registered", value)
+                self.assertEqual(value["register_command"][:5], ["claude", "mcp", "add-json", "--scope", "user"])
+                self.assertFalse(value["registered"])
+                self.assertEqual(value["status"], "planned")
+            finally:
+                store.close()
+
+    def test_multi_client_plan_and_cursor_preserving_registration(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "workspace"; root.mkdir()
+            cursor = Path(temp) / ".cursor" / "mcp.json"; cursor.parent.mkdir()
+            cursor.write_text('{"mcpServers":{"existing":{"command":"keep"}},"other":true}\n', encoding="utf-8")
+            store = MemoryStore(Path(temp) / "memory.db")
+            try:
+                planned = init_workspaces(store, str(root), ["claude-code","cursor","vscode","craft"], "installed", False, cursor_config=cursor)
+                self.assertEqual([x["client"] for x in planned["clients"]], ["claude-code","cursor","vscode","craft"])
+                self.assertEqual(planned["clients"][-1]["status"], "manual")
+                registered = init_workspaces(store, str(root), ["cursor"], "installed", True, cursor_config=cursor)
+                self.assertTrue(registered["clients"][0]["registered"])
+                saved = __import__("json").loads(cursor.read_text(encoding="utf-8"))
+                self.assertEqual(saved["mcpServers"]["existing"]["command"], "keep")
+                self.assertEqual(saved["mcpServers"]["context-memory"]["command"], "context-memory")
+                self.assertTrue(saved["other"])
+                self.assertTrue(cursor.with_suffix(".json.bak").exists())
+            finally:
+                store.close()
+
+    def test_one_client_failure_does_not_abort_batch(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "workspace"; root.mkdir()
+            cursor = Path(temp) / "mcp.json"; cursor.write_text("not-json", encoding="utf-8")
+            store = MemoryStore(Path(temp) / "memory.db")
+            try:
+                result = init_workspaces(store, str(root), ["cursor","craft"], "installed", True, cursor_config=cursor)
+                self.assertEqual(result["clients"][0]["status"], "failed")
+                self.assertEqual(result["clients"][1]["status"], "manual")
             finally:
                 store.close()
 

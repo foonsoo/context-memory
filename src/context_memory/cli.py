@@ -7,6 +7,8 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
+import re
 from pathlib import Path
 
 from .mcp import MCPServer
@@ -21,10 +23,13 @@ def output(value: object) -> None:
     print(json.dumps(value, ensure_ascii=False, indent=2))
 
 
-def mcp_config(db_path: str, launcher: str = "uvx") -> dict[str, object]:
+def mcp_config(db_path: str, launcher: str = "uvx", package: str = "context-memory") -> dict[str, object]:
     """Return a portable stdio MCP definition understood by most clients."""
     if launcher == "uvx":
-        command, args = "uvx", ["context-memory", "--db", db_path, "serve", "--transport", "stdio"]
+        if package.startswith("git+") and not re.search(r"@[0-9a-fA-F]{40}(?:#|$)", package):
+            raise ValueError("Git uvx sources must be pinned to a full 40-character commit SHA")
+        prefix = ["context-memory"] if package == "context-memory" else ["--from", package, "context-memory"]
+        command, args = "uvx", [*prefix, "--db", db_path, "serve", "--transport", "stdio"]
     elif launcher == "installed":
         command, args = "context-memory", ["--db", db_path, "serve", "--transport", "stdio"]
     else:
@@ -32,10 +37,107 @@ def mcp_config(db_path: str, launcher: str = "uvx") -> dict[str, object]:
     return {"type": "stdio", "command": command, "args": args}
 
 
-def init_workspace(store: MemoryStore, workspace: str, client: str, launcher: str, register: bool) -> dict[str, object]:
+def _client_command(client: str) -> str | None:
+    names = {"claude-code": ["claude"], "codex": ["codex"], "vscode": ["code"], "craft": ["craft", "craft-agents"], "cursor": ["cursor"]}
+    for name in names.get(client, []):
+        if found := shutil.which(name): return found
+    mac_apps = {
+        "vscode": "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code",
+        "cursor": "/Applications/Cursor.app/Contents/Resources/app/bin/cursor",
+        "craft": "/Applications/Craft Agents.app/Contents/MacOS/Craft Agents",
+    }
+    candidate = mac_apps.get(client)
+    return candidate if candidate and Path(candidate).exists() else None
+
+
+def detect_clients() -> list[str]:
+    return [name for name in ("claude-code", "codex", "cursor", "vscode", "craft") if _client_command(name)]
+
+
+def _write_cursor_global(config: dict[str, object], target: Path | None = None) -> dict[str, object]:
+    path = target or Path.home() / ".cursor" / "mcp.json"
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    current: dict[str, object] = {}
+    backup = None
+    if path.exists():
+        current = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(current, dict): raise ValueError(f"Cursor MCP config must be a JSON object: {path}")
+        backup = path.with_suffix(".json.bak")
+        index = 1
+        while backup.exists():
+            backup = path.with_suffix(f".json.bak.{index}"); index += 1
+        shutil.copy2(path, backup)
+    servers = current.setdefault("mcpServers", {})
+    if not isinstance(servers, dict): raise ValueError(f"Cursor mcpServers must be a JSON object: {path}")
+    servers["context-memory"] = {k: v for k, v in config.items() if k in {"command", "args", "env"}}
+    fd, temporary = tempfile.mkstemp(prefix=".mcp-", suffix=".json", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(current, stream, ensure_ascii=False, indent=2); stream.write("\n")
+        os.chmod(temporary, 0o600); os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary): os.unlink(temporary)
+    return {"config_path": str(path), "backup": str(backup) if backup else None}
+
+
+def _register_client(client: str, config: dict[str, object], root: str, register: bool, cursor_config: Path | None = None) -> dict[str, object]:
+    command, args = str(config["command"]), [str(x) for x in config["args"]]
+    detected = bool(_client_command(client))
+    result: dict[str, object] = {"client": client, "detected": detected, "registered": False}
+    if client == "claude-code":
+        definition = json.dumps(config, ensure_ascii=False, separators=(",", ":"))
+        register_command = ["claude", "mcp", "add-json", "--scope", "user", "context-memory", definition]
+    elif client == "codex":
+        register_command = ["codex", "mcp", "add", "context_memory", "--", command, *args]
+    elif client == "vscode":
+        executable = _client_command(client) or "code"
+        definition = json.dumps({"name":"context-memory","command":command,"args":args}, ensure_ascii=False, separators=(",", ":"))
+        register_command = [executable, "--add-mcp", definition]
+    elif client == "cursor":
+        result["config_path"] = str(cursor_config or Path.home() / ".cursor" / "mcp.json")
+        if register:
+            result.update(_write_cursor_global(config, cursor_config)); result["registered"] = True; result["status"] = "registered"
+        else: result["status"] = "planned"
+        return result
+    elif client == "craft":
+        result.update({"status":"manual", "next_step":"In Craft Agents, ask the agent to add a local MCP source and paste the provided mcp_json. Craft sources are workspace-scoped.", "mcp_json":config})
+        return result
+    elif client == "generic":
+        result.update({"status":"manual", "next_step":"Add the provided MCP JSON to the client's user-level server configuration.", "mcp_json":config})
+        return result
+    else:
+        raise ValueError(f"unsupported client: {client}")
+    result["register_command"] = register_command
+    if register:
+        executable = _client_command(client)
+        if not executable:
+            result.update({"status":"unavailable", "error":f"{client} executable was not found"}); return result
+        register_command[0] = executable
+        try:
+            subprocess.run(register_command, cwd=root, check=True, capture_output=True, text=True)
+            result.update({"registered":True, "status":"registered"})
+        except subprocess.CalledProcessError as exc:
+            result.update({"status":"failed", "error":(exc.stderr or exc.stdout or str(exc)).strip()})
+    else: result["status"] = "planned"
+    return result
+
+
+def _safe_register_client(client: str, config: dict[str, object], root: str, register: bool, cursor_config: Path | None) -> dict[str, object]:
+    try:
+        return _register_client(client, config, root, register, cursor_config)
+    except Exception as exc:
+        return {"client":client, "detected":bool(_client_command(client)), "registered":False, "status":"failed", "error":str(exc)}
+
+
+def init_workspaces(store: MemoryStore, workspace: str, clients: list[str], launcher: str, register: bool,
+                    package: str = "context-memory", cursor_config: Path | None = None) -> dict[str, object]:
     root = str(Path(workspace).expanduser().resolve())
     resolved = store.resolve_project(root)
-    config = mcp_config(str(store.path), launcher)
+    config = mcp_config(str(store.path), launcher, package)
+    expanded = detect_clients() if clients == ["auto"] else clients
+    if not expanded: expanded = ["generic"]
+    invalid = sorted(set(expanded) - {"generic","claude-code","codex","cursor","vscode","craft"})
+    if invalid: raise ValueError("unsupported clients: " + ", ".join(invalid))
     result: dict[str, object] = {
         "ready": True,
         "database": str(store.path),
@@ -43,29 +145,17 @@ def init_workspace(store: MemoryStore, workspace: str, client: str, launcher: st
         "project": resolved["project"],
         "scope_id": resolved["scope_id"],
         "mcp": {"mcpServers": {"context-memory": config}},
+        "clients": [_safe_register_client(client, config, root, register, cursor_config) for client in dict.fromkeys(expanded)],
     }
-    command, args = str(config["command"]), [str(x) for x in config["args"]]
-    if client == "claude-code":
-        definition = json.dumps(config, ensure_ascii=False, separators=(",", ":"))
-        register_command = ["claude", "mcp", "add-json", "--scope", "project", "context-memory", definition]
-        result["register_command"] = register_command
-        if register:
-            if not shutil.which("claude"):
-                raise RuntimeError("Claude Code CLI was not found; run register_command manually after installing it")
-            subprocess.run(register_command, cwd=root, check=True)
-            result["registered"] = True
-    elif client == "codex":
-        register_command = ["codex", "mcp", "add", "context_memory", "--", command, *args]
-        result["register_command"] = register_command
-        if register:
-            if not shutil.which("codex"):
-                raise RuntimeError("Codex CLI was not found; run register_command manually after installing it")
-            subprocess.run(register_command, cwd=root, check=True)
-            result["registered"] = True
-    elif client == "craft":
-        result["next_step"] = "Paste the mcp object into Craft Agents as a local stdio source, or ask the agent to add this MCP JSON."
-    else:
-        result["next_step"] = "Add mcp.mcpServers.context-memory to any MCP client's server configuration."
+    return result
+
+
+def init_workspace(store: MemoryStore, workspace: str, client: str, launcher: str, register: bool) -> dict[str, object]:
+    """Backward-compatible single-client wrapper."""
+    result = init_workspaces(store, workspace, [client], launcher, register)
+    adapter = result["clients"][0]
+    for key in ("register_command", "registered", "next_step", "status", "error"):
+        if key in adapter: result[key] = adapter[key]
     return result
 
 
@@ -95,8 +185,11 @@ def main() -> None:
     serve.add_argument("--token")
     init = sub.add_parser("init", help="Initialize a workspace and print/register portable MCP configuration")
     init.add_argument("--workspace", default=os.getcwd())
-    init.add_argument("--client", choices=["generic", "claude-code", "codex", "craft"], default="generic")
+    client_group = init.add_mutually_exclusive_group()
+    client_group.add_argument("--client", choices=["generic", "claude-code", "codex", "cursor", "vscode", "craft"], help="Single-client compatibility option")
+    client_group.add_argument("--clients", help="Comma-separated clients or 'auto' (claude-code,codex,cursor,vscode,craft)")
     init.add_argument("--launcher", choices=["uvx", "installed", "python"], default="uvx")
+    init.add_argument("--package", default="context-memory", help="uvx package or git+ URL pinned to a full commit SHA")
     init.add_argument("--register", action="store_true")
     sub.add_parser("doctor", help="Check the database, FTS5, and local permissions")
     project = sub.add_parser("project-create"); project.add_argument("slug"); project.add_argument("--name"); project.add_argument("--description", default="")
@@ -112,6 +205,15 @@ def main() -> None:
     import_cmd.add_argument("input")
     repair = sub.add_parser("repair", help="Rebuild the disposable FTS projection from authoritative memories")
     repair.add_argument("--project-id")
+    policy = sub.add_parser("policy", help="Read or update project operational bounds")
+    policy.add_argument("project_id"); policy.add_argument("--max-context-chars", type=int); policy.add_argument("--max-context-items", type=int)
+    policy.add_argument("--audit-keep-entries", type=int); policy.add_argument("--terminal-memory-days", type=int)
+    maintain = sub.add_parser("maintain", help="Plan/apply terminal-memory cleanup and checkpointed audit compaction")
+    maintain.add_argument("project_id"); maintain.add_argument("--apply", action="store_true")
+    status_cmd = sub.add_parser("status", help="Show project policy, storage counts, audit checkpoints, and search health")
+    status_cmd.add_argument("project_id")
+    backup = sub.add_parser("backup", help="Create one consistent integrity-checked SQLite snapshot")
+    backup.add_argument("--output", required=True)
     args = p.parse_args()
     store = MemoryStore(args.db)
     try:
@@ -119,7 +221,9 @@ def main() -> None:
             token = args.token or os.environ.get("CONTEXT_MEMORY_TOKEN")
             server = MCPServer(store)
             server.serve_stdio() if args.transport == "stdio" else server.serve_http(args.host, args.port, token)
-        elif args.command == "init": output(init_workspace(store, args.workspace, args.client, args.launcher, args.register))
+        elif args.command == "init":
+            clients = [x.strip() for x in args.clients.split(",") if x.strip()] if args.clients else [args.client or "generic"]
+            output(init_workspaces(store, args.workspace, clients, args.launcher, args.register, args.package))
         elif args.command == "doctor": output(doctor(store))
         elif args.command == "project-create": output(store.create_project(args.slug, args.name, args.description))
         elif args.command == "project-list": output(store.list_projects())
@@ -141,6 +245,13 @@ def main() -> None:
             records = [json.loads(line) for line in source_path.read_text(encoding="utf-8").splitlines() if line.strip()]
             output({"ok": True, **store.import_project(records)})
         elif args.command == "repair": output(store.rebuild_fts(args.project_id))
+        elif args.command == "policy":
+            changes = {"max_context_chars":args.max_context_chars,"max_context_items":args.max_context_items,
+                       "audit_keep_entries":args.audit_keep_entries,"terminal_memory_days":args.terminal_memory_days}
+            output(store.set_policy(args.project_id, **changes) if any(value is not None for value in changes.values()) else store.get_policy(args.project_id))
+        elif args.command == "maintain": output(store.maintain(args.project_id, args.apply))
+        elif args.command == "status": output(store.maintenance_status(args.project_id))
+        elif args.command == "backup": output(store.backup_to(args.output))
     finally:
         store.close()
 

@@ -16,16 +16,30 @@ Initialize the current folder without cloning the repository or managing a virtu
 uvx context-memory init
 ```
 
-The command creates the local SQLite database, maps the current workspace to a stable project and scope, and prints portable stdio MCP JSON. No project UUID needs to be copied. Use a client adapter when convenient:
+The command creates the local SQLite database, maps the current workspace to a stable project and scope, and prints portable stdio MCP JSON. No project UUID needs to be copied. Register the same database with several clients on this computer in one command:
 
 ```bash
-uvx context-memory init --client claude-code --register
-uvx context-memory init --client codex --register
-uvx context-memory init --client craft
+uvx context-memory init --clients claude-code,codex,cursor,vscode,craft --register
+# Or register every detected supported client:
+uvx context-memory init --clients auto --register
 uvx context-memory doctor
 ```
 
-`--register` is opt-in because it changes client configuration. Craft Agents accepts the printed local MCP JSON directly. For any other client, use the `mcp.mcpServers.context-memory` object printed by the default command. The server itself does not import an agent SDK, call an LLM, create embeddings, or require an API key.
+`--register` is opt-in because it changes client configuration. Results are reported per client, so one missing client does not prevent other registrations. Claude Code uses user scope, Cursor is merged into `~/.cursor/mcp.json` with a backup, and VS Code uses its official `--add-mcp` CLI. Craft Agents remains a guided manual step because its documented sources are workspace-scoped. The older `--client NAME` form remains supported.
+
+### Pin Git installs or avoid Git startup checks
+
+Do not put an unpinned `git+https://...` source in an MCP launch command. Package runners may resolve the remote branch whenever a client starts the server. Pin the full commit SHA for reproducible, fast startup:
+
+```bash
+SOURCE='git+https://github.com/OWNER/context-memory.git@0123456789abcdef0123456789abcdef01234567'
+uvx --from "$SOURCE" context-memory init \
+  --package "$SOURCE" \
+  --clients claude-code,cursor,vscode \
+  --register
+```
+
+`context-memory init` rejects unpinned Git package sources. A PyPI package name, or a one-time installed executable with `--launcher installed`, does not use a Git URL at MCP startup.
 
 Until the first PyPI release, use the source install below and replace the default launcher with `--launcher installed`.
 
@@ -74,12 +88,36 @@ Restart Codex, then use `/mcp` to verify the server. Copy [examples/AGENTS.md](e
 
 Context Memory uses standard MCP stdio and Streamable HTTP-shaped JSON-RPC messages and contains no Codex or Claude SDK dependency. The same database can therefore be used by multiple clients. `project_resolve(cwd)` maps each canonical workspace path automatically, while `session_start.client` records which client produced a session.
 
-- Claude Code: `context-memory init --client claude-code --register`
-- Craft Agents: `context-memory init --client craft`, then paste the printed JSON as a local stdio source
-- Cursor, VS Code, Windsurf, and other MCP clients: run `context-memory init` and copy the printed server definition
+- Claude Code: user-level registration through `claude mcp add-json --scope user`
+- Cursor: global merge into `~/.cursor/mcp.json`; existing servers and unrelated keys are preserved
+- VS Code: user-profile registration through `code --add-mcp`
+- Codex: user-level registration through `codex mcp add`
+- Craft Agents: the command prints source JSON and a guided workspace-source step
+- Windsurf and other clients: use the portable JSON printed by `context-memory init`
 - Remote or sandboxed clients that cannot spawn a local process: run the optional HTTP transport and connect to `http://127.0.0.1:8765/mcp`
 
 Client-specific hooks are optional convenience integrations. Correctness must not depend on them: the MCP initialization instructions and tool descriptions carry the portable workflow.
+
+### Two different sharing scenarios
+
+#### One computer, several MCP clients
+
+Use one local database path and register the same stdio definition in every client:
+
+```bash
+context-memory --db ~/.local/share/context-memory/memory.db init \
+  --clients claude-code,codex,cursor,vscode,craft \
+  --launcher installed \
+  --register
+```
+
+Each client starts its own lightweight server process, while SQLite WAL coordinates access to the same database. `session_start.client` preserves which client wrote a session. This is the primary supported sharing mode.
+
+#### Several computers or OS users
+
+A local stdio command and local SQLite path are not shared across machines or OS accounts. Do **not** put a live WAL database in Dropbox, iCloud Drive, NFS, or another file-sync/network folder; partial or conflicting WAL synchronization can corrupt or diverge.
+
+For occasional transfer, use `export`/`import`. Continuous multi-machine sharing requires one always-on MCP service in front of the database, TLS, authentication, backups, and multi-user authorization. The MVP HTTP listener is localhost-first and bearer-token capable, but it is not a production multi-user deployment.
 
 ### Portable backup and restore
 
@@ -92,6 +130,37 @@ context-memory repair --project-id PROJECT_UUID
 ```
 
 Import is additive and refuses to overwrite an existing project ID or slug. Search indexes are rebuilt from the exported memories. `repair` independently reconstructs a damaged or stale FTS projection from authoritative memory rows.
+
+### Bounded operation and consistent backup
+
+Every project has conservative defaults: 12,000 context characters, 20 context items, 10,000 detailed audit entries, and 180 days for terminal (`superseded`, `rejected`, `expired`) memories. Inspect or change them with:
+
+```bash
+context-memory policy PROJECT_UUID
+context-memory policy PROJECT_UUID \
+  --max-context-chars 8000 \
+  --max-context-items 15 \
+  --audit-keep-entries 5000 \
+  --terminal-memory-days 90
+```
+
+Maintenance is dry-run unless `--apply` is explicit:
+
+```bash
+context-memory maintain PROJECT_UUID
+context-memory maintain PROJECT_UUID --apply
+context-memory status PROJECT_UUID
+```
+
+Applying maintenance preserves all immutable source events, removes old terminal memory projections, and replaces excess audit detail with chained SHA-256 checkpoints. Export first if reconstructable detail older than the retention window is required.
+
+Do not back up a live WAL database by copying only `memory.db`. Create one consistent, integrity-checked snapshot instead:
+
+```bash
+context-memory backup --output /secure/backups/context-memory-latest.db
+```
+
+The command atomically replaces the destination using SQLite's Online Backup API, includes committed WAL data, sets the snapshot to mode `0600`, and returns its SHA-256 digest. Reusing a stable destination name lets rsync- or block-deduplicating backup systems transfer changed pages instead of treating every dated filename as unrelated. `search_health` and `repair` detect and restore FTS projection consistency; memory insert/update/delete triggers keep the projection synchronized during normal writes.
 
 ## Why an evidence ledger instead of a graph-first memory
 

@@ -1,6 +1,7 @@
 import sqlite3
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from context_memory.store import MemoryStore
@@ -128,6 +129,63 @@ class StoreTests(unittest.TestCase):
         result = self.store.rebuild_fts(p["id"])
         self.assertEqual(result["indexed_memories"], 1)
         self.assertEqual(self.store.search(p["id"], "Repairable")[0]["id"], memory["id"])
+
+    def test_fts_triggers_and_validity_keep_search_consistent(self):
+        p = self.store.create_project("consistent-search")
+        memory = self.store.upsert_memory(p["id"], "Original", "obsolete_token searchable wording", "fact", "active")
+        self.store.conn.execute("UPDATE memories SET title='Changed',content='replacement_token searchable wording' WHERE id=?", (memory["id"],))
+        self.assertEqual(self.store.search(p["id"], "obsolete_token"), [])
+        self.assertEqual(self.store.search(p["id"], "replacement_token")[0]["id"], memory["id"])
+        self.assertTrue(self.store.search_health(p["id"])["ok"])
+        expired = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+        self.store.conn.execute("UPDATE memories SET valid_until=? WHERE id=?", (expired,memory["id"]))
+        self.assertEqual(self.store.search(p["id"], "replacement_token"), [])
+
+    def test_context_budget_is_capped_by_project_policy(self):
+        p = self.store.create_project("bounded-context")
+        self.store.upsert_memory(p["id"], "Budget", "bounded context " * 20, "constraint", "active")
+        self.store.set_policy(p["id"], max_context_chars=1000, max_context_items=1)
+        result = self.store.get_context(p["id"], "bounded context", 100000)
+        self.assertEqual(result["requested_budget"], 100000)
+        self.assertEqual(result["budget"], 1000)
+        self.assertTrue(result["budget_capped"])
+        self.assertLessEqual(len(result["items"]), 1)
+        with self.assertRaises(ValueError): self.store.set_policy(p["id"], max_context_chars=100000)
+
+    def test_maintenance_purges_terminal_memory_but_preserves_sources_and_checkpoints_audit(self):
+        p = self.store.create_project("retention")
+        source = self.store.record_event(p["id"], "fact", "original evidence remains")
+        memory = self.store.upsert_memory(p["id"], "Old", "terminal memory", "fact", "superseded", source_event_ids=[source["id"]])
+        old = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+        self.store.conn.execute("UPDATE memories SET updated_at=? WHERE id=?", (old,memory["id"]))
+        for index in range(105): self.store.record_event(p["id"], "noise", f"audit item {index}")
+        self.store.set_policy(p["id"], audit_keep_entries=100, terminal_memory_days=1)
+        plan = self.store.maintain(p["id"])
+        self.assertEqual(plan["terminal_memories"], 1); self.assertGreater(plan["audit_entries_to_checkpoint"], 0)
+        result = self.store.maintain(p["id"], True)
+        self.assertEqual(result["terminal_memories_purged"], 1)
+        self.assertIsNone(self.store._row("SELECT id FROM memories WHERE id=?", (memory["id"],)))
+        self.assertEqual(self.store.get_source(source["id"])["content"], "original evidence remains")
+        self.assertLessEqual(self.store.maintenance_status(p["id"])["counts"]["audit_entries"], 100)
+        self.assertEqual(len(self.store.maintenance_status(p["id"])["audit_checkpoints"]), 1)
+        exported = self.store.export_project(p["id"])
+        restored = MemoryStore(Path(self.temp.name) / "retention-copy" / "memory.db")
+        try:
+            restored.import_project(exported)
+            self.assertEqual(len(restored.maintenance_status(p["id"])["audit_checkpoints"]), 1)
+            self.assertEqual(restored.get_policy(p["id"])["audit_keep_entries"], 100)
+        finally: restored.close()
+        with self.assertRaises(sqlite3.IntegrityError): self.store.conn.execute("DELETE FROM audit_log WHERE project_id=?", (p["id"],))
+
+    def test_online_backup_captures_committed_wal_data(self):
+        p = self.store.create_project("backup")
+        event = self.store.record_event(p["id"], "decision", "committed WAL data")
+        destination = Path(self.temp.name) / "snapshots" / "memory.db"
+        result = self.store.backup_to(destination)
+        self.assertTrue(result["ok"]); self.assertEqual(result["integrity"], "ok"); self.assertEqual(len(result["sha256"]), 64)
+        snapshot = MemoryStore(destination)
+        try: self.assertEqual(snapshot.get_source(event["id"])["content"], "committed WAL data")
+        finally: snapshot.close()
 
 
 if __name__ == "__main__": unittest.main()

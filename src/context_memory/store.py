@@ -8,7 +8,7 @@ import sqlite3
 import stat
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -195,12 +195,10 @@ class MemoryStore:
                 if existing["project_id"] != project_id: raise ValueError("memory belongs to another project")
                 cx.execute("""UPDATE memories SET scope_id=:scope_id,type=:type,status=:status,title=:title,content=:content,confidence=:confidence,
                   importance=:importance,valid_from=:valid_from,valid_until=:valid_until,tags_json=:tags_json,updated_at=:updated_at WHERE id=:id""", item)
-                cx.execute("DELETE FROM memories_fts WHERE memory_id=?", (mid,))
                 action = "updated"
             else:
                 cx.execute("INSERT INTO memories VALUES(:id,:project_id,:scope_id,:type,:status,:title,:content,:confidence,:importance,:valid_from,:valid_until,:tags_json,:created_at,:updated_at)", item)
                 action = "created"
-            cx.execute("INSERT INTO memories_fts(memory_id,title,content,tags) VALUES(?,?,?,?)", (mid, title, content, " ".join(tags or [])))
             for eid in source_event_ids or []:
                 event = cx.execute("SELECT project_id FROM events WHERE id=?", (eid,)).fetchone()
                 if not event or event["project_id"] != project_id: raise ValueError(f"invalid source event: {eid}")
@@ -303,10 +301,12 @@ class MemoryStore:
         match = " OR ".join('"' + t.replace('"', '""') + '"' for t in tokens)
         allowed = statuses or ["active", "proposed", "disputed"]
         placeholders = ",".join("?" for _ in allowed)
+        timestamp = now()
         sql = f"""SELECT m.*, bm25(memories_fts, 0, 5, 1, .5) AS fts_rank
           FROM memories_fts JOIN memories m ON m.id=memories_fts.memory_id
-          WHERE memories_fts MATCH ? AND m.project_id=? AND m.status IN ({placeholders})"""
-        args: list[Any] = [match, project_id, *allowed]
+          WHERE memories_fts MATCH ? AND m.project_id=? AND m.status IN ({placeholders})
+          AND (m.valid_from IS NULL OR m.valid_from<=?) AND (m.valid_until IS NULL OR m.valid_until>?)"""
+        args: list[Any] = [match, project_id, *allowed, timestamp, timestamp]
         if scope_id: sql += " AND (m.scope_id=? OR m.scope_id IS NULL)"; args.append(scope_id)
         sql += " ORDER BY (bm25(memories_fts,0,5,1,.5) - m.importance - m.confidence*.25) ASC LIMIT ?"; args.append(max(1, min(limit, 100)))
         rows = [dict(r) for r in self.conn.execute(sql, args)]
@@ -315,18 +315,124 @@ class MemoryStore:
         return rows
 
     def get_context(self, project_id: str, query: str, char_budget: int = 6000, statuses: list[str] | None = None, scope_id: str | None = None) -> dict[str, Any]:
-        budget = max(0, min(char_budget, 100_000)); selected, used = [], 0
-        for m in self.search(project_id, query, 50, statuses or ["active", "disputed"], scope_id):
+        policy = self.get_policy(project_id)
+        requested = max(0, char_budget)
+        budget = min(requested, policy["max_context_chars"]); selected, used = [], 0
+        for m in self.search(project_id, query, policy["max_context_items"], statuses or ["active", "disputed"], scope_id):
             block = f"[{m['status']}/{m['type']}] {m['title']}\n{m['content']}\nsource_events: {', '.join(s['id'] for s in m['sources']) or 'none'}"
             if used + len(block) + 2 > budget: continue
             selected.append({"memory_id": m["id"], "text": block, "confidence": m["confidence"], "importance": m["importance"]})
             used += len(block) + 2
-        return {"query": query, "budget": budget, "used": used, "items": selected, "context": "\n\n".join(i["text"] for i in selected)}
+        return {"query": query, "requested_budget": requested, "budget": budget, "budget_capped": requested > budget,
+                "max_items": policy["max_context_items"], "used": used, "items": selected, "context": "\n\n".join(i["text"] for i in selected)}
+
+    def get_policy(self, project_id: str) -> dict[str, Any]:
+        item = self._row("SELECT * FROM project_policies WHERE project_id=?", (project_id,))
+        if not item: raise KeyError("project not found")
+        return item
+
+    def set_policy(self, project_id: str, max_context_chars: int | None = None, max_context_items: int | None = None,
+                   audit_keep_entries: int | None = None, terminal_memory_days: int | None = None) -> dict[str, Any]:
+        current = self.get_policy(project_id)
+        values = {"max_context_chars":max_context_chars,"max_context_items":max_context_items,
+                  "audit_keep_entries":audit_keep_entries,"terminal_memory_days":terminal_memory_days}
+        limits = {"max_context_chars":(1000,20000),"max_context_items":(1,50),"audit_keep_entries":(100,100000),"terminal_memory_days":(1,3650)}
+        for key, value in values.items():
+            if value is not None:
+                low, high = limits[key]
+                if not low <= value <= high: raise ValueError(f"{key} must be {low}..{high}")
+                current[key] = value
+        current["updated_at"] = now()
+        with self.tx() as cx:
+            cx.execute("""UPDATE project_policies SET max_context_chars=:max_context_chars,max_context_items=:max_context_items,
+              audit_keep_entries=:audit_keep_entries,terminal_memory_days=:terminal_memory_days,updated_at=:updated_at WHERE project_id=:project_id""", current)
+            self._audit(cx, project_id, "policy", project_id, "updated", current)
+        return current
+
+    def search_health(self, project_id: str) -> dict[str, Any]:
+        if not self._row("SELECT id FROM projects WHERE id=?", (project_id,)): raise KeyError("project not found")
+        memories = self.conn.execute("SELECT count(*) FROM memories WHERE project_id=?", (project_id,)).fetchone()[0]
+        indexed = self.conn.execute("SELECT count(*) FROM memories_fts f JOIN memories m ON m.id=f.memory_id WHERE m.project_id=?", (project_id,)).fetchone()[0]
+        missing = self.conn.execute("SELECT count(*) FROM memories m WHERE m.project_id=? AND NOT EXISTS(SELECT 1 FROM memories_fts f WHERE f.memory_id=m.id)", (project_id,)).fetchone()[0]
+        duplicate = self.conn.execute("""SELECT count(*) FROM (SELECT f.memory_id FROM memories_fts f JOIN memories m ON m.id=f.memory_id
+          WHERE m.project_id=? GROUP BY f.memory_id HAVING count(*)<>1)""", (project_id,)).fetchone()[0]
+        orphan = self.conn.execute("SELECT count(*) FROM memories_fts f LEFT JOIN memories m ON m.id=f.memory_id WHERE m.id IS NULL").fetchone()[0]
+        return {"ok":missing==0 and duplicate==0 and orphan==0 and indexed==memories,"project_id":project_id,
+                "memories":memories,"indexed_rows":indexed,"missing":missing,"duplicate_memory_ids":duplicate,"orphan_rows":orphan}
 
     def get_source(self, event_id: str) -> dict[str, Any]:
         item = self._row("SELECT * FROM events WHERE id=?", (event_id,))
         if not item: raise KeyError("source event not found")
         return item
+
+    def maintain(self, project_id: str, apply: bool = False) -> dict[str, Any]:
+        """Bound operational state while preserving events and checkpointing pruned audit detail."""
+        policy = self.get_policy(project_id)
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=policy["terminal_memory_days"])).isoformat()
+        terminal = [dict(row) for row in self.conn.execute("""SELECT * FROM memories WHERE project_id=?
+          AND status IN ('superseded','rejected','expired') AND updated_at<? ORDER BY updated_at,id""", (project_id,cutoff))]
+        audit_total = self.conn.execute("SELECT count(*) FROM audit_log WHERE project_id=?", (project_id,)).fetchone()[0]
+        # Purge audit records only after accounting for one purge audit entry per terminal memory.
+        projected_total = audit_total + len(terminal)
+        prune_count = max(0, projected_total - policy["audit_keep_entries"])
+        plan = {"project_id":project_id,"apply":apply,"policy":policy,"terminal_cutoff":cutoff,
+                "terminal_memories":len(terminal),"audit_entries":audit_total,"audit_entries_to_checkpoint":prune_count}
+        if not apply: return plan
+        checkpoint = None
+        with self.tx() as cx:
+            for memory in terminal:
+                sources = [row[0] for row in cx.execute("SELECT event_id FROM memory_sources WHERE memory_id=? ORDER BY event_id", (memory["id"],))]
+                self._audit(cx, project_id, "memory", memory["id"], "purged_terminal", {**memory,"source_event_ids":sources})
+                cx.execute("DELETE FROM memories WHERE id=?", (memory["id"],))
+            total = cx.execute("SELECT count(*) FROM audit_log WHERE project_id=?", (project_id,)).fetchone()[0]
+            prune_count = max(0, total - policy["audit_keep_entries"])
+            if prune_count:
+                rows = [dict(row) for row in cx.execute("SELECT * FROM audit_log WHERE project_id=? ORDER BY seq LIMIT ?", (project_id,prune_count))]
+                previous = cx.execute("SELECT digest FROM audit_checkpoints WHERE project_id=? ORDER BY through_seq DESC LIMIT 1", (project_id,)).fetchone()
+                previous_digest = previous[0] if previous else None
+                payload = (previous_digest or "") + "\n" + "\n".join(canonical(row) for row in rows)
+                checkpoint = {"id":uid(),"project_id":project_id,"from_seq":rows[0]["seq"],"through_seq":rows[-1]["seq"],
+                              "entry_count":len(rows),"previous_digest":previous_digest,
+                              "digest":hashlib.sha256(payload.encode()).hexdigest(),"created_at":now()}
+                cx.execute("INSERT INTO audit_checkpoints VALUES(:id,:project_id,:from_seq,:through_seq,:entry_count,:previous_digest,:digest,:created_at)", checkpoint)
+                cx.execute("UPDATE maintenance_control SET audit_prune_enabled=1 WHERE id=1")
+                cx.execute("DELETE FROM audit_log WHERE project_id=? AND seq<=?", (project_id,rows[-1]["seq"]))
+                cx.execute("UPDATE maintenance_control SET audit_prune_enabled=0 WHERE id=1")
+        return {**plan,"terminal_memories_purged":len(terminal),"audit_entries_checkpointed":prune_count,"checkpoint":checkpoint}
+
+    def maintenance_status(self, project_id: str) -> dict[str, Any]:
+        policy = self.get_policy(project_id)
+        counts = {"events":self.conn.execute("SELECT count(*) FROM events WHERE project_id=?",(project_id,)).fetchone()[0],
+                  "memories":self.conn.execute("SELECT count(*) FROM memories WHERE project_id=?",(project_id,)).fetchone()[0],
+                  "terminal_memories":self.conn.execute("SELECT count(*) FROM memories WHERE project_id=? AND status IN ('superseded','rejected','expired')",(project_id,)).fetchone()[0],
+                  "audit_entries":self.conn.execute("SELECT count(*) FROM audit_log WHERE project_id=?",(project_id,)).fetchone()[0]}
+        checkpoints = [dict(row) for row in self.conn.execute("SELECT * FROM audit_checkpoints WHERE project_id=? ORDER BY through_seq",(project_id,))]
+        return {"project_id":project_id,"policy":policy,"counts":counts,"audit_checkpoints":checkpoints,"search":self.search_health(project_id)}
+
+    def backup_to(self, output_path: str | Path) -> dict[str, Any]:
+        """Create one consistent SQLite snapshot using the Online Backup API, including committed WAL data."""
+        destination = Path(output_path).expanduser().resolve()
+        if destination == self.path: raise ValueError("backup output must differ from the live database")
+        destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        temporary = destination.with_name(f".{destination.name}.{uid()}.tmp")
+        target = sqlite3.connect(temporary)
+        try:
+            self.conn.backup(target)
+            integrity = target.execute("PRAGMA integrity_check").fetchone()[0]
+            if integrity != "ok": raise RuntimeError(f"backup integrity check failed: {integrity}")
+        except Exception:
+            target.close()
+            temporary.unlink(missing_ok=True)
+            raise
+        else:
+            target.close()
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, destination)
+        digest = hashlib.sha256()
+        with destination.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024*1024), b""): digest.update(chunk)
+        return {"ok":True,"source":str(self.path),"output":str(destination),"bytes":destination.stat().st_size,
+                "sha256":digest.hexdigest(),"created_at":now(),"integrity":"ok"}
 
     def export_project(self, project_id: str) -> list[dict[str, Any]]:
         """Return a deterministic, portable snapshot without SQLite internals."""
@@ -342,6 +448,8 @@ class MemoryStore:
             ("memory_source", "SELECT ms.* FROM memory_sources ms JOIN memories m ON m.id=ms.memory_id WHERE m.project_id=? ORDER BY ms.created_at,ms.memory_id,ms.event_id"),
             ("edge", "SELECT * FROM edges WHERE project_id=? ORDER BY created_at,id"),
             ("search_alias", "SELECT * FROM search_aliases WHERE project_id=? ORDER BY term"),
+            ("policy", "SELECT * FROM project_policies WHERE project_id=?"),
+            ("audit_checkpoint", "SELECT * FROM audit_checkpoints WHERE project_id=? ORDER BY through_seq"),
             ("audit", "SELECT * FROM audit_log WHERE project_id=? ORDER BY seq"),
         ]
         for record_type, sql in queries:
@@ -352,7 +460,7 @@ class MemoryStore:
         """Restore one exported project. Existing project IDs are never overwritten."""
         if not records or records[0].get("record_type") != "project":
             raise ValueError("export must begin with a project record")
-        allowed = {"project", "scope", "session", "event", "memory", "memory_source", "edge", "search_alias", "audit"}
+        allowed = {"project", "scope", "session", "event", "memory", "memory_source", "edge", "search_alias", "policy", "audit_checkpoint", "audit"}
         if any(record.get("record_type") not in allowed or not isinstance(record.get("data"), dict) for record in records):
             raise ValueError("invalid export record")
         project = records[0]["data"]
@@ -367,6 +475,7 @@ class MemoryStore:
             "memory_source": ("memory_sources", ["memory_id","event_id","note","created_at"]),
             "edge": ("edges", ["id","project_id","from_memory_id","to_memory_id","relation","note","created_at"]),
             "search_alias": ("search_aliases", ["project_id","term","aliases_json","created_at","updated_at"]),
+            "audit_checkpoint": ("audit_checkpoints", ["id","project_id","from_seq","through_seq","entry_count","previous_digest","digest","created_at"]),
         }
         counts: dict[str, int] = {}
         with self.tx() as cx:
@@ -375,12 +484,13 @@ class MemoryStore:
                 if kind == "audit":
                     names = ["project_id","entity_type","entity_id","action","snapshot_json","created_at"]
                     cx.execute(f"INSERT INTO audit_log({','.join(names)}) VALUES({','.join('?' for _ in names)})", tuple(data[name] for name in names))
+                elif kind == "policy":
+                    names = ["max_context_chars","max_context_items","audit_keep_entries","terminal_memory_days","updated_at","project_id"]
+                    cx.execute("""UPDATE project_policies SET max_context_chars=?,max_context_items=?,audit_keep_entries=?,
+                      terminal_memory_days=?,updated_at=? WHERE project_id=?""", tuple(data[name] for name in names))
                 else:
                     table, names = columns[kind]
                     cx.execute(f"INSERT INTO {table}({','.join(names)}) VALUES({','.join('?' for _ in names)})", tuple(data[name] for name in names))
-                    if kind == "memory":
-                        tags = " ".join(json.loads(data["tags_json"]))
-                        cx.execute("INSERT INTO memories_fts(memory_id,title,content,tags) VALUES(?,?,?,?)", (data["id"],data["title"],data["content"],tags))
                 counts[kind] = counts.get(kind, 0) + 1
         return {"project_id": project["id"], "slug": project["slug"], "records": len(records), "counts": counts}
 
