@@ -4,6 +4,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from context_memory.embeddings import LocalHashEmbedding
 from context_memory.store import MemoryStore
 
 
@@ -170,6 +171,49 @@ class StoreTests(unittest.TestCase):
         expired = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
         self.store.conn.execute("UPDATE memories SET valid_until=? WHERE id=?", (expired,memory["id"]))
         self.assertEqual(self.store.search(p["id"], "replacement_token"), [])
+
+    def test_local_similarity_projection_finds_partial_korean_wording_and_is_rebuildable(self):
+        self.store.close()
+        self.store = MemoryStore(Path(self.temp.name) / "data" / "memory.db", LocalHashEmbedding(128))
+        p = self.store.create_project("local-similarity")
+        memory = self.store.upsert_memory(p["id"], "검색 성능", "개인화된 기억을 빠르게 검색합니다", "decision", "active")
+        results = self.store.search(p["id"], "개인화 기억 검색")
+        self.assertEqual(results[0]["id"], memory["id"])
+        self.assertIsNotNone(results[0]["retrieval"]["semantic_similarity"])
+        self.store.conn.execute("DELETE FROM memory_embeddings WHERE memory_id=?", (memory["id"],))
+        self.assertFalse(self.store.search_health(p["id"])["ok"])
+        repaired = self.store.rebuild_fts(p["id"])
+        self.assertEqual(repaired["embedded_memories"], 1)
+        self.assertTrue(self.store.search_health(p["id"])["ok"])
+
+    def test_personal_feedback_and_confirmation_metadata_affect_projection(self):
+        p = self.store.create_project("feedback")
+        memory = self.store.upsert_memory(p["id"], "Preferred editor", "Use Neovim for editing", "preference", "active",
+                                          observed_at="2026-01-01T00:00:00+00:00")
+        self.assertEqual(memory["observed_at"], "2026-01-01T00:00:00+00:00")
+        self.assertIsNotNone(memory["last_confirmed_at"])
+        self.store.record_memory_feedback(memory["id"], "retrieved")
+        self.store.record_memory_feedback(memory["id"], "used")
+        usage = self.store.record_memory_feedback(memory["id"], "helpful")
+        self.assertEqual((usage["retrieved_count"], usage["used_count"], usage["helpful_count"]), (1, 1, 1))
+        result = self.store.search(p["id"], "Neovim editor")[0]
+        self.assertEqual(result["usage"]["helpful_count"], 1)
+
+    def test_feedback_changes_personal_ranking_and_exposes_score_components(self):
+        p = self.store.create_project("ranking-feedback")
+        first = self.store.upsert_memory(p["id"], "Editor choice", "Use editor for Python", "preference", "active")
+        second = self.store.upsert_memory(p["id"], "Editor choice", "Use editor for Python", "preference", "active")
+        initial = self.store.search(p["id"], "editor Python", 2)
+        lower = initial[1]["id"]
+        higher = initial[0]["id"]
+        self.store.record_memory_feedback(lower, "helpful")
+        self.store.record_memory_feedback(higher, "incorrect")
+        reranked = self.store.search(p["id"], "editor Python", 2)
+        self.assertEqual(reranked[0]["id"], lower)
+        components = reranked[0]["retrieval"]["components"]
+        self.assertEqual(set(components), {"lexical_rrf", "semantic_rrf", "importance", "confidence", "freshness", "feedback", "total"})
+        self.assertAlmostEqual(reranked[0]["retrieval"]["score"], sum(value for key, value in components.items() if key != "total"))
+        self.assertEqual({first["id"], second["id"]}, {item["id"] for item in reranked})
 
     def test_context_budget_is_capped_by_project_policy(self):
         p = self.store.create_project("bounded-context")

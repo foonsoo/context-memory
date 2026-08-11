@@ -35,13 +35,15 @@ Each immutable event also receives a project-local monotonic `event_seq`, alloca
 
 Detailed audit entries are append-only during normal operation. Explicit maintenance can replace the oldest detail beyond a per-project retention limit with an append-only SHA-256 checkpoint chained to the previous checkpoint. This bounds the operational table and detects alteration, but intentionally does not preserve reconstructable old snapshots. Export before maintenance when full historical replay is required.
 
-FTS5 BM25 supplies lexical relevance. Ranking then favors importance and confidence. Expired validity windows are filtered at query time. `get_context` excludes proposed and superseded entries by default, includes disputed entries as warnings, respects optional scope, and greedily selects complete blocks within a strict character budget. Each block cites source event IDs.
+FTS5 BM25 supplies lexical relevance. An optional dependency-free on-device feature-hash projection improves fuzzy, morphological, and partial-phrase recall without claiming neural semantic understanding. Lexical and local-similarity ranks are combined with reciprocal-rank fusion, then receive small bounded adjustments for importance, confidence, confirmation freshness, and explicit helpful/incorrect feedback. Search results expose each weighted score component, the component ranks, and similarity so ranking remains inspectable. Expired validity windows are filtered at query time. `get_context` excludes proposed and superseded entries by default, includes disputed entries as warnings, respects optional scope, and greedily selects complete blocks within a strict character budget. Each block cites source event IDs.
+
+Enable the local projection with `CONTEXT_MEMORY_EMBEDDINGS=local-hash`. It stores only a rebuildable vector projection in `memory_embeddings`; events and memories remain authoritative. `memory_feedback` records retrieved, used, helpful, and incorrect signals in a disposable usage projection. Memories separately retain `observed_at` and `last_confirmed_at` so personal ranking can decay stale assumptions without rewriting evidence.
 
 The requested context budget is not authoritative. Each project defaults to a hard 12,000-character and 20-item limit, configurable only within the server's 20,000-character/50-item safety ceiling. Responses report requested and effective budgets so clients can detect clamping. When cursor polling is requested, recent events are returned separately and consume the same effective character budget, with a 4,000-character event ceiling; unused event allowance remains available to ranked memories.
 
 Project-owned search aliases expand known domain vocabulary before FTS matching. Aliases are explicit data, not inferred facts. `graph_traverse` walks verified memory edges with a depth limit of five and filters out non-current nodes by default. Both aliases and edges are exportable projections; neither replaces source events.
 
-`EmbeddingProvider` is a small optional interface. A later local model or explicitly configured remote provider can implement it and add a vector score. Nothing downloads a model, sends content externally, or requires an API key in this MVP.
+`EmbeddingProvider` remains a small optional interface, so a stronger local neural model can replace feature hashing later. Nothing downloads a model, sends content externally, or requires an API key in the default implementation.
 
 ## Lifecycle
 

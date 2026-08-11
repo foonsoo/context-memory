@@ -10,8 +10,8 @@
 
 ## Optional retrieval improvements
 
-- Add a local embedding adapter and vector table without changing the FTS-only default.
-- Add reciprocal-rank fusion, recency decay, and feedback signals. Deterministic aliases, verified graph traversal, and evaluation fixtures are implemented.
+- Evaluate an optional neural local embedding adapter against the dependency-free feature-hash projection without changing the FTS-only default.
+- Tune reciprocal-rank fusion, confirmation-freshness decay, and feedback weights on personal-memory relevance fixtures. The projection and inspectable score components are implemented.
 - Add background candidate extraction that only creates `proposed` memories with source citations and a review queue.
 
 ## Deliberately out of scope for the MVP

@@ -179,6 +179,15 @@ Verified memories can now be connected with `supports`, `depends_on`, and `relat
 
 For domain paraphrases, `search_alias_set` adds explicit project vocabulary such as `database → PostgreSQL`. Query expansion is deterministic, auditable, and local. It complements rather than pretends to replace optional embeddings: unknown semantic equivalents still require an embedding projection or explicit aliases. See [docs/UTILITY.md](docs/UTILITY.md).
 
+For zero-download fuzzy and partial-phrase recall, enable the optional on-device projection before starting the server:
+
+```bash
+export CONTEXT_MEMORY_EMBEDDINGS=local-hash
+context-memory --db ~/.local/share/context-memory/memory.db serve --transport stdio
+```
+
+Search then fuses FTS5 and local-similarity ranks and returns inspectable score components. The local hash projection is useful for spelling, morphology, and overlapping wording; it is not a neural semantic model and does not replace explicit aliases for unrelated synonyms. Agents may call `memory_feedback` with `retrieved`, `used`, `helpful`, or `incorrect` to personalize later ranking. `observed_at` and `last_confirmed_at` keep discovery time separate from confirmation freshness.
+
 ## Reproducible comparison benchmark
 
 The repository includes [benchmarks/run_benchmark.py](benchmarks/run_benchmark.py). It starts all products through MCP stdio and uses no API keys:

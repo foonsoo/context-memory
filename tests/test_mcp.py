@@ -16,7 +16,7 @@ class MCPTests(unittest.TestCase):
         init = self.server.handle({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1"}}})
         self.assertEqual(init["result"]["capabilities"]["tools"], {"listChanged": False})
         tools = self.server.handle({"jsonrpc":"2.0","id":2,"method":"tools/list"})
-        self.assertTrue({"record_event", "read_events_since", "get_context", "get_source", "memory_transition", "graph_traverse", "search_alias_set",
+        self.assertTrue({"record_event", "read_events_since", "get_context", "get_source", "memory_transition", "graph_traverse", "search_alias_set", "memory_feedback",
                          "policy_set", "maintenance_run", "search_health", "backup_create"} <= {t["name"] for t in tools["result"]["tools"]})
         created = self.server.handle({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"project_create","arguments":{"slug":"mcp-demo"}}})
         value = created["result"]["structuredContent"]["result"]

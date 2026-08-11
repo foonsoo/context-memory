@@ -12,6 +12,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
+from .embeddings import EmbeddingProvider, LocalHashEmbedding
+
 TYPES = {"fact", "decision", "preference", "constraint", "procedure", "summary", "task", "other"}
 STATUSES = {"proposed", "active", "superseded", "disputed", "expired", "rejected"}
 RELATIONS = {"supersedes", "disputes", "supports", "depends_on", "related_to"}
@@ -30,7 +32,7 @@ def canonical(value: Any) -> str:
 
 
 class MemoryStore:
-    def __init__(self, db_path: str | Path):
+    def __init__(self, db_path: str | Path, embedding_provider: EmbeddingProvider | None = None):
         self.path = Path(db_path).expanduser().resolve()
         self._secure_directory()
         self.conn = sqlite3.connect(self.path, isolation_level=None, timeout=10)
@@ -39,6 +41,12 @@ class MemoryStore:
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA synchronous=FULL")
         self.migrate()
+        mode = os.environ.get("CONTEXT_MEMORY_EMBEDDINGS", "").strip().casefold()
+        self.embedding_provider = embedding_provider or (LocalHashEmbedding() if mode in {"local", "local-hash", "hash"} else None)
+        if self.embedding_provider:
+            with self.tx() as cx:
+                for memory in cx.execute("SELECT * FROM memories"):
+                    self._index_embedding(cx, dict(memory))
 
     def _secure_directory(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -213,6 +221,7 @@ class MemoryStore:
     def upsert_memory(self, project_id: str, title: str, content: str, memory_type: str = "other", status: str = "proposed",
                       confidence: float = .5, importance: float = .5, scope_id: str | None = None, source_event_ids: list[str] | None = None,
                       valid_from: str | None = None, valid_until: str | None = None, tags: list[str] | None = None,
+                      observed_at: str | None = None, last_confirmed_at: str | None = None,
                       memory_id: str | None = None, idempotency_key: str | None = None) -> dict[str, Any]:
         request = locals().copy(); request.pop("self"); request.pop("idempotency_key")
         if hit := self._idem("upsert_memory", idempotency_key, request): return hit
@@ -222,30 +231,61 @@ class MemoryStore:
         existing = self._row("SELECT * FROM memories WHERE id=?", (mid,))
         item = {"id": mid, "project_id": project_id, "scope_id": scope_id, "type": memory_type, "status": status, "title": title,
                 "content": content, "confidence": confidence, "importance": importance, "valid_from": valid_from, "valid_until": valid_until,
-                "tags_json": canonical(tags or []), "created_at": existing["created_at"] if existing else ts, "updated_at": ts}
+                "tags_json": canonical(tags or []), "created_at": existing["created_at"] if existing else ts, "updated_at": ts,
+                "observed_at": observed_at or (existing["observed_at"] if existing else ts),
+                "last_confirmed_at": last_confirmed_at or (existing["last_confirmed_at"] if existing else (ts if status == "active" else None))}
         with self.tx() as cx:
             if existing:
                 if existing["project_id"] != project_id: raise ValueError("memory belongs to another project")
                 cx.execute("""UPDATE memories SET scope_id=:scope_id,type=:type,status=:status,title=:title,content=:content,confidence=:confidence,
-                  importance=:importance,valid_from=:valid_from,valid_until=:valid_until,tags_json=:tags_json,updated_at=:updated_at WHERE id=:id""", item)
+                  importance=:importance,valid_from=:valid_from,valid_until=:valid_until,tags_json=:tags_json,updated_at=:updated_at,
+                  observed_at=:observed_at,last_confirmed_at=:last_confirmed_at WHERE id=:id""", item)
                 action = "updated"
             else:
-                cx.execute("INSERT INTO memories VALUES(:id,:project_id,:scope_id,:type,:status,:title,:content,:confidence,:importance,:valid_from,:valid_until,:tags_json,:created_at,:updated_at)", item)
+                cx.execute("""INSERT INTO memories(id,project_id,scope_id,type,status,title,content,confidence,importance,valid_from,valid_until,
+                  tags_json,created_at,updated_at,observed_at,last_confirmed_at)
+                  VALUES(:id,:project_id,:scope_id,:type,:status,:title,:content,:confidence,:importance,:valid_from,:valid_until,
+                  :tags_json,:created_at,:updated_at,:observed_at,:last_confirmed_at)""", item)
                 action = "created"
             for eid in source_event_ids or []:
                 event = cx.execute("SELECT project_id FROM events WHERE id=?", (eid,)).fetchone()
                 if not event or event["project_id"] != project_id: raise ValueError(f"invalid source event: {eid}")
                 cx.execute("INSERT OR IGNORE INTO memory_sources VALUES(?,?,?,?)", (mid, eid, "", ts))
+            self._index_embedding(cx, item)
             self._audit(cx, project_id, "memory", mid, action, item)
             self._save_idem(cx, "upsert_memory", idempotency_key, request, item)
         return item
+
+    def _provider_name(self) -> str | None:
+        if not self.embedding_provider:
+            return None
+        return str(getattr(self.embedding_provider, "name", self.embedding_provider.__class__.__name__))
+
+    def _index_embedding(self, cx: sqlite3.Connection, memory: dict[str, Any]) -> None:
+        if not self.embedding_provider:
+            return
+        text = f"{memory['title']}\n{memory['content']}\n{' '.join(json.loads(memory['tags_json']))}"
+        digest = hashlib.sha256(text.encode()).hexdigest()
+        provider = self._provider_name()
+        existing = cx.execute("SELECT provider,content_hash FROM memory_embeddings WHERE memory_id=?", (memory["id"],)).fetchone()
+        if existing and existing["provider"] == provider and existing["content_hash"] == digest:
+            return
+        vector = self.embedding_provider.embed([text])[0]
+        cx.execute("""INSERT INTO memory_embeddings(memory_id,provider,dimensions,content_hash,vector_json,updated_at)
+          VALUES(?,?,?,?,?,?) ON CONFLICT(memory_id) DO UPDATE SET provider=excluded.provider,dimensions=excluded.dimensions,
+          content_hash=excluded.content_hash,vector_json=excluded.vector_json,updated_at=excluded.updated_at""",
+          (memory["id"], provider, self.embedding_provider.dimensions, digest, canonical(vector), now()))
 
     def transition(self, memory_id: str, status: str, related_memory_id: str | None = None, note: str = "") -> dict[str, Any]:
         if status not in {"active", "superseded", "disputed", "expired", "rejected"}: raise ValueError("invalid transition status")
         with self.tx() as cx:
             row = cx.execute("SELECT * FROM memories WHERE id=?", (memory_id,)).fetchone()
             if not row: raise KeyError("memory not found")
-            ts = now(); cx.execute("UPDATE memories SET status=?,updated_at=? WHERE id=?", (status, ts, memory_id))
+            ts = now()
+            if status == "active":
+                cx.execute("UPDATE memories SET status=?,updated_at=?,last_confirmed_at=? WHERE id=?", (status, ts, ts, memory_id))
+            else:
+                cx.execute("UPDATE memories SET status=?,updated_at=? WHERE id=?", (status, ts, memory_id))
             relation = {"superseded": "supersedes", "disputed": "disputes"}.get(status)
             if relation and related_memory_id:
                 other = cx.execute("SELECT project_id FROM memories WHERE id=?", (related_memory_id,)).fetchone()
@@ -341,11 +381,77 @@ class MemoryStore:
           AND (m.valid_from IS NULL OR m.valid_from<=?) AND (m.valid_until IS NULL OR m.valid_until>?)"""
         args: list[Any] = [match, project_id, *allowed, timestamp, timestamp]
         if scope_id: sql += " AND (m.scope_id=? OR m.scope_id IS NULL)"; args.append(scope_id)
-        sql += " ORDER BY (bm25(memories_fts,0,5,1,.5) - m.importance - m.confidence*.25) ASC LIMIT ?"; args.append(max(1, min(limit, 100)))
-        rows = [dict(r) for r in self.conn.execute(sql, args)]
+        candidate_limit = max(20, min(max(1, limit) * 4, 200))
+        sql += " ORDER BY bm25(memories_fts,0,5,1,.5) ASC LIMIT ?"; args.append(candidate_limit)
+        lexical = [dict(r) for r in self.conn.execute(sql, args)]
+        candidates = {row["id"]: row for row in lexical}
+        components: dict[str, dict[str, float]] = {
+            row["id"]: {"lexical_rrf": 1.0 / (60 + rank), "semantic_rrf": 0.0}
+            for rank, row in enumerate(lexical, 1)
+        }
+        semantic_scores: dict[str, float] = {}
+        if self.embedding_provider:
+            query_vector = self.embedding_provider.embed([query])[0]
+            sem_sql = f"""SELECT m.*, e.vector_json FROM memory_embeddings e JOIN memories m ON m.id=e.memory_id
+              WHERE m.project_id=? AND m.status IN ({placeholders}) AND e.provider=? AND e.dimensions=?
+              AND (m.valid_from IS NULL OR m.valid_from<=?) AND (m.valid_until IS NULL OR m.valid_until>?)"""
+            sem_args: list[Any] = [project_id, *allowed, self._provider_name(), self.embedding_provider.dimensions, timestamp, timestamp]
+            if scope_id: sem_sql += " AND (m.scope_id=? OR m.scope_id IS NULL)"; sem_args.append(scope_id)
+            semantic = []
+            for row in self.conn.execute(sem_sql, sem_args):
+                item = dict(row); vector = json.loads(item.pop("vector_json"))
+                similarity = sum(a * b for a, b in zip(query_vector, vector))
+                if similarity > 0.05: semantic.append((similarity, item))
+            semantic.sort(key=lambda value: (-value[0], value[1]["id"]))
+            for rank, (similarity, row) in enumerate(semantic[:candidate_limit], 1):
+                candidates.setdefault(row["id"], row)
+                component = components.setdefault(row["id"], {"lexical_rrf": 0.0, "semantic_rrf": 0.0})
+                component["semantic_rrf"] = 1.0 / (60 + rank)
+                semantic_scores[row["id"]] = similarity
+        usage = {row["memory_id"]: dict(row) for row in self.conn.execute(
+            "SELECT * FROM memory_usage WHERE memory_id IN (SELECT id FROM memories WHERE project_id=?)", (project_id,))}
+        current = datetime.now(timezone.utc)
+        for memory_id, row in candidates.items():
+            confirmed = row.get("last_confirmed_at") or row.get("updated_at")
+            try: age_days = max(0.0, (current - datetime.fromisoformat(confirmed)).total_seconds() / 86400) if confirmed else 3650.0
+            except ValueError: age_days = 3650.0
+            freshness = 1.0 / (1.0 + age_days / 180.0)
+            stats = usage.get(memory_id, {})
+            helpful = stats.get("helpful_count", 0) - stats.get("incorrect_count", 0) * 2
+            component = components.setdefault(memory_id, {"lexical_rrf": 0.0, "semantic_rrf": 0.0})
+            component.update({"importance": row["importance"] * .0015,
+                              "confidence": row["confidence"] * .001,
+                              "freshness": freshness * .0005,
+                              "feedback": max(-5, min(5, helpful)) * .0002})
+            component["total"] = sum(value for name, value in component.items() if name != "total")
+        rows = sorted(candidates.values(), key=lambda row: (-components[row["id"]]["total"], row["id"]))[:max(1, min(limit, 100))]
+        lexical_ranks = {row["id"]: rank for rank, row in enumerate(lexical, 1)}
         for r in rows:
+            r["retrieval"] = {"score": components[r["id"]]["total"], "components": components[r["id"]],
+                              "lexical_rank": lexical_ranks.get(r["id"]),
+                              "semantic_similarity": semantic_scores.get(r["id"]), "embedding_provider": self._provider_name()}
+            r["usage"] = usage.get(r["id"], {"retrieved_count":0,"used_count":0,"helpful_count":0,"incorrect_count":0})
             r["sources"] = [dict(x) for x in self.conn.execute("SELECT e.id,e.kind,e.source_uri,e.created_at FROM memory_sources s JOIN events e ON e.id=s.event_id WHERE s.memory_id=?", (r["id"],))]
         return rows
+
+    def record_memory_feedback(self, memory_id: str, signal: str) -> dict[str, Any]:
+        if signal not in {"retrieved", "used", "helpful", "incorrect"}:
+            raise ValueError("signal must be retrieved, used, helpful, or incorrect")
+        memory = self._row("SELECT project_id FROM memories WHERE id=?", (memory_id,))
+        if not memory: raise KeyError("memory not found")
+        ts = now(); column = signal + "_count"
+        with self.tx() as cx:
+            cx.execute("""INSERT OR IGNORE INTO memory_usage(memory_id,updated_at) VALUES(?,?)""", (memory_id, ts))
+            updates = f"{column}={column}+1,updated_at=?"
+            if signal == "retrieved": updates += ",last_retrieved_at=?"
+            if signal == "used": updates += ",last_used_at=?"
+            values: list[Any] = [ts]
+            if signal in {"retrieved", "used"}: values.append(ts)
+            values.append(memory_id)
+            cx.execute(f"UPDATE memory_usage SET {updates} WHERE memory_id=?", values)
+            result = dict(cx.execute("SELECT * FROM memory_usage WHERE memory_id=?", (memory_id,)).fetchone())
+            self._audit(cx, memory["project_id"], "memory_feedback", memory_id, signal, result)
+        return result
 
     def get_context(self, project_id: str, query: str, char_budget: int = 6000, statuses: list[str] | None = None,
                     scope_id: str | None = None, event_cursor: int | None = None, event_kinds: list[str] | None = None,
@@ -418,8 +524,18 @@ class MemoryStore:
         duplicate = self.conn.execute("""SELECT count(*) FROM (SELECT f.memory_id FROM memories_fts f JOIN memories m ON m.id=f.memory_id
           WHERE m.project_id=? GROUP BY f.memory_id HAVING count(*)<>1)""", (project_id,)).fetchone()[0]
         orphan = self.conn.execute("SELECT count(*) FROM memories_fts f LEFT JOIN memories m ON m.id=f.memory_id WHERE m.id IS NULL").fetchone()[0]
-        return {"ok":missing==0 and duplicate==0 and orphan==0 and indexed==memories,"project_id":project_id,
-                "memories":memories,"indexed_rows":indexed,"missing":missing,"duplicate_memory_ids":duplicate,"orphan_rows":orphan}
+        embedding = {"enabled":bool(self.embedding_provider),"provider":self._provider_name(),"indexed_rows":0,"missing":0,"stale":0}
+        if self.embedding_provider:
+            embedding["indexed_rows"] = self.conn.execute("""SELECT count(*) FROM memory_embeddings e JOIN memories m ON m.id=e.memory_id
+              WHERE m.project_id=? AND e.provider=? AND e.dimensions=?""", (project_id,self._provider_name(),self.embedding_provider.dimensions)).fetchone()[0]
+            embedding["missing"] = memories - embedding["indexed_rows"]
+            for row in self.conn.execute("""SELECT m.*,e.content_hash FROM memories m JOIN memory_embeddings e ON e.memory_id=m.id
+              WHERE m.project_id=? AND e.provider=?""", (project_id,self._provider_name())):
+                text=f"{row['title']}\n{row['content']}\n{' '.join(json.loads(row['tags_json']))}"
+                if hashlib.sha256(text.encode()).hexdigest() != row["content_hash"]: embedding["stale"] += 1
+        ok = missing==0 and duplicate==0 and orphan==0 and indexed==memories and (not self.embedding_provider or (embedding["missing"]==0 and embedding["stale"]==0))
+        return {"ok":ok,"project_id":project_id,"memories":memories,"indexed_rows":indexed,"missing":missing,
+                "duplicate_memory_ids":duplicate,"orphan_rows":orphan,"embeddings":embedding}
 
     def get_source(self, event_id: str) -> dict[str, Any]:
         item = self._row("SELECT * FROM events WHERE id=?", (event_id,))
@@ -507,6 +623,7 @@ class MemoryStore:
             ("event", "SELECT * FROM events WHERE project_id=? ORDER BY event_seq"),
             ("memory", "SELECT * FROM memories WHERE project_id=? ORDER BY created_at,id"),
             ("memory_source", "SELECT ms.* FROM memory_sources ms JOIN memories m ON m.id=ms.memory_id WHERE m.project_id=? ORDER BY ms.created_at,ms.memory_id,ms.event_id"),
+            ("memory_usage", "SELECT u.* FROM memory_usage u JOIN memories m ON m.id=u.memory_id WHERE m.project_id=? ORDER BY u.memory_id"),
             ("edge", "SELECT * FROM edges WHERE project_id=? ORDER BY created_at,id"),
             ("search_alias", "SELECT * FROM search_aliases WHERE project_id=? ORDER BY term"),
             ("policy", "SELECT * FROM project_policies WHERE project_id=?"),
@@ -521,7 +638,7 @@ class MemoryStore:
         """Restore one exported project. Existing project IDs are never overwritten."""
         if not records or records[0].get("record_type") != "project":
             raise ValueError("export must begin with a project record")
-        allowed = {"project", "scope", "session", "event", "memory", "memory_source", "edge", "search_alias", "policy", "audit_checkpoint", "audit"}
+        allowed = {"project", "scope", "session", "event", "memory", "memory_source", "memory_usage", "edge", "search_alias", "policy", "audit_checkpoint", "audit"}
         if any(record.get("record_type") not in allowed or not isinstance(record.get("data"), dict) for record in records):
             raise ValueError("invalid export record")
         project = records[0]["data"]
@@ -532,8 +649,9 @@ class MemoryStore:
             "scope": ("scopes", ["id","project_id","name","path","created_at"]),
             "session": ("sessions", ["id","project_id","scope_id","client","external_id","started_at","ended_at","metadata_json"]),
             "event": ("events", ["id","project_id","scope_id","session_id","kind","content","source_uri","metadata_json","content_hash","created_at","event_seq"]),
-            "memory": ("memories", ["id","project_id","scope_id","type","status","title","content","confidence","importance","valid_from","valid_until","tags_json","created_at","updated_at"]),
+            "memory": ("memories", ["id","project_id","scope_id","type","status","title","content","confidence","importance","valid_from","valid_until","tags_json","created_at","updated_at","observed_at","last_confirmed_at"]),
             "memory_source": ("memory_sources", ["memory_id","event_id","note","created_at"]),
+            "memory_usage": ("memory_usage", ["memory_id","retrieved_count","used_count","helpful_count","incorrect_count","last_retrieved_at","last_used_at","updated_at"]),
             "edge": ("edges", ["id","project_id","from_memory_id","to_memory_id","relation","note","created_at"]),
             "search_alias": ("search_aliases", ["project_id","term","aliases_json","created_at","updated_at"]),
             "audit_checkpoint": ("audit_checkpoints", ["id","project_id","from_seq","through_seq","entry_count","previous_digest","digest","created_at"]),
@@ -575,7 +693,11 @@ class MemoryStore:
             for row in rows:
                 cx.execute("INSERT INTO memories_fts(memory_id,title,content,tags) VALUES(?,?,?,?)",
                            (row["id"],row["title"],row["content"]," ".join(json.loads(row["tags_json"]))))
-        return {"ok": True, "project_id": project_id, "indexed_memories": len(rows)}
+            if self.embedding_provider:
+                memories = list(cx.execute("SELECT * FROM memories"+condition, args))
+                for memory in memories: self._index_embedding(cx, dict(memory))
+        return {"ok": True, "project_id": project_id, "indexed_memories": len(rows),
+                "embedding_provider":self._provider_name(),"embedded_memories":len(rows) if self.embedding_provider else 0}
 
     def audit(self, entity_type: str, entity_id: str) -> list[dict[str, Any]]:
         return [dict(r) for r in self.conn.execute("SELECT * FROM audit_log WHERE entity_type=? AND entity_id=? ORDER BY seq", (entity_type, entity_id))]
