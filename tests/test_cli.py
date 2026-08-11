@@ -111,6 +111,21 @@ class CLITests(unittest.TestCase):
                 self.assertIn("destination exists", second.stderr)
             finally: store.close()
 
+    def test_checkpoint_command_records_recovery_state(self):
+        with tempfile.TemporaryDirectory() as temp:
+            database = Path(temp) / "memory.db"
+            store = MemoryStore(database)
+            try: project = store.create_project("cli-checkpoint")
+            finally: store.close()
+            env = {**os.environ, "PYTHONPATH": str(Path(__file__).parents[1] / "src")}
+            command = [sys.executable, "-m", "context_memory.cli", "--db", str(database), "checkpoint",
+                       project["id"], "final", "completed", "--goal", "Ship checkpoint core",
+                       "--completed", "All tests passed", "--next-step", "Add repository facts", "--key", "cli-1"]
+            result = subprocess.run(command, cwd=Path(__file__).parents[1], env=env, check=True, capture_output=True, text=True)
+            checkpoint = json.loads(result.stdout)
+            self.assertEqual(checkpoint["mode"], "final")
+            self.assertEqual(checkpoint["completed"], ["All tests passed"])
+
 
 if __name__ == "__main__":
     unittest.main()

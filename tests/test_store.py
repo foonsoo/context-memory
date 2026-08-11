@@ -1,3 +1,4 @@
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -30,6 +31,33 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(self.store.conn.execute("SELECT count(*) FROM events").fetchone()[0], 1)
         with self.assertRaises(ValueError): self.store.record_event(p["id"], "observation", "Different", idempotency_key="evt-1")
         with self.assertRaises(sqlite3.IntegrityError): self.store.conn.execute("UPDATE events SET content='changed' WHERE id=?", (first["id"],))
+
+    def test_checkpoint_is_idempotent_and_preserves_session_and_recovery_state(self):
+        p = self.store.create_project("checkpoint")
+        session = self.store.start_session(p["id"], "test", external_id="checkpoint-session")
+        source = self.store.record_event(p["id"], "decision", "Use explicit checkpoints", session_id=session["id"])
+        first = self.store.create_checkpoint(
+            p["id"], "interim", "material_change", "Implement checkpoint core", "checkpoint-1",
+            session["id"], completed=["Store API implemented"], next_step="Expose MCP tool",
+            blockers=[], source_event_cursor=source["event_seq"], context_usage=.61)
+        again = self.store.create_checkpoint(
+            p["id"], "interim", "material_change", "Implement checkpoint core", "checkpoint-1",
+            session["id"], completed=["Store API implemented"], next_step="Expose MCP tool",
+            blockers=[], source_event_cursor=source["event_seq"], context_usage=.61)
+        self.assertEqual(first, again)
+        self.assertEqual(first["source_event_cursor"], source["event_seq"])
+        self.assertIsNone(self.store._row("SELECT ended_at FROM sessions WHERE id=?", (session["id"],))["ended_at"])
+        event = self.store.get_source(first["checkpoint_id"])
+        self.assertEqual(event["kind"], "checkpoint")
+        self.assertEqual(json.loads(event["metadata_json"])["checkpoint"]["next_step"], "Expose MCP tool")
+        with self.assertRaisesRegex(ValueError, "different request"):
+            self.store.create_checkpoint(p["id"], "final", "completed", "Different", "checkpoint-1")
+        with self.assertRaisesRegex(ValueError, "context_usage"):
+            self.store.create_checkpoint(p["id"], "interim", "manual", "Goal", "bad-usage", context_usage=1.1)
+        automatic = self.store.create_checkpoint(p["id"], "interim", "elapsed", "Keep working", "automatic-cursor")
+        self.store.record_event(p["id"], "fact", "A later event must not break checkpoint retries")
+        retried = self.store.create_checkpoint(p["id"], "interim", "elapsed", "Keep working", "automatic-cursor")
+        self.assertEqual(automatic, retried)
 
     def test_message_events_have_stable_project_cursors_and_paginate(self):
         p = self.store.create_project("messages")

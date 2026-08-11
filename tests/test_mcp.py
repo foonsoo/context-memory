@@ -31,6 +31,11 @@ class MCPTests(unittest.TestCase):
         polled = self.server.handle({"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"read_events_since","arguments":{"project_id":value["id"],"cursor":0,"kinds":["message"]}}})
         stream = polled["result"]["structuredContent"]["result"]
         self.assertEqual(stream["events"][0]["id"], event["id"]); self.assertEqual(stream["next_cursor"], event["event_seq"])
+        checkpointed = self.server.handle({"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"checkpoint_create","arguments":{
+            "project_id":value["id"],"mode":"interim","reason":"manual","goal":"Resume MCP test","idempotency_key":"mcp-checkpoint"
+        }}})
+        checkpoint = checkpointed["result"]["structuredContent"]["result"]
+        self.assertEqual(checkpoint["mode"], "interim")
 
     def test_notification_has_no_response(self):
         self.assertIsNone(self.server.handle({"jsonrpc":"2.0","method":"notifications/initialized"}))
@@ -59,6 +64,7 @@ class MCPTests(unittest.TestCase):
             {"name":"read_events_since", "arguments":{"project_id":"p", "limit":0}},
             {"name":"memory_upsert", "arguments":{"project_id":"p", "title":"t", "content":"c", "confidence":True}},
             {"name":"memory_upsert", "arguments":{"project_id":"p", "title":"t", "content":"c", "memory_type":"unknown"}},
+            {"name":"checkpoint_create", "arguments":{"project_id":"p", "mode":"unknown", "reason":"manual", "goal":"g", "idempotency_key":"k"}},
             {"name":"search_alias_set", "arguments":{"project_id":"p", "term":"db", "aliases":["database", 7]}},
             {"name":"project_resolve", "arguments":[]},
         ]

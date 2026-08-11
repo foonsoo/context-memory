@@ -17,6 +17,8 @@ from .embeddings import EmbeddingProvider, LocalHashEmbedding
 TYPES = {"fact", "decision", "preference", "constraint", "procedure", "summary", "task", "other"}
 STATUSES = {"proposed", "active", "superseded", "disputed", "expired", "rejected"}
 RELATIONS = {"supersedes", "disputes", "supports", "depends_on", "related_to"}
+CHECKPOINT_MODES = {"interim", "final"}
+CHECKPOINT_REASONS = {"context_budget", "elapsed", "material_change", "completed", "manual"}
 DISCOVERY_MIN_CONFIDENCE = .45
 DISCOVERY_AUTO_SELECT_CONFIDENCE = .60
 DISCOVERY_MIN_MARGIN = .12
@@ -324,6 +326,81 @@ class MemoryStore:
             self._audit(cx, project_id, "event", item["id"], "recorded", item)
             self._save_idem(cx, "record_event", idempotency_key, request, item)
         return item
+
+    def create_checkpoint(self, project_id: str, mode: str, reason: str, goal: str,
+                          idempotency_key: str, session_id: str | None = None,
+                          scope_id: str | None = None, completed: list[str] | None = None,
+                          next_step: str | None = None, blockers: list[str] | None = None,
+                          source_event_cursor: int | None = None,
+                          context_usage: float | None = None) -> dict[str, Any]:
+        """Record one explicit, client-neutral recovery checkpoint.
+
+        Lifecycle automation and final-session closure are deliberately layered on
+        top of this primitive; this operation only durably records caller-supplied
+        recovery state and never mutates Git or inferred memories.
+        """
+        request = {"project_id":project_id, "mode":mode, "reason":reason, "goal":goal,
+                   "session_id":session_id, "scope_id":scope_id, "completed":completed,
+                   "next_step":next_step, "blockers":blockers,
+                   "source_event_cursor":source_event_cursor, "context_usage":context_usage}
+        if hit := self._idem("create_checkpoint", idempotency_key, request): return hit
+        if mode not in CHECKPOINT_MODES: raise ValueError("mode must be interim or final")
+        if reason not in CHECKPOINT_REASONS:
+            raise ValueError("reason must be context_budget, elapsed, material_change, completed, or manual")
+        if not goal.strip(): raise ValueError("goal cannot be empty")
+        if not idempotency_key.strip(): raise ValueError("idempotency_key cannot be empty")
+        completed = completed or []; blockers = blockers or []
+        if any(not item.strip() for item in completed): raise ValueError("completed must contain non-empty values")
+        if any(not item.strip() for item in blockers): raise ValueError("blockers must contain non-empty values")
+        if next_step is not None and not next_step.strip(): raise ValueError("next_step cannot be empty")
+        if context_usage is not None and not 0 <= context_usage <= 1:
+            raise ValueError("context_usage must be between 0 and 1")
+        project = self._row("SELECT id FROM projects WHERE id=?", (project_id,))
+        if not project: raise KeyError("project not found")
+        if session_id:
+            session = self._row("SELECT project_id,scope_id FROM sessions WHERE id=?", (session_id,))
+            if not session: raise KeyError("session not found")
+            if session["project_id"] != project_id: raise ValueError("session belongs to a different project")
+            if scope_id is None: scope_id = session["scope_id"]
+        if scope_id:
+            scope = self._row("SELECT project_id FROM scopes WHERE id=?", (scope_id,))
+            if not scope: raise KeyError("scope not found")
+            if scope["project_id"] != project_id: raise ValueError("scope belongs to a different project")
+        cursor = self._row("SELECT next_seq-1 AS value FROM project_event_cursors WHERE project_id=?", (project_id,))["value"]
+        if source_event_cursor is None: source_event_cursor = cursor
+        if source_event_cursor < 0 or source_event_cursor > cursor:
+            raise ValueError("source_event_cursor must reference an existing project event cursor")
+        payload = {"schema_version": 1, "mode": mode, "reason": reason, "goal": goal.strip(),
+                   "completed": [item.strip() for item in completed],
+                   "next_step": next_step.strip() if next_step else None,
+                   "blockers": [item.strip() for item in blockers],
+                   "source_event_cursor": source_event_cursor, "context_usage": context_usage}
+        content = canonical(payload); created_at = now()
+        with self.tx() as cx:
+            existing = cx.execute(
+                "SELECT request_hash,response_json FROM idempotency_keys WHERE operation=? AND key=?",
+                ("create_checkpoint", idempotency_key)).fetchone()
+            if existing:
+                digest = hashlib.sha256(canonical(request).encode()).hexdigest()
+                if digest != existing["request_hash"]:
+                    raise ValueError("idempotency key reused with a different request")
+                return json.loads(existing["response_json"])
+            next_cursor = cx.execute(
+                "UPDATE project_event_cursors SET next_seq=next_seq+1 WHERE project_id=? RETURNING next_seq-1",
+                (project_id,)).fetchone()
+            if not next_cursor: raise KeyError("project not found")
+            event = {"id":uid(), "project_id":project_id, "scope_id":scope_id, "session_id":session_id,
+                     "kind":"checkpoint", "content":content, "source_uri":None,
+                     "metadata_json":canonical({"checkpoint":payload}),
+                     "content_hash":hashlib.sha256(content.encode()).hexdigest(),
+                     "created_at":created_at, "event_seq":next_cursor[0]}
+            cx.execute("""INSERT INTO events(id,project_id,scope_id,session_id,kind,content,source_uri,metadata_json,content_hash,created_at,event_seq)
+              VALUES(:id,:project_id,:scope_id,:session_id,:kind,:content,:source_uri,:metadata_json,:content_hash,:created_at,:event_seq)""", event)
+            self._audit(cx, project_id, "event", event["id"], "recorded", event)
+            result = {"checkpoint_id":event["id"], "event_seq":event["event_seq"],
+                      "created_at":created_at, **payload}
+            self._save_idem(cx, "create_checkpoint", idempotency_key, request, result)
+        return result
 
     def read_events_since(self, project_id: str, cursor: int = 0, kinds: list[str] | None = None,
                           scope_id: str | None = None, limit: int = 100) -> dict[str, Any]:
