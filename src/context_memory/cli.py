@@ -215,6 +215,9 @@ def main() -> None:
     checkpoint.add_argument("--context-usage", type=float)
     checkpoint.add_argument("--repository", dest="repository_path")
     checkpoint.add_argument("--test-result", action="append", default=[], help='JSON object with name, status, and optional command/details')
+    checkpoint_eval = sub.add_parser("checkpoint-evaluate", help="Evaluate checkpoint thresholds without writing")
+    checkpoint_eval.add_argument("project_id"); checkpoint_eval.add_argument("--context-usage", type=float)
+    checkpoint_eval.add_argument("--session-id"); checkpoint_eval.add_argument("--repository", dest="repository_path")
     events_since = sub.add_parser("events-since", help="Read immutable project events after a cursor")
     events_since.add_argument("project_id"); events_since.add_argument("--cursor", type=int, default=0); events_since.add_argument("--kind", action="append"); events_since.add_argument("--scope-id"); events_since.add_argument("--limit", type=int, default=100)
     memory = sub.add_parser("memory"); memory.add_argument("project_id"); memory.add_argument("title"); memory.add_argument("content"); memory.add_argument("--type", default="other"); memory.add_argument("--status", default="proposed"); memory.add_argument("--source", action="append", default=[]); memory.add_argument("--confidence", type=float, default=.5); memory.add_argument("--importance", type=float, default=.5)
@@ -231,6 +234,9 @@ def main() -> None:
     policy = sub.add_parser("policy", help="Read or update project operational bounds")
     policy.add_argument("project_id"); policy.add_argument("--max-context-chars", type=int); policy.add_argument("--max-context-items", type=int)
     policy.add_argument("--audit-keep-entries", type=int); policy.add_argument("--terminal-memory-days", type=int)
+    policy.add_argument("--checkpoint-soft-usage", type=float); policy.add_argument("--checkpoint-hard-usage", type=float)
+    policy.add_argument("--checkpoint-elapsed-seconds", type=int); policy.add_argument("--checkpoint-event-count", type=int)
+    policy.add_argument("--checkpoint-max-age-seconds", type=int)
     maintain = sub.add_parser("maintain", help="Plan/apply terminal-memory cleanup and checkpointed audit compaction")
     maintain.add_argument("project_id"); maintain.add_argument("--apply", action="store_true")
     status_cmd = sub.add_parser("status", help="Show project policy, storage counts, audit checkpoints, and search health")
@@ -273,6 +279,8 @@ def main() -> None:
             args.project_id, args.mode, args.reason, args.goal, args.key, args.session_id, args.scope_id,
             args.completed, args.next_step, args.blocker, args.source_event_cursor, args.context_usage,
             args.repository_path, [json.loads(value) for value in args.test_result]))
+        elif args.command == "checkpoint-evaluate": output(store.evaluate_checkpoint(
+            args.project_id, args.context_usage, args.session_id, args.repository_path))
         elif args.command == "events-since": output(store.read_events_since(args.project_id, args.cursor, args.kind, args.scope_id, args.limit))
         elif args.command == "memory": output(store.upsert_memory(args.project_id, args.title, args.content, args.type, args.status, args.confidence, args.importance, source_event_ids=args.source))
         elif args.command == "search": output(store.search(args.project_id, args.query, args.limit))
@@ -295,7 +303,10 @@ def main() -> None:
         elif args.command == "repair": output(store.rebuild_fts(args.project_id))
         elif args.command == "policy":
             changes = {"max_context_chars":args.max_context_chars,"max_context_items":args.max_context_items,
-                       "audit_keep_entries":args.audit_keep_entries,"terminal_memory_days":args.terminal_memory_days}
+                       "audit_keep_entries":args.audit_keep_entries,"terminal_memory_days":args.terminal_memory_days,
+                       "checkpoint_soft_usage":args.checkpoint_soft_usage,"checkpoint_hard_usage":args.checkpoint_hard_usage,
+                       "checkpoint_elapsed_seconds":args.checkpoint_elapsed_seconds,"checkpoint_event_count":args.checkpoint_event_count,
+                       "checkpoint_max_age_seconds":args.checkpoint_max_age_seconds}
             output(store.set_policy(args.project_id, **changes) if any(value is not None for value in changes.values()) else store.get_policy(args.project_id))
         elif args.command == "maintain": output(store.maintain(args.project_id, args.apply))
         elif args.command == "status": output(store.maintenance_status(args.project_id))

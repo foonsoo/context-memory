@@ -95,6 +95,38 @@ class StoreTests(unittest.TestCase):
             self.store.create_checkpoint(p["id"], "interim", "manual", "Goal", "bad-repo",
                                          repository_path=self.temp.name)
 
+    def test_checkpoint_evaluation_uses_context_thresholds_and_material_change(self):
+        p = self.store.create_project("checkpoint-thresholds")
+        self.store.set_policy(p["id"], checkpoint_soft_usage=.55, checkpoint_hard_usage=.8)
+        quiet = self.store.evaluate_checkpoint(p["id"], context_usage=.6)
+        self.assertFalse(quiet["should_checkpoint"])
+        self.store.record_event(p["id"], "observation", "Material progress")
+        soft = self.store.evaluate_checkpoint(p["id"], context_usage=.6)
+        self.assertTrue(soft["should_checkpoint"]); self.assertEqual(soft["trigger"], "soft_context_usage_after_material_change")
+        hard = self.store.evaluate_checkpoint(p["id"], context_usage=.8)
+        self.assertTrue(hard["should_checkpoint"]); self.assertEqual(hard["trigger"], "hard_context_usage")
+        with self.assertRaisesRegex(ValueError, "less than"):
+            self.store.set_policy(p["id"], checkpoint_soft_usage=.9)
+
+    def test_checkpoint_evaluation_uses_event_and_repository_fallbacks(self):
+        p = self.store.create_project("checkpoint-fallbacks")
+        self.store.set_policy(p["id"], checkpoint_event_count=2)
+        self.store.record_event(p["id"], "observation", "one")
+        self.assertFalse(self.store.evaluate_checkpoint(p["id"])["should_checkpoint"])
+        self.store.record_event(p["id"], "observation", "two")
+        events = self.store.evaluate_checkpoint(p["id"])
+        self.assertEqual(events["trigger"], "event_count")
+        repository = Path(self.temp.name) / "fallback-repo"; repository.mkdir()
+        subprocess.run(["git", "init", "-b", "main"], cwd=repository, check=True, capture_output=True)
+        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repository, check=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=repository, check=True)
+        (repository / "tracked.txt").write_text("first\n", encoding="utf-8")
+        subprocess.run(["git", "add", "tracked.txt"], cwd=repository, check=True)
+        subprocess.run(["git", "commit", "-m", "initial"], cwd=repository, check=True, capture_output=True)
+        repository_signal = self.store.evaluate_checkpoint(p["id"], repository_path=str(repository))
+        self.assertTrue(repository_signal["signals"]["repository_changed"])
+
+
     def test_message_events_have_stable_project_cursors_and_paginate(self):
         p = self.store.create_project("messages")
         other = self.store.create_project("other")
