@@ -6,6 +6,7 @@ import os
 import re
 import sqlite3
 import stat
+import subprocess
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -332,7 +333,9 @@ class MemoryStore:
                           scope_id: str | None = None, completed: list[str] | None = None,
                           next_step: str | None = None, blockers: list[str] | None = None,
                           source_event_cursor: int | None = None,
-                          context_usage: float | None = None) -> dict[str, Any]:
+                          context_usage: float | None = None,
+                          repository_path: str | None = None,
+                          test_results: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         """Record one explicit, client-neutral recovery checkpoint.
 
         Lifecycle automation and final-session closure are deliberately layered on
@@ -342,7 +345,8 @@ class MemoryStore:
         request = {"project_id":project_id, "mode":mode, "reason":reason, "goal":goal,
                    "session_id":session_id, "scope_id":scope_id, "completed":completed,
                    "next_step":next_step, "blockers":blockers,
-                   "source_event_cursor":source_event_cursor, "context_usage":context_usage}
+                   "source_event_cursor":source_event_cursor, "context_usage":context_usage,
+                   "repository_path":repository_path, "test_results":test_results}
         if hit := self._idem("create_checkpoint", idempotency_key, request): return hit
         if mode not in CHECKPOINT_MODES: raise ValueError("mode must be interim or final")
         if reason not in CHECKPOINT_REASONS:
@@ -355,6 +359,8 @@ class MemoryStore:
         if next_step is not None and not next_step.strip(): raise ValueError("next_step cannot be empty")
         if context_usage is not None and not 0 <= context_usage <= 1:
             raise ValueError("context_usage must be between 0 and 1")
+        tests = self._normalize_test_results(test_results or [])
+        repository = self._repository_facts(repository_path) if repository_path else None
         project = self._row("SELECT id FROM projects WHERE id=?", (project_id,))
         if not project: raise KeyError("project not found")
         if session_id:
@@ -370,11 +376,12 @@ class MemoryStore:
         if source_event_cursor is None: source_event_cursor = cursor
         if source_event_cursor < 0 or source_event_cursor > cursor:
             raise ValueError("source_event_cursor must reference an existing project event cursor")
-        payload = {"schema_version": 1, "mode": mode, "reason": reason, "goal": goal.strip(),
+        payload = {"schema_version": 2, "mode": mode, "reason": reason, "goal": goal.strip(),
                    "completed": [item.strip() for item in completed],
                    "next_step": next_step.strip() if next_step else None,
                    "blockers": [item.strip() for item in blockers],
-                   "source_event_cursor": source_event_cursor, "context_usage": context_usage}
+                   "source_event_cursor": source_event_cursor, "context_usage": context_usage,
+                   "objective": {"repository": repository, "test_results": tests}}
         content = canonical(payload); created_at = now()
         with self.tx() as cx:
             existing = cx.execute(
@@ -401,6 +408,48 @@ class MemoryStore:
                       "created_at":created_at, **payload}
             self._save_idem(cx, "create_checkpoint", idempotency_key, request, result)
         return result
+
+    @staticmethod
+    def _normalize_test_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        allowed = {"name", "status", "command", "details"}
+        normalized = []
+        for result in results:
+            if not isinstance(result, dict) or set(result) - allowed:
+                raise ValueError("test_results must contain objects with name, status, command, and details only")
+            name, status = result.get("name"), result.get("status")
+            if not isinstance(name, str) or not name.strip(): raise ValueError("test result name cannot be empty")
+            if status not in {"passed", "failed", "skipped"}: raise ValueError("test result status must be passed, failed, or skipped")
+            item = {"name": name.strip(), "status": status}
+            for field in ("command", "details"):
+                value = result.get(field)
+                if value is not None:
+                    if not isinstance(value, str) or not value.strip(): raise ValueError(f"test result {field} cannot be empty")
+                    item[field] = value.strip()
+            normalized.append(item)
+        return normalized
+
+    @staticmethod
+    def _repository_facts(path: str) -> dict[str, Any]:
+        root = Path(path).expanduser().resolve()
+        if not root.is_dir(): raise ValueError("repository_path must be an existing directory")
+        def git(*args: str) -> str:
+            completed = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, check=False)
+            if completed.returncode != 0: raise ValueError("repository_path must identify a Git worktree")
+            return completed.stdout.rstrip("\n")
+        top_level = str(Path(git("rev-parse", "--show-toplevel")).resolve())
+        head = git("rev-parse", "HEAD")
+        branch_value = git("symbolic-ref", "--quiet", "--short", "HEAD") if subprocess.run(
+            ["git", "-C", str(root), "symbolic-ref", "--quiet", "HEAD"], capture_output=True).returncode == 0 else None
+        changed = []
+        entries = git("status", "--porcelain=v1", "-z", "--untracked-files=all").split("\0")
+        index = 0
+        while index < len(entries):
+            entry = entries[index]
+            if not entry: break
+            status, path_value = entry[:2], entry[3:]
+            changed.append({"path": path_value, "status": status})
+            index += 2 if "R" in status or "C" in status else 1
+        return {"root": top_level, "head": head, "branch": branch_value, "dirty": bool(changed), "changed_files": changed}
 
     def read_events_since(self, project_id: str, cursor: int = 0, kinds: list[str] | None = None,
                           scope_id: str | None = None, limit: int = 100) -> dict[str, Any]:

@@ -293,7 +293,7 @@ Bearer authentication without TLS is not safe across an untrusted network. Remot
 }
 ```
 
-4. For long-running work, explicitly call `checkpoint_create` with a unique idempotency key. It records caller-supplied recovery state as an immutable checkpoint event without mutating Git, memories, or session lifecycle. `interim` and `final` are durable markers at this layer; automatic thresholds and final-session closure are later lifecycle policies.
+4. For long-running work, explicitly call `checkpoint_create` with a unique idempotency key. It records caller-supplied recovery state as an immutable checkpoint event without mutating Git, memories, or session lifecycle. Pass `repository_path` to capture HEAD, branch, dirty state, and changed files directly from Git, and pass structured `test_results` for explicitly observed test outcomes. These objective facts live under `objective`, separate from semantic goal/progress summaries. `interim` and `final` are durable markers at this layer; automatic thresholds and final-session closure are later lifecycle policies.
 5. End the session. In a new Codex task, call `get_context` with `query: "HTTP server configuration"` and `char_budget: 4000`. The returned block cites `EVENT_UUID`; call `get_source` before relying on it when accuracy matters.
 
 For a shell-only demo, IDs can be captured with a short Python script or inspected from the JSON output:
@@ -328,7 +328,7 @@ Project hooks require a trusted project and explicit review in Codex. Use `/hook
 | `project_create`, `project_list`, `project_resolve`, `project_alias_list`, `scope_create` | Project discovery, repository identity, and path/module boundaries |
 | `session_start`, `session_end` | Cross-client session lifecycle |
 | `record_event` | Immutable raw evidence; `kind=message` is unverified inter-session coordination |
-| `checkpoint_create` | Idempotent explicit interim/final recovery marker with goal, progress, next step, blockers, cursor, and optional context usage |
+| `checkpoint_create` | Idempotent explicit interim/final recovery marker with semantic progress, cursor, optional context usage, objective Git facts, and supplied test results |
 | `read_events_since` | Cursor-based incremental event/message polling with pagination |
 | `memory_upsert` | Proposed/active derived memory with source event IDs |
 | `memory_transition` | Activate, supersede, dispute, expire, or reject; add relationship edge |

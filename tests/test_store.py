@@ -1,5 +1,6 @@
 import json
 import sqlite3
+import subprocess
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -58,6 +59,41 @@ class StoreTests(unittest.TestCase):
         self.store.record_event(p["id"], "fact", "A later event must not break checkpoint retries")
         retried = self.store.create_checkpoint(p["id"], "interim", "elapsed", "Keep working", "automatic-cursor")
         self.assertEqual(automatic, retried)
+
+    def test_checkpoint_separates_repository_facts_and_supplied_test_results(self):
+        p = self.store.create_project("checkpoint-objective")
+        repository = Path(self.temp.name) / "repo"; repository.mkdir()
+        subprocess.run(["git", "init", "-b", "main"], cwd=repository, check=True, capture_output=True)
+        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repository, check=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=repository, check=True)
+        (repository / "tracked.txt").write_text("first\n", encoding="utf-8")
+        subprocess.run(["git", "add", "tracked.txt"], cwd=repository, check=True)
+        subprocess.run(["git", "commit", "-m", "initial"], cwd=repository, check=True, capture_output=True)
+        (repository / "tracked.txt").write_text("changed\n", encoding="utf-8")
+        (repository / "new.txt").write_text("new\n", encoding="utf-8")
+        result = self.store.create_checkpoint(
+            p["id"], "interim", "material_change", "Objective checkpoint", "objective-1",
+            repository_path=str(repository), test_results=[
+                {"name":"unit tests", "status":"passed", "command":"python -m unittest", "details":"51 tests"},
+                {"name":"integration", "status":"skipped"},
+            ])
+        objective = result["objective"]
+        self.assertEqual(result["schema_version"], 2)
+        self.assertEqual(objective["repository"]["branch"], "main")
+        self.assertTrue(objective["repository"]["dirty"])
+        self.assertEqual({item["path"] for item in objective["repository"]["changed_files"]}, {"tracked.txt", "new.txt"})
+        self.assertEqual(objective["test_results"][0]["status"], "passed")
+        event = self.store.get_source(result["checkpoint_id"])
+        self.assertEqual(json.loads(event["content"])["objective"], objective)
+
+    def test_checkpoint_rejects_invalid_objective_evidence(self):
+        p = self.store.create_project("checkpoint-invalid-objective")
+        with self.assertRaisesRegex(ValueError, "test result status"):
+            self.store.create_checkpoint(p["id"], "interim", "manual", "Goal", "bad-test",
+                                         test_results=[{"name":"unit", "status":"maybe"}])
+        with self.assertRaisesRegex(ValueError, "Git worktree"):
+            self.store.create_checkpoint(p["id"], "interim", "manual", "Goal", "bad-repo",
+                                         repository_path=self.temp.name)
 
     def test_message_events_have_stable_project_cursors_and_paginate(self):
         p = self.store.create_project("messages")

@@ -32,10 +32,12 @@ class MCPTests(unittest.TestCase):
         stream = polled["result"]["structuredContent"]["result"]
         self.assertEqual(stream["events"][0]["id"], event["id"]); self.assertEqual(stream["next_cursor"], event["event_seq"])
         checkpointed = self.server.handle({"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"checkpoint_create","arguments":{
-            "project_id":value["id"],"mode":"interim","reason":"manual","goal":"Resume MCP test","idempotency_key":"mcp-checkpoint"
+            "project_id":value["id"],"mode":"interim","reason":"manual","goal":"Resume MCP test","idempotency_key":"mcp-checkpoint",
+            "test_results":[{"name":"MCP test","status":"passed"}]
         }}})
         checkpoint = checkpointed["result"]["structuredContent"]["result"]
         self.assertEqual(checkpoint["mode"], "interim")
+        self.assertEqual(checkpoint["objective"]["test_results"][0]["status"], "passed")
 
     def test_notification_has_no_response(self):
         self.assertIsNone(self.server.handle({"jsonrpc":"2.0","method":"notifications/initialized"}))

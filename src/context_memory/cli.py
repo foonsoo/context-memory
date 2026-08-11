@@ -213,6 +213,8 @@ def main() -> None:
     checkpoint.add_argument("--completed", action="append", default=[]); checkpoint.add_argument("--next-step")
     checkpoint.add_argument("--blocker", action="append", default=[]); checkpoint.add_argument("--source-event-cursor", type=int)
     checkpoint.add_argument("--context-usage", type=float)
+    checkpoint.add_argument("--repository", dest="repository_path")
+    checkpoint.add_argument("--test-result", action="append", default=[], help='JSON object with name, status, and optional command/details')
     events_since = sub.add_parser("events-since", help="Read immutable project events after a cursor")
     events_since.add_argument("project_id"); events_since.add_argument("--cursor", type=int, default=0); events_since.add_argument("--kind", action="append"); events_since.add_argument("--scope-id"); events_since.add_argument("--limit", type=int, default=100)
     memory = sub.add_parser("memory"); memory.add_argument("project_id"); memory.add_argument("title"); memory.add_argument("content"); memory.add_argument("--type", default="other"); memory.add_argument("--status", default="proposed"); memory.add_argument("--source", action="append", default=[]); memory.add_argument("--confidence", type=float, default=.5); memory.add_argument("--importance", type=float, default=.5)
@@ -269,7 +271,8 @@ def main() -> None:
         elif args.command == "event": output(store.record_event(args.project_id, args.kind, args.content, session_id=args.session_id, idempotency_key=args.key))
         elif args.command == "checkpoint": output(store.create_checkpoint(
             args.project_id, args.mode, args.reason, args.goal, args.key, args.session_id, args.scope_id,
-            args.completed, args.next_step, args.blocker, args.source_event_cursor, args.context_usage))
+            args.completed, args.next_step, args.blocker, args.source_event_cursor, args.context_usage,
+            args.repository_path, [json.loads(value) for value in args.test_result]))
         elif args.command == "events-since": output(store.read_events_since(args.project_id, args.cursor, args.kind, args.scope_id, args.limit))
         elif args.command == "memory": output(store.upsert_memory(args.project_id, args.title, args.content, args.type, args.status, args.confidence, args.importance, source_event_ids=args.source))
         elif args.command == "search": output(store.search(args.project_id, args.query, args.limit))
