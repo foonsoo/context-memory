@@ -160,7 +160,7 @@ class MemoryStore:
             self._audit(cx, project_id, "session", item["id"], "started", item)
         return item
 
-    def end_session(self, session_id: str, summary: str | None = None) -> dict[str, Any]:
+    def end_session(self, session_id: str, summary: str | None = None, extract_candidates: bool = True) -> dict[str, Any]:
         with self.tx() as cx:
             row = cx.execute("SELECT * FROM sessions WHERE id=?", (session_id,)).fetchone()
             if not row: raise KeyError("session not found")
@@ -168,7 +168,76 @@ class MemoryStore:
             cx.execute("UPDATE sessions SET ended_at=? WHERE id=?", (ended, session_id))
             result = dict(row); result["ended_at"] = ended
             self._audit(cx, row["project_id"], "session", session_id, "ended", {"summary": summary, **result})
+        result["review"] = self.extract_session_candidates(session_id) if extract_candidates else {"created": [], "conflicts": []}
         return result
+
+    @staticmethod
+    def _terms(text: str) -> set[str]:
+        return {token for token in re.findall(r"[\w-]+", text.casefold(), flags=re.UNICODE) if len(token) > 1}
+
+    @classmethod
+    def _text_similarity(cls, left: str, right: str) -> float:
+        a, b = cls._terms(left), cls._terms(right)
+        return len(a & b) / len(a | b) if a and b else 0.0
+
+    def extract_session_candidates(self, session_id: str) -> dict[str, Any]:
+        session = self._row("SELECT * FROM sessions WHERE id=?", (session_id,))
+        if not session: raise KeyError("session not found")
+        kinds = {"fact", "decision", "preference", "constraint", "procedure", "task", "summary"}
+        created, conflicts = [], []
+        events = self.conn.execute("SELECT * FROM events WHERE session_id=? ORDER BY event_seq", (session_id,))
+        for event in events:
+            if event["kind"] not in kinds: continue
+            existing_source = self._row("SELECT memory_id FROM memory_sources WHERE event_id=?", (event["id"],))
+            if existing_source: continue
+            title = event["content"].strip().splitlines()[0][:120] or event["kind"].title()
+            candidate = self.upsert_memory(session["project_id"], title, event["content"], event["kind"], "proposed",
+                                           .6, .5, session["scope_id"], [event["id"]], idempotency_key=f"candidate:{event['id']}")
+            created.append(candidate)
+            for active in self.conn.execute("SELECT * FROM memories WHERE project_id=? AND status='active' AND id<>?", (session["project_id"], candidate["id"])):
+                similarity = self._text_similarity(f"{candidate['title']} {candidate['content']}", f"{active['title']} {active['content']}")
+                if similarity < .35: continue
+                reason = "similar active memory; review for duplicate, replacement, or dispute"
+                with self.tx() as cx:
+                    cx.execute("INSERT OR IGNORE INTO review_conflicts VALUES(?,?,?,?,?)", (candidate["id"], active["id"], similarity, reason, now()))
+                conflicts.append({"candidate_memory_id":candidate["id"], "existing_memory_id":active["id"], "similarity":similarity, "reason":reason})
+        return {"created": created, "conflicts": conflicts}
+
+    def review_queue(self, project_id: str) -> list[dict[str, Any]]:
+        rows = []
+        for row in self.conn.execute("SELECT * FROM memories WHERE project_id=? AND status='proposed' ORDER BY created_at,id", (project_id,)):
+            item = dict(row)
+            item["conflicts"] = [dict(x) for x in self.conn.execute("SELECT * FROM review_conflicts WHERE candidate_memory_id=? ORDER BY similarity DESC", (item["id"],))]
+            item["sources"] = [dict(x) for x in self.conn.execute("SELECT e.id,e.kind,e.source_uri,e.created_at FROM memory_sources s JOIN events e ON e.id=s.event_id WHERE s.memory_id=?", (item["id"],))]
+            rows.append(item)
+        return rows
+
+    def propose_correction(self, project_id: str, memory_id: str, content: str, title: str | None = None) -> dict[str, Any]:
+        existing = self._row("SELECT * FROM memories WHERE id=? AND project_id=?", (memory_id, project_id))
+        if not existing: raise KeyError("memory not found")
+        event = self.record_event(project_id, "correction", content, scope_id=existing["scope_id"], metadata={"corrects_memory_id":memory_id})
+        candidate = self.upsert_memory(project_id, title or existing["title"], content, existing["type"], "proposed",
+                                       existing["confidence"], existing["importance"], existing["scope_id"], [event["id"]],
+                                       visibility=existing["visibility"])
+        with self.tx() as cx:
+            cx.execute("INSERT OR IGNORE INTO review_conflicts VALUES(?,?,?,?,?)", (candidate["id"], memory_id, 1.0, "explicit correction", now()))
+        return candidate
+
+    def review_candidate(self, memory_id: str, action: str, related_memory_id: str | None = None, note: str = "") -> dict[str, Any]:
+        candidate = self._row("SELECT * FROM memories WHERE id=? AND status='proposed'", (memory_id,))
+        if not candidate: raise KeyError("proposed memory not found")
+        if action == "approve": return self.transition(memory_id, "active", note=note)
+        if action == "reject": return self.transition(memory_id, "rejected", note=note)
+        if action not in {"supersede", "dispute"}: raise ValueError("action must be approve, reject, supersede, or dispute")
+        target = related_memory_id
+        if not target:
+            row = self._row("SELECT existing_memory_id FROM review_conflicts WHERE candidate_memory_id=? ORDER BY similarity DESC LIMIT 1", (memory_id,))
+            target = row["existing_memory_id"] if row else None
+        if not target: raise ValueError("related_memory_id is required")
+        self.transition(memory_id, "active", note=note)
+        status = "superseded" if action == "supersede" else "disputed"
+        self.transition(target, status, memory_id, note)
+        return self._row("SELECT * FROM memories WHERE id=?", (memory_id,))
 
     def record_event(self, project_id: str, kind: str, content: str, session_id: str | None = None,
                      scope_id: str | None = None, source_uri: str | None = None, metadata: dict | None = None,
@@ -221,31 +290,34 @@ class MemoryStore:
     def upsert_memory(self, project_id: str, title: str, content: str, memory_type: str = "other", status: str = "proposed",
                       confidence: float = .5, importance: float = .5, scope_id: str | None = None, source_event_ids: list[str] | None = None,
                       valid_from: str | None = None, valid_until: str | None = None, tags: list[str] | None = None,
-                      observed_at: str | None = None, last_confirmed_at: str | None = None,
+                      observed_at: str | None = None, last_confirmed_at: str | None = None, visibility: str | None = None,
                       memory_id: str | None = None, idempotency_key: str | None = None) -> dict[str, Any]:
         request = locals().copy(); request.pop("self"); request.pop("idempotency_key")
         if hit := self._idem("upsert_memory", idempotency_key, request): return hit
-        if memory_type not in TYPES or status not in STATUSES: raise ValueError("invalid memory type or status")
-        if not (0 <= confidence <= 1 and 0 <= importance <= 1): raise ValueError("confidence and importance must be 0..1")
         ts, mid = now(), memory_id or uid()
         existing = self._row("SELECT * FROM memories WHERE id=?", (mid,))
+        if memory_type not in TYPES or status not in STATUSES: raise ValueError("invalid memory type or status")
+        resolved_visibility = visibility or (existing["visibility"] if existing else "project")
+        if resolved_visibility not in {"project", "global"}: raise ValueError("visibility must be project or global")
+        if resolved_visibility == "global" and scope_id is not None: raise ValueError("global memories cannot be path-scoped")
+        if not (0 <= confidence <= 1 and 0 <= importance <= 1): raise ValueError("confidence and importance must be 0..1")
         item = {"id": mid, "project_id": project_id, "scope_id": scope_id, "type": memory_type, "status": status, "title": title,
                 "content": content, "confidence": confidence, "importance": importance, "valid_from": valid_from, "valid_until": valid_until,
                 "tags_json": canonical(tags or []), "created_at": existing["created_at"] if existing else ts, "updated_at": ts,
-                "observed_at": observed_at or (existing["observed_at"] if existing else ts),
+                "observed_at": observed_at or (existing["observed_at"] if existing else ts), "visibility": resolved_visibility,
                 "last_confirmed_at": last_confirmed_at or (existing["last_confirmed_at"] if existing else (ts if status == "active" else None))}
         with self.tx() as cx:
             if existing:
                 if existing["project_id"] != project_id: raise ValueError("memory belongs to another project")
                 cx.execute("""UPDATE memories SET scope_id=:scope_id,type=:type,status=:status,title=:title,content=:content,confidence=:confidence,
                   importance=:importance,valid_from=:valid_from,valid_until=:valid_until,tags_json=:tags_json,updated_at=:updated_at,
-                  observed_at=:observed_at,last_confirmed_at=:last_confirmed_at WHERE id=:id""", item)
+                  observed_at=:observed_at,last_confirmed_at=:last_confirmed_at,visibility=:visibility WHERE id=:id""", item)
                 action = "updated"
             else:
                 cx.execute("""INSERT INTO memories(id,project_id,scope_id,type,status,title,content,confidence,importance,valid_from,valid_until,
-                  tags_json,created_at,updated_at,observed_at,last_confirmed_at)
+                  tags_json,created_at,updated_at,observed_at,last_confirmed_at,visibility)
                   VALUES(:id,:project_id,:scope_id,:type,:status,:title,:content,:confidence,:importance,:valid_from,:valid_until,
-                  :tags_json,:created_at,:updated_at,:observed_at,:last_confirmed_at)""", item)
+                  :tags_json,:created_at,:updated_at,:observed_at,:last_confirmed_at,:visibility)""", item)
                 action = "created"
             for eid in source_event_ids or []:
                 event = cx.execute("SELECT project_id FROM events WHERE id=?", (eid,)).fetchone()
@@ -377,7 +449,7 @@ class MemoryStore:
         timestamp = now()
         sql = f"""SELECT m.*, bm25(memories_fts, 0, 5, 1, .5) AS fts_rank
           FROM memories_fts JOIN memories m ON m.id=memories_fts.memory_id
-          WHERE memories_fts MATCH ? AND m.project_id=? AND m.status IN ({placeholders})
+          WHERE memories_fts MATCH ? AND (m.project_id=? OR m.visibility='global') AND m.status IN ({placeholders})
           AND (m.valid_from IS NULL OR m.valid_from<=?) AND (m.valid_until IS NULL OR m.valid_until>?)"""
         args: list[Any] = [match, project_id, *allowed, timestamp, timestamp]
         if scope_id: sql += " AND (m.scope_id=? OR m.scope_id IS NULL)"; args.append(scope_id)
@@ -393,7 +465,7 @@ class MemoryStore:
         if self.embedding_provider:
             query_vector = self.embedding_provider.embed([query])[0]
             sem_sql = f"""SELECT m.*, e.vector_json FROM memory_embeddings e JOIN memories m ON m.id=e.memory_id
-              WHERE m.project_id=? AND m.status IN ({placeholders}) AND e.provider=? AND e.dimensions=?
+              WHERE (m.project_id=? OR m.visibility='global') AND m.status IN ({placeholders}) AND e.provider=? AND e.dimensions=?
               AND (m.valid_from IS NULL OR m.valid_from<=?) AND (m.valid_until IS NULL OR m.valid_until>?)"""
             sem_args: list[Any] = [project_id, *allowed, self._provider_name(), self.embedding_provider.dimensions, timestamp, timestamp]
             if scope_id: sem_sql += " AND (m.scope_id=? OR m.scope_id IS NULL)"; sem_args.append(scope_id)
@@ -408,8 +480,7 @@ class MemoryStore:
                 component = components.setdefault(row["id"], {"lexical_rrf": 0.0, "semantic_rrf": 0.0})
                 component["semantic_rrf"] = 1.0 / (60 + rank)
                 semantic_scores[row["id"]] = similarity
-        usage = {row["memory_id"]: dict(row) for row in self.conn.execute(
-            "SELECT * FROM memory_usage WHERE memory_id IN (SELECT id FROM memories WHERE project_id=?)", (project_id,))}
+        usage = {row["memory_id"]: dict(row) for row in self.conn.execute("SELECT * FROM memory_usage")}
         current = datetime.now(timezone.utc)
         for memory_id, row in candidates.items():
             confirmed = row.get("last_confirmed_at") or row.get("updated_at")
@@ -450,6 +521,10 @@ class MemoryStore:
             values.append(memory_id)
             cx.execute(f"UPDATE memory_usage SET {updates} WHERE memory_id=?", values)
             result = dict(cx.execute("SELECT * FROM memory_usage WHERE memory_id=?", (memory_id,)).fetchone())
+            delta = {"used":.005, "helpful":.02, "incorrect":-.05}.get(signal, 0.0)
+            if delta:
+                cx.execute("UPDATE memories SET importance=max(0,min(1,importance+?)),updated_at=? WHERE id=?", (delta, ts, memory_id))
+                result["importance"] = cx.execute("SELECT importance FROM memories WHERE id=?", (memory_id,)).fetchone()[0]
             self._audit(cx, memory["project_id"], "memory_feedback", memory_id, signal, result)
         return result
 
@@ -480,11 +555,16 @@ class MemoryStore:
             event_result["next_cursor"] = event_result["next_cursor"] if fully_consumed else (recent_events[-1]["event_seq"] if recent_events else event_cursor)
             event_result["has_more"] = event_result["has_more"] or not fully_consumed
         memory_budget = budget - event_used
-        for m in self.search(project_id, query, policy["max_context_items"], statuses or ["active", "disputed"], scope_id):
+        selected_texts: list[str] = []
+        for m in self.search(project_id, query, policy["max_context_items"] * 3, statuses or ["active", "disputed"], scope_id):
             block = f"[{m['status']}/{m['type']}] {m['title']}\n{m['content']}\nsource_events: {', '.join(s['id'] for s in m['sources']) or 'none'}"
+            comparable = f"{m['title']} {m['content']}"
+            if any(self._text_similarity(comparable, previous) >= .8 for previous in selected_texts): continue
             if used + len(block) + 2 > memory_budget: continue
             selected.append({"memory_id": m["id"], "text": block, "confidence": m["confidence"], "importance": m["importance"]})
+            selected_texts.append(comparable)
             used += len(block) + 2
+            if len(selected) >= policy["max_context_items"]: break
         return {"query": query, "requested_budget": requested, "budget": budget, "budget_capped": requested > budget,
                 "max_items": policy["max_context_items"], "memory_budget":memory_budget,"event_budget":reserved,
                 "used": used + event_used, "memory_used":used,"event_used":event_used,
@@ -624,6 +704,7 @@ class MemoryStore:
             ("memory", "SELECT * FROM memories WHERE project_id=? ORDER BY created_at,id"),
             ("memory_source", "SELECT ms.* FROM memory_sources ms JOIN memories m ON m.id=ms.memory_id WHERE m.project_id=? ORDER BY ms.created_at,ms.memory_id,ms.event_id"),
             ("memory_usage", "SELECT u.* FROM memory_usage u JOIN memories m ON m.id=u.memory_id WHERE m.project_id=? ORDER BY u.memory_id"),
+            ("review_conflict", "SELECT c.* FROM review_conflicts c JOIN memories m ON m.id=c.candidate_memory_id WHERE m.project_id=? ORDER BY c.created_at,c.candidate_memory_id,c.existing_memory_id"),
             ("edge", "SELECT * FROM edges WHERE project_id=? ORDER BY created_at,id"),
             ("search_alias", "SELECT * FROM search_aliases WHERE project_id=? ORDER BY term"),
             ("policy", "SELECT * FROM project_policies WHERE project_id=?"),
@@ -638,7 +719,7 @@ class MemoryStore:
         """Restore one exported project. Existing project IDs are never overwritten."""
         if not records or records[0].get("record_type") != "project":
             raise ValueError("export must begin with a project record")
-        allowed = {"project", "scope", "session", "event", "memory", "memory_source", "memory_usage", "edge", "search_alias", "policy", "audit_checkpoint", "audit"}
+        allowed = {"project", "scope", "session", "event", "memory", "memory_source", "memory_usage", "review_conflict", "edge", "search_alias", "policy", "audit_checkpoint", "audit"}
         if any(record.get("record_type") not in allowed or not isinstance(record.get("data"), dict) for record in records):
             raise ValueError("invalid export record")
         project = records[0]["data"]
@@ -649,9 +730,10 @@ class MemoryStore:
             "scope": ("scopes", ["id","project_id","name","path","created_at"]),
             "session": ("sessions", ["id","project_id","scope_id","client","external_id","started_at","ended_at","metadata_json"]),
             "event": ("events", ["id","project_id","scope_id","session_id","kind","content","source_uri","metadata_json","content_hash","created_at","event_seq"]),
-            "memory": ("memories", ["id","project_id","scope_id","type","status","title","content","confidence","importance","valid_from","valid_until","tags_json","created_at","updated_at","observed_at","last_confirmed_at"]),
+            "memory": ("memories", ["id","project_id","scope_id","type","status","title","content","confidence","importance","valid_from","valid_until","tags_json","created_at","updated_at","observed_at","last_confirmed_at","visibility"]),
             "memory_source": ("memory_sources", ["memory_id","event_id","note","created_at"]),
             "memory_usage": ("memory_usage", ["memory_id","retrieved_count","used_count","helpful_count","incorrect_count","last_retrieved_at","last_used_at","updated_at"]),
+            "review_conflict": ("review_conflicts", ["candidate_memory_id","existing_memory_id","similarity","reason","created_at"]),
             "edge": ("edges", ["id","project_id","from_memory_id","to_memory_id","relation","note","created_at"]),
             "search_alias": ("search_aliases", ["project_id","term","aliases_json","created_at","updated_at"]),
             "audit_checkpoint": ("audit_checkpoints", ["id","project_id","from_seq","through_seq","entry_count","previous_digest","digest","created_at"]),
@@ -664,6 +746,7 @@ class MemoryStore:
                 if kind == "event":
                     imported_event_seq += 1
                     data["event_seq"] = data.get("event_seq") or imported_event_seq
+                if kind == "memory": data.setdefault("visibility", "project")
                 if kind == "audit":
                     names = ["project_id","entity_type","entity_id","action","snapshot_json","created_at"]
                     cx.execute(f"INSERT INTO audit_log({','.join(names)}) VALUES({','.join('?' for _ in names)})", tuple(data[name] for name in names))

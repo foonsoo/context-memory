@@ -198,6 +198,45 @@ class StoreTests(unittest.TestCase):
         self.assertEqual((usage["retrieved_count"], usage["used_count"], usage["helpful_count"]), (1, 1, 1))
         result = self.store.search(p["id"], "Neovim editor")[0]
         self.assertEqual(result["usage"]["helpful_count"], 1)
+        self.assertGreater(result["importance"], memory["importance"])
+
+    def test_session_end_extracts_proposed_candidates_and_flags_conflicts(self):
+        p = self.store.create_project("candidate-review")
+        session = self.store.start_session(p["id"], "test", external_id="candidate-session")
+        self.store.upsert_memory(p["id"], "Service port", "Service port is 8000", "decision", "active")
+        event = self.store.record_event(p["id"], "decision", "Service port is 8765", session_id=session["id"])
+        ended = self.store.end_session(session["id"])
+        self.assertEqual(len(ended["review"]["created"]), 1)
+        candidate = ended["review"]["created"][0]
+        self.assertEqual(candidate["status"], "proposed")
+        self.assertEqual(candidate["type"], "decision")
+        self.assertEqual(candidate["id"], self.store.review_queue(p["id"])[0]["id"])
+        self.assertTrue(ended["review"]["conflicts"])
+        self.assertEqual(self.store._row("SELECT event_id FROM memory_sources WHERE memory_id=?", (candidate["id"],))["event_id"], event["id"])
+
+    def test_review_correction_can_supersede_existing_memory(self):
+        p = self.store.create_project("correction")
+        old = self.store.upsert_memory(p["id"], "Editor", "Use Vim", "preference", "active")
+        correction = self.store.propose_correction(p["id"], old["id"], "Use Neovim")
+        self.store.review_candidate(correction["id"], "supersede", old["id"], "preference changed")
+        self.assertEqual(self.store._row("SELECT status FROM memories WHERE id=?", (correction["id"],))["status"], "active")
+        self.assertEqual(self.store._row("SELECT status FROM memories WHERE id=?", (old["id"],))["status"], "superseded")
+
+    def test_global_visibility_is_searchable_from_another_project(self):
+        owner = self.store.create_project("global-owner")
+        consumer = self.store.create_project("global-consumer")
+        memory = self.store.upsert_memory(owner["id"], "Preferred language", "Use Korean replies", "preference", "active", visibility="global")
+        self.assertEqual(self.store.search(consumer["id"], "Korean replies")[0]["id"], memory["id"])
+        local = self.store.upsert_memory(owner["id"], "Private setting", "Use secret-local-setting", "preference", "active")
+        self.assertEqual(self.store.search(consumer["id"], "secret-local-setting"), [])
+        self.assertIsNotNone(local)
+
+    def test_context_deduplicates_near_identical_memories(self):
+        p = self.store.create_project("dedup")
+        self.store.upsert_memory(p["id"], "Database choice", "Use SQLite WAL for persistence", "decision", "active")
+        self.store.upsert_memory(p["id"], "Database choice", "Use SQLite WAL for persistence", "decision", "active")
+        context = self.store.get_context(p["id"], "SQLite persistence", 2000)
+        self.assertEqual(len(context["items"]), 1)
 
     def test_feedback_changes_personal_ranking_and_exposes_score_components(self):
         p = self.store.create_project("ranking-feedback")

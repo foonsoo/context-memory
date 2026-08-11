@@ -39,6 +39,8 @@ FTS5 BM25 supplies lexical relevance. An optional dependency-free on-device feat
 
 Enable the local projection with `CONTEXT_MEMORY_EMBEDDINGS=local-hash`. It stores only a rebuildable vector projection in `memory_embeddings`; events and memories remain authoritative. `memory_feedback` records retrieved, used, helpful, and incorrect signals in a disposable usage projection. Memories separately retain `observed_at` and `last_confirmed_at` so personal ranking can decay stale assumptions without rewriting evidence.
 
+Helpful, used, and incorrect feedback also makes small bounded changes to stored importance; every feedback write and resulting value is audited. `global` visibility makes a non-path-scoped memory searchable from every project in the same single-user database, while the default `project` visibility remains isolated.
+
 The requested context budget is not authoritative. Each project defaults to a hard 12,000-character and 20-item limit, configurable only within the server's 20,000-character/50-item safety ceiling. Responses report requested and effective budgets so clients can detect clamping. When cursor polling is requested, recent events are returned separately and consume the same effective character budget, with a 4,000-character event ceiling; unused event allowance remains available to ranked memories.
 
 Project-owned search aliases expand known domain vocabulary before FTS matching. Aliases are explicit data, not inferred facts. `graph_traverse` walks verified memory edges with a depth limit of five and filters out non-current nodes by default. Both aliases and edges are exportable projections; neither replaces source events.
@@ -48,6 +50,8 @@ Project-owned search aliases expand known domain vocabulary before FTS matching.
 ## Lifecycle
 
 Memories normally move `proposed → active`. They can later become `superseded`, `disputed`, `expired`, or `rejected`. A superseding or disputing memory points to the affected memory through an edge. Terminal memories remain query-excluded immediately and default to 180 days of operational retention. Explicit maintenance may remove older terminal rows, provenance links, and graph projections after first writing their source event IDs into audit detail. Immutable source events are never deleted.
+
+At session end, events with explicit durable kinds (`fact`, `decision`, `preference`, `constraint`, `procedure`, `task`, or `summary`) can be converted deterministically into evidence-linked `proposed` memories. Similar active memories are attached as review conflicts. Nothing is autonomously promoted: review actions approve, reject, supersede, or dispute candidates.
 
 ## Maintenance and backup
 

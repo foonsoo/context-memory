@@ -224,6 +224,8 @@ context-memory --db ~/.local/share/context-memory/memory.db serve --transport st
 
 Search then fuses FTS5 and local-similarity ranks and returns inspectable score components. The local hash projection is useful for spelling, morphology, and overlapping wording; it is not a neural semantic model and does not replace explicit aliases for unrelated synonyms. Agents may call `memory_feedback` with `retrieved`, `used`, `helpful`, or `incorrect` to personalize later ranking. `observed_at` and `last_confirmed_at` keep discovery time separate from confirmation freshness.
 
+Feedback applies small bounded importance adjustments, and context assembly suppresses near-identical blocks. Memories default to project visibility; set `visibility=global` only for non-path-scoped user preferences or constraints that should be available to every project in the same local database.
+
 ## Reproducible comparison benchmark
 
 The repository includes [benchmarks/run_benchmark.py](benchmarks/run_benchmark.py). It starts all products through MCP stdio and uses no API keys:
@@ -331,6 +333,8 @@ Project hooks require a trusted project and explicit review in Codex. Use `/hook
 | `search_alias_set`, `search_alias_list` | Manage deterministic project vocabulary for paraphrase expansion |
 | `relation_create`, `graph_traverse` | Link verified memories and traverse active/disputed relations up to five hops |
 | `memory_search` | Local FTS5/BM25 ranking plus confidence and importance |
+| `review_queue`, `review_action` | Inspect and resolve proposed memories and conflict flags |
+| `memory_correct` | Create a sourced correction candidate without overwriting history |
 | `get_context` | Strict shared-budget selection of active/disputed context plus optional recent events |
 | `get_source` | Retrieve original event evidence |
 | `get_audit` | Inspect append-only entity history |
@@ -367,8 +371,10 @@ PYTHONPATH=src python3 -m unittest discover -s tests -v
 
 Tests cover WAL persistence and permissions, append-only enforcement, FTS and alias-expanded retrieval, provenance, budget selection, state transitions, verified graph traversal, export/import, rollback, idempotency, MCP discovery/calls, stdio process handshake, HTTP process handshake, and external-bind refusal.
 
+Candidate approval remains explicit through MCP review actions; session extraction never promotes memories automatically.
+
 ## Design and limits
 
 Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for schema invariants, ranking, security, and the Python/SQLite choice. Read [docs/ROADMAP.md](docs/ROADMAP.md) for memory revisions, retention, retrieval improvements, and optional local embeddings.
 
-Current limits: single OS-user trust boundary, no encryption/redaction, no remote synchronization, no automatic retention, basic lexical ranking, no vector index, and no autonomous candidate review UI. FTS5 availability depends on the Python SQLite build; typical CPython distributions include it.
+Current limits: single OS-user trust boundary, no encryption/redaction, no remote synchronization, feature-hash rather than neural embeddings, no vector index, and similarity flags rather than semantic contradiction proof. FTS5 availability depends on the Python SQLite build; typical CPython distributions include it.
