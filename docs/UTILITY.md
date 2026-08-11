@@ -58,6 +58,10 @@ Report task accuracy, stale-fact rate, unsupported-claim rate, source-recovery r
 
 An initial synthetic run on 2026-08-10 inserted 1,000 events and 1,000 sourced active memories into a fresh database, then executed 200 repeated context queries. On the development Mac with Python's SQLite 3.51.0, the resulting database was 2,834,432 bytes; context retrieval measured 2.657 ms p50 and 2.849 ms p95. Insertion took 0.309 seconds. This is a smoke/performance baseline, not a cross-system benchmark or evidence of task-quality improvement. Hardware, filesystem, SQLite build, query selectivity, and data shape affect the result.
 
+Cross-project confidence can be checked separately with `PYTHONPATH=src python3 benchmarks/run_discovery_calibration.py`. The deterministic fixture spreads overlapping release vocabulary across realistic project domains, checks strong, dominant, low-confidence, and ambiguous selection behavior, and reports p50/p95 discovery latency. It is a calibration regression, not a task-quality benchmark; add scenarios before changing confidence thresholds and retain the scenario details with any reported result.
+
+On 2026-08-11, a 12-domain run with 100 distractor memories per domain (1,204 memories total) passed all calibrated selections and ambiguity safety checks. Across 200 repeated discovery queries, retrieval measured 0.233 ms p50 and 0.249 ms p95 on the development Mac. These results supported retaining the existing confidence thresholds; they are environment-specific engineering evidence, not a general latency guarantee.
+
 ### MCP competitor run (2026-08-10)
 
 The reproducible runner used 1,000 synthetic policy records and 200 exact-query repetitions. Every product ran as an MCP stdio subprocess without API keys. The final run used CPython 3.14.6, SQLite 3.53.4, Node 25.6.1, and npm 11.9.0 on arm64 macOS 26.3.1. Results and full environment metadata are stored in `benchmarks/results/local-2026-08-10.json`.

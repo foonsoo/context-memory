@@ -2,7 +2,7 @@
 
 ## Near term
 
-- Tune cross-project discovery confidence thresholds on larger real-world multi-project fixtures. Normalized relevance, bounded path/name identity priors, recency, dominant-candidate selection, explicit low-confidence/ambiguity results, global-memory merging, and sparse-project fallback are implemented.
+- Continue expanding cross-project discovery calibration scenarios as real workloads reveal new vocabulary and ambiguity shapes. The deterministic 12-domain calibration fixture now validates strong, dominant, low-confidence, and ambiguous selection over more than 1,200 memories; the existing `.45` minimum, `.60` dominant, and `.12` margin thresholds passed without adjustment. Normalized relevance, bounded path/name identity priors, recency, dominant-candidate selection, explicit low-confidence/ambiguity results, global-memory merging, and sparse-project fallback are implemented.
 - Add client-neutral automatic handoff checkpoints. MCP 2026-07-28 Tasks can make an explicitly invoked checkpoint observable but cannot detect completion of the host agent's overall work item. Implement the feature in these increments:
   1. Add one idempotent `checkpoint_create` store operation, MCP tool, and CLI command with `mode=interim|final` and reasons such as `context_budget`, `elapsed`, `material_change`, `completed`, and `manual`.
   2. Persist an immutable checkpoint event containing the current goal, completed work, next executable step, blockers, source event cursor, HEAD/branch, dirty/clean state, changed-file summary, explicitly supplied test results, and optional client-reported context usage. Keep objective repository facts separate from unverified semantic summaries.
