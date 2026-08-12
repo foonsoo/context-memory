@@ -74,15 +74,35 @@ def main() -> None:
             resolved = request(first, 2, "tools/call", {"name": "project_resolve", "arguments": {"cwd": str(workspace)}})["structuredContent"]["result"]
             session = request(first, 3, "tools/call", {"name": "session_start", "arguments": {"project_id": resolved["project"]["id"], "scope_id": resolved["scope_id"], "client": "installed-e2e", "external_id": "restart-check"}})["structuredContent"]["result"]
             event = request(first, 4, "tools/call", {"name": "record_event", "arguments": {"project_id": resolved["project"]["id"], "scope_id": resolved["scope_id"], "session_id": session["id"], "kind": "fact", "content": "installed server survived a restart"}})["structuredContent"]["result"]
+            checkpoint = request(first, 5, "tools/call", {"name": "checkpoint_create", "arguments": {
+                "project_id": resolved["project"]["id"], "scope_id": resolved["scope_id"],
+                "session_id": session["id"], "mode": "interim", "reason": "material_change",
+                "goal": "Verify installed recovery", "idempotency_key": "installed-checkpoint",
+                "completed": ["Recorded durable event"], "next_step": "Resume after process restart",
+                "source_event_cursor": event["event_seq"],
+            }})["structuredContent"]["result"]
         finally:
             stop(first)
 
         second = start(command, workspace)
         try:
-            request(second, 5, "initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "installed-e2e", "version": "1"}})
-            source = request(second, 6, "tools/call", {"name": "get_source", "arguments": {"event_id": event["id"]}})["structuredContent"]["result"]
+            request(second, 6, "initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "installed-e2e", "version": "1"}})
+            source = request(second, 7, "tools/call", {"name": "get_source", "arguments": {"event_id": event["id"]}})["structuredContent"]["result"]
             if source["content"] != "installed server survived a restart":
                 raise AssertionError(source)
+            checkpoint_source = request(second, 8, "tools/call", {"name": "get_source", "arguments": {"event_id": checkpoint["checkpoint_id"]}})["structuredContent"]["result"]
+            recovery = json.loads(checkpoint_source["metadata_json"])["checkpoint"]
+            if recovery["next_step"] != "Resume after process restart" or recovery["claims"] != {"completion": False, "verification": False}:
+                raise AssertionError(recovery)
+            retried = request(second, 9, "tools/call", {"name": "checkpoint_create", "arguments": {
+                "project_id": resolved["project"]["id"], "scope_id": resolved["scope_id"],
+                "session_id": session["id"], "mode": "interim", "reason": "material_change",
+                "goal": "Verify installed recovery", "idempotency_key": "installed-checkpoint",
+                "completed": ["Recorded durable event"], "next_step": "Resume after process restart",
+                "source_event_cursor": event["event_seq"],
+            }})["structuredContent"]["result"]
+            if retried != checkpoint:
+                raise AssertionError("installed checkpoint retry was not idempotent")
         finally:
             stop(second)
 
