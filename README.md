@@ -192,6 +192,15 @@ context-memory status PROJECT_UUID
 
 Applying maintenance preserves all immutable source events, removes old terminal memory projections, and replaces excess audit detail with chained SHA-256 checkpoints. Export first if reconstructable detail older than the retention window is required.
 
+For scheduler-driven maintenance, persist an interval and invoke the idempotent due-check from cron, launchd, or a systemd timer. `0` disables scheduling; the minimum enabled interval is five minutes:
+
+```bash
+context-memory policy PROJECT_UUID --maintenance-interval-seconds 86400
+context-memory maintain PROJECT_UUID --apply --scheduled
+```
+
+Repeated invocations before the next due time do no work. The last start, completion, and error are visible in `status`; Context Memory does not install or run a background daemon.
+
 Do not back up a live WAL database by copying only `memory.db`. Create one consistent, integrity-checked snapshot instead:
 
 ```bash
@@ -199,6 +208,20 @@ context-memory backup --output /secure/backups/context-memory-latest.db
 ```
 
 The command atomically replaces the destination using SQLite's Online Backup API, includes committed WAL data, sets the snapshot to mode `0600`, and returns its SHA-256 digest. Reusing a stable destination name lets rsync- or block-deduplicating backup systems transfer changed pages instead of treating every dated filename as unrelated. `search_health` and `repair` detect and restore FTS projection consistency; memory insert/update/delete triggers keep the projection synchronized during normal writes.
+
+Optional authenticated encryption uses an AES-256-GCM envelope with a scrypt-derived key. Install `context-memory[crypto]`, keep the passphrase out of argv, and name only the environment variable that contains it:
+
+```bash
+CONTEXT_MEMORY_BACKUP_PASSPHRASE='...' context-memory backup \
+  --output /secure/backups/context-memory-latest.db.enc \
+  --passphrase-env CONTEXT_MEMORY_BACKUP_PASSPHRASE
+CONTEXT_MEMORY_BACKUP_PASSPHRASE='...' context-memory backup-decrypt \
+  /secure/backups/context-memory-latest.db.enc \
+  --output /secure/restore/memory.db \
+  --passphrase-env CONTEXT_MEMORY_BACKUP_PASSPHRASE
+```
+
+The temporary consistent SQLite snapshot is deleted after encryption, and decryption authenticates the envelope before atomically replacing its output. Losing the passphrase makes the backup unrecoverable.
 
 ## Why an evidence ledger instead of a graph-first memory
 
@@ -384,4 +407,4 @@ Candidate approval remains explicit through MCP review actions; session extracti
 
 Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for schema invariants, ranking, security, and the Python/SQLite choice. Read [docs/ROADMAP.md](docs/ROADMAP.md) for memory revisions, retention, retrieval improvements, and optional local embeddings.
 
-Current limits: single OS-user trust boundary, no encryption/redaction, no remote synchronization, feature-hash rather than neural embeddings, no vector index, and similarity flags rather than semantic contradiction proof. FTS5 availability depends on the Python SQLite build; typical CPython distributions include it.
+Current limits: single OS-user trust boundary, no live-database encryption or redaction, no remote synchronization, feature-hash rather than neural embeddings, no vector index, and similarity flags rather than semantic contradiction proof. Backup envelopes can be encrypted optionally. FTS5 availability depends on the Python SQLite build; typical CPython distributions include it.

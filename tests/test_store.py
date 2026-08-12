@@ -616,5 +616,33 @@ class StoreTests(unittest.TestCase):
         try: self.assertEqual(snapshot.get_source(event["id"])["content"], "committed WAL data")
         finally: snapshot.close()
 
+    def test_scheduled_maintenance_runs_once_when_due(self):
+        p = self.store.create_project("scheduled")
+        self.assertEqual(self.store.maintain_scheduled(p["id"])["reason"], "disabled")
+        self.store.set_policy(p["id"], maintenance_interval_seconds=300)
+        first = self.store.maintain_scheduled(p["id"])
+        self.assertTrue(first["ran"])
+        second = self.store.maintain_scheduled(p["id"])
+        self.assertFalse(second["ran"]); self.assertEqual(second["reason"], "not_due")
+        status = self.store.maintenance_status(p["id"])
+        self.assertIsNotNone(status["schedule"]["last_completed_at"])
+
+    def test_encrypted_backup_requires_optional_crypto_or_round_trips(self):
+        p = self.store.create_project("encrypted-backup")
+        event = self.store.record_event(p["id"], "fact", "encrypted evidence")
+        envelope = Path(self.temp.name) / "backup.enc"
+        try:
+            result = self.store.backup_to(envelope, "correct horse battery staple")
+        except RuntimeError as exc:
+            self.assertIn("context-memory[crypto]", str(exc)); self.assertFalse(envelope.exists())
+            return
+        from context_memory.backup_crypto import decrypt_file
+        restored_path = Path(self.temp.name) / "restored.db"
+        decrypt_file(envelope, restored_path, "correct horse battery staple")
+        restored = MemoryStore(restored_path)
+        try: self.assertEqual(restored.get_source(event["id"])["content"], "encrypted evidence")
+        finally: restored.close()
+        with self.assertRaises(ValueError): decrypt_file(envelope, Path(self.temp.name) / "wrong.db", "wrong")
+
 
 if __name__ == "__main__": unittest.main()

@@ -243,12 +243,15 @@ def main() -> None:
     policy.add_argument("--checkpoint-elapsed-seconds", type=int); policy.add_argument("--checkpoint-event-count", type=int)
     policy.add_argument("--checkpoint-max-age-seconds", type=int)
     policy.add_argument("--checkpoint-cooldown-seconds", type=int); policy.add_argument("--checkpoint-hysteresis", type=float)
+    policy.add_argument("--maintenance-interval-seconds", type=int)
     maintain = sub.add_parser("maintain", help="Plan/apply terminal-memory cleanup and checkpointed audit compaction")
-    maintain.add_argument("project_id"); maintain.add_argument("--apply", action="store_true")
+    maintain.add_argument("project_id"); maintain.add_argument("--apply", action="store_true"); maintain.add_argument("--scheduled", action="store_true")
     status_cmd = sub.add_parser("status", help="Show project policy, storage counts, audit checkpoints, and search health")
     status_cmd.add_argument("project_id")
     backup = sub.add_parser("backup", help="Create one consistent integrity-checked SQLite snapshot")
-    backup.add_argument("--output", required=True)
+    backup.add_argument("--output", required=True); backup.add_argument("--passphrase-env")
+    decrypt = sub.add_parser("backup-decrypt", help="Decrypt an authenticated backup envelope to a SQLite snapshot")
+    decrypt.add_argument("input"); decrypt.add_argument("--output", required=True); decrypt.add_argument("--passphrase-env", required=True)
     migrate = sub.add_parser("migrate-db", help="Safely migrate a live SQLite database with the Online Backup API")
     migrate.add_argument("source"); migrate.add_argument("--replace", action="store_true")
     args = p.parse_args()
@@ -315,11 +318,28 @@ def main() -> None:
                        "checkpoint_soft_usage":args.checkpoint_soft_usage,"checkpoint_hard_usage":args.checkpoint_hard_usage,
                        "checkpoint_elapsed_seconds":args.checkpoint_elapsed_seconds,"checkpoint_event_count":args.checkpoint_event_count,
                        "checkpoint_max_age_seconds":args.checkpoint_max_age_seconds,
-                       "checkpoint_cooldown_seconds":args.checkpoint_cooldown_seconds,"checkpoint_hysteresis":args.checkpoint_hysteresis}
+                       "checkpoint_cooldown_seconds":args.checkpoint_cooldown_seconds,"checkpoint_hysteresis":args.checkpoint_hysteresis,
+                       "maintenance_interval_seconds":args.maintenance_interval_seconds}
             output(store.set_policy(args.project_id, **changes) if any(value is not None for value in changes.values()) else store.get_policy(args.project_id))
-        elif args.command == "maintain": output(store.maintain(args.project_id, args.apply))
+        elif args.command == "maintain":
+            if args.scheduled and not args.apply: p.error("--scheduled requires --apply")
+            output(store.maintain_scheduled(args.project_id) if args.scheduled else store.maintain(args.project_id, args.apply))
         elif args.command == "status": output(store.maintenance_status(args.project_id))
-        elif args.command == "backup": output(store.backup_to(args.output))
+        elif args.command == "backup":
+            passphrase = os.environ.get(args.passphrase_env) if args.passphrase_env else None
+            if args.passphrase_env and passphrase is None: p.error(f"passphrase environment variable is not set: {args.passphrase_env}")
+            output(store.backup_to(args.output, passphrase))
+        elif args.command == "backup-decrypt":
+            passphrase = os.environ.get(args.passphrase_env)
+            if passphrase is None: p.error(f"passphrase environment variable is not set: {args.passphrase_env}")
+            from .backup_crypto import decrypt_file
+            source, destination = Path(args.input).expanduser().resolve(), Path(args.output).expanduser().resolve()
+            destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            temporary = destination.with_name(f".{destination.name}.{os.getpid()}.tmp")
+            try:
+                result = decrypt_file(source, temporary, passphrase); os.chmod(temporary, 0o600); os.replace(temporary, destination)
+            finally: temporary.unlink(missing_ok=True)
+            output({**result,"input":str(source),"output":str(destination)})
     finally:
         store.close()
 

@@ -1042,22 +1042,25 @@ class MemoryStore:
                    checkpoint_soft_usage: float | None = None, checkpoint_hard_usage: float | None = None,
                    checkpoint_elapsed_seconds: int | None = None, checkpoint_event_count: int | None = None,
                    checkpoint_max_age_seconds: int | None = None, checkpoint_cooldown_seconds: int | None = None,
-                   checkpoint_hysteresis: float | None = None) -> dict[str, Any]:
+                   checkpoint_hysteresis: float | None = None, maintenance_interval_seconds: int | None = None) -> dict[str, Any]:
         current = self.get_policy(project_id)
         values = {"max_context_chars":max_context_chars,"max_context_items":max_context_items,
                   "audit_keep_entries":audit_keep_entries,"terminal_memory_days":terminal_memory_days,
                   "checkpoint_soft_usage":checkpoint_soft_usage,"checkpoint_hard_usage":checkpoint_hard_usage,
                   "checkpoint_elapsed_seconds":checkpoint_elapsed_seconds,"checkpoint_event_count":checkpoint_event_count,
                   "checkpoint_max_age_seconds":checkpoint_max_age_seconds,"checkpoint_cooldown_seconds":checkpoint_cooldown_seconds,
-                  "checkpoint_hysteresis":checkpoint_hysteresis}
+                  "checkpoint_hysteresis":checkpoint_hysteresis,"maintenance_interval_seconds":maintenance_interval_seconds}
         limits = {"max_context_chars":(1000,20000),"max_context_items":(1,50),"audit_keep_entries":(100,100000),"terminal_memory_days":(1,3650),
                   "checkpoint_soft_usage":(0,1),"checkpoint_hard_usage":(0,1),"checkpoint_elapsed_seconds":(60,86400),
                   "checkpoint_event_count":(1,10000),"checkpoint_max_age_seconds":(60,604800)}
         limits.update({"checkpoint_cooldown_seconds":(0,86400),"checkpoint_hysteresis":(0,.5)})
         for key, value in values.items():
             if value is not None:
-                low, high = limits[key]
-                if not low <= value <= high: raise ValueError(f"{key} must be {low}..{high}")
+                if key == "maintenance_interval_seconds":
+                    if value != 0 and not 300 <= value <= 2592000: raise ValueError(f"{key} must be 0 or 300..2592000")
+                else:
+                    low, high = limits[key]
+                    if not low <= value <= high: raise ValueError(f"{key} must be {low}..{high}")
                 current[key] = value
         if current["checkpoint_soft_usage"] >= current["checkpoint_hard_usage"]:
             raise ValueError("checkpoint_soft_usage must be less than checkpoint_hard_usage")
@@ -1068,7 +1071,8 @@ class MemoryStore:
               checkpoint_soft_usage=:checkpoint_soft_usage,checkpoint_hard_usage=:checkpoint_hard_usage,
               checkpoint_elapsed_seconds=:checkpoint_elapsed_seconds,checkpoint_event_count=:checkpoint_event_count,
               checkpoint_max_age_seconds=:checkpoint_max_age_seconds,checkpoint_cooldown_seconds=:checkpoint_cooldown_seconds,
-              checkpoint_hysteresis=:checkpoint_hysteresis,updated_at=:updated_at WHERE project_id=:project_id""", current)
+              checkpoint_hysteresis=:checkpoint_hysteresis,maintenance_interval_seconds=:maintenance_interval_seconds,
+              updated_at=:updated_at WHERE project_id=:project_id""", current)
             self._audit(cx, project_id, "policy", project_id, "updated", current)
         return current
 
@@ -1140,9 +1144,32 @@ class MemoryStore:
                   "terminal_memories":self.conn.execute("SELECT count(*) FROM memories WHERE project_id=? AND status IN ('superseded','rejected','expired')",(project_id,)).fetchone()[0],
                   "audit_entries":self.conn.execute("SELECT count(*) FROM audit_log WHERE project_id=?",(project_id,)).fetchone()[0]}
         checkpoints = [dict(row) for row in self.conn.execute("SELECT * FROM audit_checkpoints WHERE project_id=? ORDER BY through_seq",(project_id,))]
-        return {"project_id":project_id,"policy":policy,"counts":counts,"audit_checkpoints":checkpoints,"search":self.search_health(project_id)}
+        schedule = self._row("SELECT * FROM maintenance_runs WHERE project_id=?", (project_id,))
+        return {"project_id":project_id,"policy":policy,"counts":counts,"audit_checkpoints":checkpoints,
+                "schedule":schedule,"search":self.search_health(project_id)}
 
-    def backup_to(self, output_path: str | Path) -> dict[str, Any]:
+    def maintain_scheduled(self, project_id: str) -> dict[str, Any]:
+        """Run maintenance once when its persisted interval is due; safe for repeated scheduler invocations."""
+        policy = self.get_policy(project_id); interval = policy["maintenance_interval_seconds"]
+        if not interval: return {"project_id":project_id,"scheduled":True,"ran":False,"reason":"disabled"}
+        ts = now()
+        with self.tx() as cx:
+            state = dict(cx.execute("SELECT * FROM maintenance_runs WHERE project_id=?", (project_id,)).fetchone())
+            baseline = state["last_completed_at"] or state["last_started_at"]
+            if baseline and datetime.fromisoformat(baseline) + timedelta(seconds=interval) > datetime.fromisoformat(ts):
+                return {"project_id":project_id,"scheduled":True,"ran":False,"reason":"not_due","next_due_at":
+                        (datetime.fromisoformat(baseline) + timedelta(seconds=interval)).isoformat()}
+            cx.execute("UPDATE maintenance_runs SET last_started_at=?,last_error=NULL WHERE project_id=?", (ts,project_id))
+        try:
+            result = self.maintain(project_id, True)
+        except Exception as exc:
+            self.conn.execute("UPDATE maintenance_runs SET last_error=? WHERE project_id=?", (str(exc),project_id))
+            raise
+        completed = now()
+        self.conn.execute("UPDATE maintenance_runs SET last_completed_at=?,last_error=NULL WHERE project_id=?", (completed,project_id))
+        return {**result,"scheduled":True,"ran":True,"completed_at":completed}
+
+    def backup_to(self, output_path: str | Path, encryption_passphrase: str | None = None) -> dict[str, Any]:
         """Create one consistent SQLite snapshot using the Online Backup API, including committed WAL data."""
         destination = Path(output_path).expanduser().resolve()
         if destination == self.path: raise ValueError("backup output must differ from the live database")
@@ -1160,12 +1187,25 @@ class MemoryStore:
         else:
             target.close()
         os.chmod(temporary, 0o600)
+        encryption = {"encrypted":False}
+        if encryption_passphrase is not None:
+            from .backup_crypto import encrypt_file
+            plaintext = temporary
+            encrypted = temporary.with_suffix(temporary.suffix + ".enc")
+            try:
+                encryption = encrypt_file(plaintext, encrypted, encryption_passphrase)
+                os.chmod(encrypted, 0o600); temporary = encrypted
+            except Exception:
+                encrypted.unlink(missing_ok=True)
+                raise
+            finally:
+                plaintext.unlink(missing_ok=True)
         os.replace(temporary, destination)
         digest = hashlib.sha256()
         with destination.open("rb") as stream:
             for chunk in iter(lambda: stream.read(1024*1024), b""): digest.update(chunk)
         return {"ok":True,"source":str(self.path),"output":str(destination),"bytes":destination.stat().st_size,
-                "sha256":digest.hexdigest(),"created_at":now(),"integrity":"ok"}
+                "sha256":digest.hexdigest(),"created_at":now(),"integrity":"ok",**encryption}
 
     def export_project(self, project_id: str) -> list[dict[str, Any]]:
         """Return a deterministic, portable snapshot without SQLite internals."""
@@ -1232,15 +1272,15 @@ class MemoryStore:
                     defaults = {"checkpoint_soft_usage":.60,"checkpoint_hard_usage":.75,
                                 "checkpoint_elapsed_seconds":1800,"checkpoint_event_count":25,
                                 "checkpoint_max_age_seconds":3600,"checkpoint_cooldown_seconds":300,
-                                "checkpoint_hysteresis":.05}
+                                "checkpoint_hysteresis":.05,"maintenance_interval_seconds":0}
                     for name, value in defaults.items(): data.setdefault(name, value)
                     names = ["max_context_chars","max_context_items","audit_keep_entries","terminal_memory_days",
                              "checkpoint_soft_usage","checkpoint_hard_usage","checkpoint_elapsed_seconds",
                              "checkpoint_event_count","checkpoint_max_age_seconds","checkpoint_cooldown_seconds",
-                             "checkpoint_hysteresis","updated_at","project_id"]
+                             "checkpoint_hysteresis","maintenance_interval_seconds","updated_at","project_id"]
                     cx.execute("""UPDATE project_policies SET max_context_chars=?,max_context_items=?,audit_keep_entries=?,
                       terminal_memory_days=?,checkpoint_soft_usage=?,checkpoint_hard_usage=?,checkpoint_elapsed_seconds=?,
-                      checkpoint_event_count=?,checkpoint_max_age_seconds=?,checkpoint_cooldown_seconds=?,checkpoint_hysteresis=?,
+                      checkpoint_event_count=?,checkpoint_max_age_seconds=?,checkpoint_cooldown_seconds=?,checkpoint_hysteresis=?,maintenance_interval_seconds=?,
                       updated_at=? WHERE project_id=?""", tuple(data[name] for name in names))
                 else:
                     table, names = columns[kind]
