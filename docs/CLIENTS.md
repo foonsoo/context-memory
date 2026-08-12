@@ -18,6 +18,16 @@ Every client must follow the same lifecycle, independently of hooks:
 
 Use client rule files to carry that instruction: root `AGENTS.md` for Codex and compatible clients, [`examples/CLAUDE.md`](../examples/CLAUDE.md) for Claude Code, [`examples/cursor-context-memory.mdc`](../examples/cursor-context-memory.mdc) for Cursor project rules, and equivalent workspace instructions elsewhere. [`examples/mcp.json`](../examples/mcp.json) is a generic configuration template. `examples/hooks.json` is optional Codex automation, not part of the correctness contract.
 
+The Codex `SessionEnd` hook uses the same checkpoint policy and `create_checkpoint`
+store operation as MCP and CLI. Hook state may be supplied under a
+`context_memory` object (`goal`, `completed`, `next_step`, `blockers`, optional
+context/repository/test facts). It remains unverified and interim unless the host
+explicitly supplies every evidence-backed final-checkpoint field. Tasks-capable
+hosts can import `context_memory.tasks.checkpoint_task`; the host retains ownership
+of extension negotiation, durable task handles, polling, and cancellation, while
+the adapter publishes `working`, `completed`, or `failed` and executes the same
+portable store operation. Neither adapter is required for correctness.
+
 ## Moving an existing database
 
 Never copy only a live `memory.db` while WAL mode is active. Install the new release first, stop avoidable old clients, and run:

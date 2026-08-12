@@ -1,5 +1,5 @@
 {
-  "description": "Load verified local context and preserve the final assistant output as unverified evidence.",
+  "description": "Load verified local context, evaluate a portable checkpoint, and preserve final output as unverified evidence.",
   "hooks": {
     "SessionStart": [
       {

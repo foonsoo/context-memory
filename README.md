@@ -307,7 +307,7 @@ For a shell-only demo, IDs can be captured with a short Python script or inspect
 
 ## Reducing missed records with Codex hooks
 
-The official [Codex hooks documentation](https://learn.chatgpt.com/docs/hooks) includes `SessionStart` and `SessionEnd`. This repository provides [examples/hooks.json](examples/hooks.json) and `context_memory.hooks`:
+The official [Codex hooks documentation](https://learn.chatgpt.com/docs/hooks) includes `SessionStart` and `SessionEnd`. This repository provides [examples/hooks.json](examples/hooks.json) and `context_memory.hooks`. At session end the hook evaluates the portable checkpoint policy and, when triggered, calls the same interim checkpoint operation used by MCP and CLI before closing the session:
 
 - `SessionStart` starts/resumes the DB session and injects a budgeted set of verified relevant memories.
 - `SessionEnd` stores the final assistant message as an immutable event explicitly marked `unverified_ai_output`; it does **not** promote it to memory.
