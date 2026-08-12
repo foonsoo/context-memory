@@ -70,10 +70,11 @@ class TokenMeasurementTests(unittest.TestCase):
         self.assertEqual(report["schema_version"], 3)
         self.assertEqual(report["controlled_summary"]["bootstrap"]["sessions"], 1)
         self.assertEqual(report["controlled_summary"]["legacy"]["sessions"], 1)
-        self.assertEqual(report["controlled_summary"]["comparison"], {
-            "uncached_input_tokens_median_delta": -10,
-            "uncached_input_tokens_median_change_percent": -33.3,
-        })
+        comparison = report["controlled_summary"]["comparison"]
+        self.assertEqual(comparison["input_tokens_median_delta"], -90)
+        self.assertEqual(comparison["cached_input_tokens_median_delta"], -80)
+        self.assertEqual(comparison["uncached_input_tokens_median_delta"], -10)
+        self.assertEqual(comparison["uncached_input_tokens_median_change_percent"], -33.3)
 
     def test_extracts_calls_orchestrated_inside_exec(self):
         rows = [
@@ -86,6 +87,39 @@ class TokenMeasurementTests(unittest.TestCase):
             path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
             report = analyze(path)
         self.assertEqual(report["observations"][0]["workflow"], "bootstrap")
+
+    def test_extracts_completed_mcp_call_from_dynamic_exec(self):
+        rows = [
+            {"type":"response_item","payload":{"type":"custom_tool_call","name":"exec",
+             "input":"const fn = tools[selected]; await fn(args);"}},
+            {"type":"event_msg","payload":{"type":"mcp_tool_call_end","invocation":{
+             "server":"context_memory", "tool":"context_bootstrap", "arguments":{}}}},
+            {"type":"event_msg","payload":{"type":"token_count","info":{
+             "last_token_usage":{"input_tokens":100,"cached_input_tokens":80}}}},
+        ]
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "dynamic.jsonl"
+            path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+            report = analyze(path)
+        self.assertEqual(report["observations"][0]["tools_since_previous_model_turn"],
+                         ["context_bootstrap"])
+        self.assertEqual(report["observations"][0]["uncached_input_tokens"], 20)
+
+    def test_completed_mcp_event_does_not_duplicate_literal_exec_call(self):
+        rows = [
+            {"type":"response_item","payload":{"type":"custom_tool_call","name":"exec",
+             "input":"await tools.mcp__context_memory__context_bootstrap(args);"}},
+            {"type":"event_msg","payload":{"type":"mcp_tool_call_end","invocation":{
+             "server":"context_memory", "tool":"context_bootstrap", "arguments":{}}}},
+            {"type":"event_msg","payload":{"type":"token_count","info":{
+             "last_token_usage":{"input_tokens":100,"cached_input_tokens":80}}}},
+        ]
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "literal.jsonl"
+            path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+            report = analyze(path)
+        self.assertEqual(report["observations"][0]["tools_since_previous_model_turn"],
+                         ["context_bootstrap"])
 
 
 if __name__ == "__main__":

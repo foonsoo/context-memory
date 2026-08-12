@@ -23,6 +23,12 @@ STARTUP_TOOLS = {
 
 
 def _tool_names(payload: dict[str, Any]) -> list[str]:
+    if payload.get("type") == "mcp_tool_call_end":
+        invocation = payload.get("invocation", {})
+        if invocation.get("server") != "context_memory":
+            return []
+        tool = invocation.get("tool")
+        return [tool] if isinstance(tool, str) else []
     if payload.get("type") == "custom_tool_call" and payload.get("name") == "exec":
         source = payload.get("input", "")
         if not isinstance(source, str):
@@ -51,7 +57,8 @@ def analyze(path: Path) -> dict[str, Any]:
                 continue
             names = [name for name in _tool_names(payload) if name in STARTUP_TOOLS]
             if names:
-                pending.extend(names)
+                if payload.get("type") != "mcp_tool_call_end" or not all(name in pending for name in names):
+                    pending.extend(names)
                 continue
             if row.get("type") != "event_msg" or payload.get("type") != "token_count" or not pending:
                 continue
@@ -138,18 +145,20 @@ def summarize(reports: list[dict[str, Any]]) -> dict[str, Any]:
         controlled_summary[workflow] = {
             "sessions": len(items),
             "input_tokens_median": statistics.median(x["input_tokens"] for x in items),
+            "cached_input_tokens_median": statistics.median(x["cached_input_tokens"] for x in items),
             "uncached_input_tokens_median": statistics.median(x["uncached_input_tokens"] for x in items),
             "items": items,
         }
     if all(workflow in controlled_summary for workflow in expected):
-        bootstrap = controlled_summary["bootstrap"]["uncached_input_tokens_median"]
-        legacy = controlled_summary["legacy"]["uncached_input_tokens_median"]
-        controlled_summary["comparison"] = {
-            "uncached_input_tokens_median_delta": bootstrap - legacy,
-            "uncached_input_tokens_median_change_percent": (
+        comparison: dict[str, Any] = {}
+        for metric in ("input_tokens", "cached_input_tokens", "uncached_input_tokens"):
+            bootstrap = controlled_summary["bootstrap"][f"{metric}_median"]
+            legacy = controlled_summary["legacy"][f"{metric}_median"]
+            comparison[f"{metric}_median_delta"] = bootstrap - legacy
+            comparison[f"{metric}_median_change_percent"] = (
                 round((bootstrap / legacy - 1) * 100, 1) if legacy else None
-            ),
-        }
+            )
+        controlled_summary["comparison"] = comparison
     return {"schema_version": 3, "sessions": reports, "summary": summary,
             "session_summary": session_summary, "controlled_summary": controlled_summary,
             "caveat": "Observed model-turn totals include the full Codex prompt; they are not isolated marginal tool costs."}
