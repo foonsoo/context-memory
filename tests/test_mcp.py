@@ -3,7 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from context_memory.mcp import CORE_TOOL_NAMES, MCPServer, TOOLS
+from context_memory.mcp import CORE_TOOL_NAMES, MCPServer, TOOLS, TOOL_BY_NAME
+from context_memory.contracts import PROMOTABLE_EVENT_KINDS
 from context_memory.store import MemoryStore
 
 
@@ -72,6 +73,12 @@ class MCPTests(unittest.TestCase):
         self.assertEqual(core_names | admin_names, {tool["name"] for tool in TOOLS})
         denied = admin.handle({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_context","arguments":{"project_id":"x","query":"q"}}})
         self.assertEqual(denied["error"]["code"], -32602)
+
+    def test_record_event_description_uses_durable_kind_contract(self):
+        description = TOOL_BY_NAME["record_event"]["description"]
+        for kind in PROMOTABLE_EVENT_KINDS:
+            self.assertIn(f"`{kind}`", description)
+        self.assertIn("Other kinds", description)
 
     def test_external_http_requires_token(self):
         with self.assertRaisesRegex(ValueError, "refusing external bind"): self.server.serve_http("0.0.0.0", 0)

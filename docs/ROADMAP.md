@@ -2,9 +2,13 @@
 
 ## Near term
 
-### P0 — Craft Agents durable-kind contract
+### Implemented — Craft Agents durable-kind contract
 
-- Close the Craft Agents durable-kind contract gap without restricting the append-only event vocabulary. This is the highest-priority remaining implementation because non-promotable accidental kinds such as `todo` are accepted as evidence but silently miss session-end memory candidate extraction. Craft remains a guided workspace-scoped setup until it exposes a stable non-interactive registration API, but its manual path must carry the same lifecycle contract as automated clients:
+- Closed the Craft Agents durable-kind contract gap without restricting the append-only event vocabulary. Promotable kinds now come from one code constant shared by extraction, MCP guidance, generated client instructions, and synchronization tests. Session-bound arbitrary kinds remain accepted and return an additive advisory that is stable on idempotent replay. The repository owns synchronized `AGENTS.md` and Craft `guide.md` templates; `init` emits the complete contract, portable MCP JSON, exact `sources/context-memory/guide.md` installation path, manual status, and the seven kinds. Local inspection of the installed Craft Agents 0.10.0 bundle confirmed that source guides use `guide.md` and are required before the first API call and after compaction. The Craft-style regression records `task` and `todo`, verifies the advisory, and extracts only the sourced task candidate. Existing accidental kinds are preserved and documented with append-only recovery guidance.
+
+- Startup-footprint check: the serialized core tool catalog increased from 10,619 to 10,818 characters, an additive 199 characters (+1.874%), due to the explicit `record_event` contract. This is a dependency-free catalog proxy, not a model-token claim.
+
+The delivered increments were:
   1. Define the promotable durable kinds once in code (`fact`, `decision`, `preference`, `constraint`, `procedure`, `task`, `summary`) and reuse that source for session-end candidate extraction, MCP tool guidance, generated client instructions, and tests so documentation cannot drift from behavior.
   2. Add a repository-owned Craft `guide.md` instruction template and keep the shared `AGENTS.md` contract synchronized with it. Confirm the installed Craft client loads `guide.md` before claiming automatic delivery. Include the complete startup, evidence, promotion/review, secret-handling, and session-end contract.
   3. Expand the `record_event` tool description with the promotable list and clarify that other kinds remain valid immutable events but are not automatically converted to proposed memories. Measure the resulting core tool-catalog character/token delta so the earlier startup-footprint work is not silently regressed.

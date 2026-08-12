@@ -1,8 +1,11 @@
-# Shared context memory workflow
+# Shared Context Memory workflow
 
-- At the start of a task, call `context_bootstrap` once with the current workspace directory, a focused query, a 4,000–8,000 character budget, `response_format=compact`, the actual client name, and current session/task ID when available. Use the returned project and scope IDs for writes; retrieval can discover relevant registered projects when the hinted partition has no match. The separate resolve/start/context calls remain valid when individual control is required. Treat disputed entries as warnings and inspect cited events with `get_source` before relying on consequential claims.
-- Record important user statements, observed facts, test results, and decisions as immutable events with stable idempotency keys. Never store secrets, credentials, raw environment dumps, or unrelated personal data.
-- Derive memories from one or more `source_event_ids`. Keep AI-inferred summaries `proposed`; use `active` only when the user, repository, or authoritative evidence confirms them.
-- During work, record durable decisions and constraints when they occur. Do not dump every tool call or inject the whole database.
-- When facts change, create the replacement with evidence, activate it, then mark the old memory `superseded` and link the replacement. Use `disputed` when evidence conflicts.
-- Before finishing, record a concise raw completion event and promote only reusable, verified information. End the memory session.
+- At the start of every task, call `context_bootstrap` once with the current workspace directory, the user's request as a focused query, a 4,000–8,000 character budget, `response_format=compact`, the actual client name, and the current client session/task ID as `external_id` when available. Use the returned project and scope IDs for all writes; never ask the user for a project UUID. Treat the directory as an identity hint because retrieval may discover relevant memories from another registered project.
+- Inspect consequential citations with `get_source` before relying on them. Treat disputed memories as warnings.
+- Record durable user decisions, constraints, verified facts, material test results, procedures, tasks, preferences, and concise summaries as immutable `record_event` evidence. The event kinds eligible for automatic session-end memory proposals are exactly: `fact`, `decision`, `preference`, `constraint`, `procedure`, `task`, `summary`. Other kinds remain valid immutable events but are not automatically promoted.
+- Derive memories from `source_event_ids`. Keep model-inferred summaries `proposed`; activate only information confirmed by the user, repository, tests, or authoritative evidence. Review proposed memories instead of silently treating them as verified.
+- Never store credentials, secrets, raw environment dumps, unrelated personal data, or routine tool chatter.
+- When information changes, create and activate the evidenced replacement, then mark the prior memory `superseded`. Use `disputed` for unresolved conflicts. Never rewrite immutable event history to repair an event kind.
+- Before finishing, preserve concise completion evidence, promote only reusable verified information, and call `session_end`. Review the returned candidates and warnings.
+
+This contract is client-neutral. Hooks may automate parts of it, but correctness must not depend on a hook being installed or fired.

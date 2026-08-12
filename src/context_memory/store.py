@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from .embeddings import EmbeddingProvider, LocalHashEmbedding
+from .contracts import PROMOTABLE_EVENT_KINDS
 
 TYPES = {"fact", "decision", "preference", "constraint", "procedure", "summary", "task", "other"}
 STATUSES = {"proposed", "active", "superseded", "disputed", "expired", "rejected"}
@@ -250,7 +251,7 @@ class MemoryStore:
     def extract_session_candidates(self, session_id: str) -> dict[str, Any]:
         session = self._row("SELECT * FROM sessions WHERE id=?", (session_id,))
         if not session: raise KeyError("session not found")
-        kinds = {"fact", "decision", "preference", "constraint", "procedure", "task", "summary"}
+        kinds = set(PROMOTABLE_EVENT_KINDS)
         created, conflicts = [], []
         events = self.conn.execute("SELECT * FROM events WHERE session_id=? ORDER BY event_seq", (session_id,))
         for event in events:
@@ -314,6 +315,7 @@ class MemoryStore:
             if "event_seq" not in hit:
                 migrated = self._row("SELECT event_seq FROM events WHERE id=?", (hit["id"],))
                 if migrated: hit["event_seq"] = migrated["event_seq"]
+            self._add_promotion_advisory(hit)
             return hit
         if not content.strip(): raise ValueError("event content cannot be empty")
         with self.tx() as cx:
@@ -330,8 +332,26 @@ class MemoryStore:
             cx.execute("""INSERT INTO events(id,project_id,scope_id,session_id,kind,content,source_uri,metadata_json,content_hash,created_at,event_seq)
               VALUES(:id,:project_id,:scope_id,:session_id,:kind,:content,:source_uri,:metadata_json,:content_hash,:created_at,:event_seq)""", item)
             self._audit(cx, project_id, "event", item["id"], "recorded", item)
+            self._add_promotion_advisory(item)
             self._save_idem(cx, "record_event", idempotency_key, request, item)
         return item
+
+    @staticmethod
+    def _add_promotion_advisory(item: dict[str, Any]) -> None:
+        if not item.get("session_id"):
+            return
+        eligible = item.get("kind") in PROMOTABLE_EVENT_KINDS
+        item["promotion"] = {
+            "eligible": eligible,
+            "automatic_at_session_end": eligible,
+            "promotable_kinds": list(PROMOTABLE_EVENT_KINDS),
+        }
+        if not eligible:
+            item["promotion"]["warning"] = (
+                f"Event kind '{item.get('kind')}' is preserved as immutable evidence but is not automatically "
+                "converted to a proposed memory at session_end. Record new evidence with a promotable kind "
+                "if a memory candidate is intended; do not rewrite this event."
+            )
 
     def create_checkpoint(self, project_id: str, mode: str, reason: str, goal: str,
                           idempotency_key: str, session_id: str | None = None,

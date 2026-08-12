@@ -13,6 +13,7 @@ from pathlib import Path
 
 from .mcp import MCPServer
 from .store import MemoryStore
+from .contracts import PROMOTABLE_EVENT_KINDS, workflow_guide
 
 
 def default_db() -> str:
@@ -103,7 +104,13 @@ def _register_client(client: str, config: dict[str, object], root: str, register
         else: result["status"] = "planned"
         return result
     elif client == "craft":
-        result.update({"status":"manual", "next_step":"In Craft Agents, ask the agent to add a local MCP source and paste the provided mcp_json. Craft sources are workspace-scoped.", "mcp_json":config})
+        result.update({
+            "status":"manual",
+            "next_step":"In Craft Agents, add a local workspace source named context-memory using mcp_json, then install guide_template.content as sources/context-memory/guide.md. Craft Agents 0.10.0 was locally verified to require reading a source guide before its first API call; confirm this behavior again for other installed versions.",
+            "mcp_json":config,
+            "guide_template":{"filename":"guide.md", "content":workflow_guide()},
+            "promotable_event_kinds":list(PROMOTABLE_EVENT_KINDS),
+        })
         return result
     elif client == "generic":
         result.update({"status":"manual", "next_step":"Add the provided MCP JSON to the client's user-level server configuration.", "mcp_json":config})
@@ -153,6 +160,8 @@ def init_workspaces(store: MemoryStore, workspace: str, clients: list[str], laun
             "record_event -> memory_upsert(source_event_ids) for durable verified knowledge",
             "session_end(session_id)",
         ],
+        "workflow_contract": workflow_guide(),
+        "promotable_event_kinds": list(PROMOTABLE_EVENT_KINDS),
         "clients": [_safe_register_client(client, config, root, register, cursor_config) for client in dict.fromkeys(expanded)],
     }
     return result

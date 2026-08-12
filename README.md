@@ -310,6 +310,8 @@ Bearer authentication without TLS is not safe across an untrusted network. Remot
 1. Call `project_resolve` with the current workspace path, then start a memory session with the returned project and scope IDs. Set `client` to the actual client name (for example `claude-code`, `craft-agent`, or `codex`) and pass its task/session ID as `external_id` when available.
 2. Record authoritative evidence with `record_event`:
 
+The promotable durable kinds are `fact`, `decision`, `preference`, `constraint`, `procedure`, `task`, and `summary`. Other strings remain valid append-only event kinds, but session-bound writes return a non-fatal promotion advisory and `session_end` does not automatically convert them into proposed memories.
+
 ```json
 {
   "project_id": "PROJECT_UUID",

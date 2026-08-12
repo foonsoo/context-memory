@@ -557,6 +557,22 @@ class StoreTests(unittest.TestCase):
         self.assertTrue(ended["review"]["conflicts"])
         self.assertEqual(self.store._row("SELECT event_id FROM memory_sources WHERE memory_id=?", (candidate["id"],))["event_id"], event["id"])
 
+    def test_craft_style_session_advises_non_promotable_kind_and_extracts_only_task(self):
+        p = self.store.create_project("craft-kind-contract")
+        session = self.store.start_session(p["id"], "craft-agent", external_id="craft-session")
+        task = self.store.record_event(p["id"], "task", "Ship the Craft guide", session_id=session["id"], idempotency_key="craft-task")
+        todo = self.store.record_event(p["id"], "todo", "Old clients may have used todo", session_id=session["id"], idempotency_key="craft-todo")
+        replay = self.store.record_event(p["id"], "todo", "Old clients may have used todo", session_id=session["id"], idempotency_key="craft-todo")
+        self.assertTrue(task["promotion"]["eligible"])
+        self.assertFalse(todo["promotion"]["eligible"])
+        self.assertIn("not automatically", todo["promotion"]["warning"])
+        self.assertEqual(replay["promotion"], todo["promotion"])
+        ended = self.store.end_session(session["id"])
+        self.assertEqual([candidate["type"] for candidate in ended["review"]["created"]], ["task"])
+        candidate = ended["review"]["created"][0]
+        source = self.store._row("SELECT event_id FROM memory_sources WHERE memory_id=?", (candidate["id"],))
+        self.assertEqual(source["event_id"], task["id"])
+
     def test_review_correction_can_supersede_existing_memory(self):
         p = self.store.create_project("correction")
         old = self.store.upsert_memory(p["id"], "Editor", "Use Vim", "preference", "active")

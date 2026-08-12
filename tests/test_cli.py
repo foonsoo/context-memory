@@ -8,6 +8,7 @@ from pathlib import Path
 
 from context_memory.cli import doctor, init_workspace, init_workspaces, mcp_config
 from context_memory.store import MemoryStore
+from context_memory.contracts import PROMOTABLE_EVENT_KINDS, workflow_guide
 
 
 class CLITests(unittest.TestCase):
@@ -58,6 +59,11 @@ class CLITests(unittest.TestCase):
                 planned = init_workspaces(store, str(root), ["claude-code","cursor","vscode","craft"], "installed", False, cursor_config=cursor)
                 self.assertEqual([x["client"] for x in planned["clients"]], ["claude-code","cursor","vscode","craft"])
                 self.assertEqual(planned["clients"][-1]["status"], "manual")
+                craft = planned["clients"][-1]
+                self.assertEqual(craft["guide_template"]["filename"], "guide.md")
+                self.assertEqual(craft["guide_template"]["content"], workflow_guide())
+                self.assertEqual(craft["promotable_event_kinds"], list(PROMOTABLE_EVENT_KINDS))
+                self.assertIn("confirm", craft["next_step"])
                 registered = init_workspaces(store, str(root), ["cursor"], "installed", True, cursor_config=cursor)
                 self.assertTrue(registered["clients"][0]["registered"])
                 saved = __import__("json").loads(cursor.read_text(encoding="utf-8"))
@@ -88,7 +94,16 @@ class CLITests(unittest.TestCase):
                 result = init_workspaces(store, str(root), ["generic"], "python", False)
                 self.assertIn("context_bootstrap", result["workflow"][0])
                 self.assertIn("session_end", result["workflow"][-1])
+                self.assertEqual(result["workflow_contract"], workflow_guide())
+                self.assertEqual(result["promotable_event_kinds"], list(PROMOTABLE_EVENT_KINDS))
             finally: store.close()
+
+    def test_repository_instruction_templates_match_generated_contract(self):
+        root = Path(__file__).parents[1]
+        expected = workflow_guide()
+        for relative in ("AGENTS.md", "examples/AGENTS.md", "examples/guide.md"):
+            with self.subTest(relative=relative):
+                self.assertEqual((root / relative).read_text(encoding="utf-8"), expected)
 
     def test_migrate_db_captures_live_wal_and_refuses_overwrite(self):
         with tempfile.TemporaryDirectory() as temp:
