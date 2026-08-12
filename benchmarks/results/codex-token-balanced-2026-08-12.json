@@ -1,0 +1,626 @@
+{
+  "caveat": "Observed model-turn totals include the full Codex prompt; they are not isolated marginal tool costs.",
+  "controlled_summary": {
+    "bootstrap": {
+      "cached_input_tokens_median": 11008.0,
+      "input_tokens_median": 15332.0,
+      "items": [
+        {
+          "cached_input_tokens": 11008,
+          "input_tokens": 15332,
+          "model_turns": 1,
+          "pair": "cold-1",
+          "session": "rollout-2026-08-12T19-07-28-019ff570-f568-7b20-9ceb-19dca5cc95b9.jsonl",
+          "stratum": "cold",
+          "uncached_input_tokens": 4324
+        },
+        {
+          "cached_input_tokens": 11008,
+          "input_tokens": 15332,
+          "model_turns": 1,
+          "pair": "cold-2",
+          "session": "rollout-2026-08-12T19-08-18-019ff571-b6d9-74e3-87bd-0cf75fc88d95.jsonl",
+          "stratum": "cold",
+          "uncached_input_tokens": 4324
+        },
+        {
+          "cached_input_tokens": 11008,
+          "input_tokens": 15332,
+          "model_turns": 1,
+          "pair": "cold-3",
+          "session": "rollout-2026-08-12T19-09-06-019ff572-723a-73f3-9888-59e14f2379f9.jsonl",
+          "stratum": "cold",
+          "uncached_input_tokens": 4324
+        },
+        {
+          "cached_input_tokens": 11008,
+          "input_tokens": 15332,
+          "model_turns": 1,
+          "pair": "warm-1",
+          "session": "rollout-2026-08-12T19-09-46-019ff573-10e0-7ac3-aa96-a491c2097866.jsonl",
+          "stratum": "warm",
+          "uncached_input_tokens": 4324
+        },
+        {
+          "cached_input_tokens": 11008,
+          "input_tokens": 15332,
+          "model_turns": 1,
+          "pair": "warm-2",
+          "session": "rollout-2026-08-12T19-10-36-019ff573-d47c-7be1-93ff-8512c34e7b14.jsonl",
+          "stratum": "warm",
+          "uncached_input_tokens": 4324
+        },
+        {
+          "cached_input_tokens": 11008,
+          "input_tokens": 15332,
+          "model_turns": 1,
+          "pair": "warm-3",
+          "session": "rollout-2026-08-12T19-11-19-019ff574-7bee-7610-8319-a1a0434a5a6c.jsonl",
+          "stratum": "warm",
+          "uncached_input_tokens": 4324
+        }
+      ],
+      "sessions": 6,
+      "uncached_input_tokens_median": 4324.0
+    },
+    "comparison": {
+      "cached_input_tokens_median_change_percent": -75.1,
+      "cached_input_tokens_median_delta": -33280.0,
+      "input_tokens_median_change_percent": -70.1,
+      "input_tokens_median_delta": -35981.5,
+      "uncached_input_tokens_median_change_percent": -48.2,
+      "uncached_input_tokens_median_delta": -4018.5
+    },
+    "legacy": {
+      "cached_input_tokens_median": 44288.0,
+      "input_tokens_median": 51313.5,
+      "items": [
+        {
+          "cached_input_tokens": 42240,
+          "input_tokens": 50520,
+          "model_turns": 3,
+          "pair": "cold-1",
+          "session": "rollout-2026-08-12T19-07-41-019ff571-28ba-7811-9a35-20e5e870811c.jsonl",
+          "stratum": "cold",
+          "uncached_input_tokens": 8280
+        },
+        {
+          "cached_input_tokens": 49408,
+          "input_tokens": 52107,
+          "model_turns": 3,
+          "pair": "cold-2",
+          "session": "rollout-2026-08-12T19-08-30-019ff571-e527-7d62-82c5-8d5206e471ab.jsonl",
+          "stratum": "cold",
+          "uncached_input_tokens": 2699
+        },
+        {
+          "cached_input_tokens": 59648,
+          "input_tokens": 68430,
+          "model_turns": 3,
+          "pair": "cold-3",
+          "session": "rollout-2026-08-12T19-09-19-019ff572-a487-7240-96d2-b969e8f87d10.jsonl",
+          "stratum": "cold",
+          "uncached_input_tokens": 8782
+        },
+        {
+          "cached_input_tokens": 41216,
+          "input_tokens": 49621,
+          "model_turns": 3,
+          "pair": "warm-1",
+          "session": "rollout-2026-08-12T19-09-59-019ff573-4211-71f3-9f52-ade81fd64971.jsonl",
+          "stratum": "warm",
+          "uncached_input_tokens": 8405
+        },
+        {
+          "cached_input_tokens": 46336,
+          "input_tokens": 55761,
+          "model_turns": 3,
+          "pair": "warm-2",
+          "session": "rollout-2026-08-12T19-10-52-019ff574-12d3-72f0-a948-2979f2896da3.jsonl",
+          "stratum": "warm",
+          "uncached_input_tokens": 9425
+        },
+        {
+          "cached_input_tokens": 15104,
+          "input_tokens": 15906,
+          "model_turns": 1,
+          "pair": "warm-3",
+          "session": "rollout-2026-08-12T19-13-29-019ff576-7660-7be1-8988-22976234750e.jsonl",
+          "stratum": "warm",
+          "uncached_input_tokens": 802
+        }
+      ],
+      "sessions": 6,
+      "uncached_input_tokens_median": 8342.5
+    }
+  },
+  "experiment": {
+    "manifest": "manifest.json",
+    "snapshot_sha256": "10983730c848a62d5151e14492acf991fa174df25065afdffdd881988c74935c"
+  },
+  "paired_summary": {
+    "cold": {
+      "cached_input_tokens_delta_max": -31232,
+      "cached_input_tokens_delta_median": -38400,
+      "cached_input_tokens_delta_min": -48640,
+      "input_tokens_delta_max": -35188,
+      "input_tokens_delta_median": -36775,
+      "input_tokens_delta_min": -53098,
+      "items": [
+        {
+          "cached_input_tokens_delta": -31232,
+          "input_tokens_delta": -35188,
+          "pair": "cold-1",
+          "uncached_input_tokens_delta": -3956
+        },
+        {
+          "cached_input_tokens_delta": -38400,
+          "input_tokens_delta": -36775,
+          "pair": "cold-2",
+          "uncached_input_tokens_delta": 1625
+        },
+        {
+          "cached_input_tokens_delta": -48640,
+          "input_tokens_delta": -53098,
+          "pair": "cold-3",
+          "uncached_input_tokens_delta": -4458
+        }
+      ],
+      "pairs": 3,
+      "uncached_input_tokens_delta_max": 1625,
+      "uncached_input_tokens_delta_median": -3956,
+      "uncached_input_tokens_delta_min": -4458
+    },
+    "warm": {
+      "cached_input_tokens_delta_max": -4096,
+      "cached_input_tokens_delta_median": -30208,
+      "cached_input_tokens_delta_min": -35328,
+      "input_tokens_delta_max": -574,
+      "input_tokens_delta_median": -34289,
+      "input_tokens_delta_min": -40429,
+      "items": [
+        {
+          "cached_input_tokens_delta": -30208,
+          "input_tokens_delta": -34289,
+          "pair": "warm-1",
+          "uncached_input_tokens_delta": -4081
+        },
+        {
+          "cached_input_tokens_delta": -35328,
+          "input_tokens_delta": -40429,
+          "pair": "warm-2",
+          "uncached_input_tokens_delta": -5101
+        },
+        {
+          "cached_input_tokens_delta": -4096,
+          "input_tokens_delta": -574,
+          "pair": "warm-3",
+          "uncached_input_tokens_delta": 3522
+        }
+      ],
+      "pairs": 3,
+      "uncached_input_tokens_delta_max": 3522,
+      "uncached_input_tokens_delta_median": -4081,
+      "uncached_input_tokens_delta_min": -5101
+    }
+  },
+  "schema_version": 4,
+  "session_summary": {
+    "bootstrap": {
+      "input_tokens_max": 15332,
+      "input_tokens_min": 15332,
+      "items": [
+        {
+          "cached_input_tokens": 11008,
+          "input_tokens": 15332,
+          "model_turns": 1,
+          "session": "rollout-2026-08-12T19-07-28-019ff570-f568-7b20-9ceb-19dca5cc95b9.jsonl",
+          "uncached_input_tokens": 4324
+        },
+        {
+          "cached_input_tokens": 11008,
+          "input_tokens": 15332,
+          "model_turns": 1,
+          "session": "rollout-2026-08-12T19-08-18-019ff571-b6d9-74e3-87bd-0cf75fc88d95.jsonl",
+          "uncached_input_tokens": 4324
+        },
+        {
+          "cached_input_tokens": 11008,
+          "input_tokens": 15332,
+          "model_turns": 1,
+          "session": "rollout-2026-08-12T19-09-06-019ff572-723a-73f3-9888-59e14f2379f9.jsonl",
+          "uncached_input_tokens": 4324
+        },
+        {
+          "cached_input_tokens": 11008,
+          "input_tokens": 15332,
+          "model_turns": 1,
+          "session": "rollout-2026-08-12T19-09-46-019ff573-10e0-7ac3-aa96-a491c2097866.jsonl",
+          "uncached_input_tokens": 4324
+        },
+        {
+          "cached_input_tokens": 11008,
+          "input_tokens": 15332,
+          "model_turns": 1,
+          "session": "rollout-2026-08-12T19-10-36-019ff573-d47c-7be1-93ff-8512c34e7b14.jsonl",
+          "uncached_input_tokens": 4324
+        },
+        {
+          "cached_input_tokens": 11008,
+          "input_tokens": 15332,
+          "model_turns": 1,
+          "session": "rollout-2026-08-12T19-11-19-019ff574-7bee-7610-8319-a1a0434a5a6c.jsonl",
+          "uncached_input_tokens": 4324
+        }
+      ],
+      "sessions": 6,
+      "uncached_input_tokens_max": 4324,
+      "uncached_input_tokens_min": 4324
+    },
+    "legacy": {
+      "input_tokens_max": 68430,
+      "input_tokens_min": 15906,
+      "items": [
+        {
+          "cached_input_tokens": 42240,
+          "input_tokens": 50520,
+          "model_turns": 3,
+          "session": "rollout-2026-08-12T19-07-41-019ff571-28ba-7811-9a35-20e5e870811c.jsonl",
+          "uncached_input_tokens": 8280
+        },
+        {
+          "cached_input_tokens": 49408,
+          "input_tokens": 52107,
+          "model_turns": 3,
+          "session": "rollout-2026-08-12T19-08-30-019ff571-e527-7d62-82c5-8d5206e471ab.jsonl",
+          "uncached_input_tokens": 2699
+        },
+        {
+          "cached_input_tokens": 59648,
+          "input_tokens": 68430,
+          "model_turns": 3,
+          "session": "rollout-2026-08-12T19-09-19-019ff572-a487-7240-96d2-b969e8f87d10.jsonl",
+          "uncached_input_tokens": 8782
+        },
+        {
+          "cached_input_tokens": 41216,
+          "input_tokens": 49621,
+          "model_turns": 3,
+          "session": "rollout-2026-08-12T19-09-59-019ff573-4211-71f3-9f52-ade81fd64971.jsonl",
+          "uncached_input_tokens": 8405
+        },
+        {
+          "cached_input_tokens": 46336,
+          "input_tokens": 55761,
+          "model_turns": 3,
+          "session": "rollout-2026-08-12T19-10-52-019ff574-12d3-72f0-a948-2979f2896da3.jsonl",
+          "uncached_input_tokens": 9425
+        },
+        {
+          "cached_input_tokens": 15104,
+          "input_tokens": 15906,
+          "model_turns": 1,
+          "session": "rollout-2026-08-12T19-13-29-019ff576-7660-7be1-8988-22976234750e.jsonl",
+          "uncached_input_tokens": 802
+        }
+      ],
+      "sessions": 6,
+      "uncached_input_tokens_max": 9425,
+      "uncached_input_tokens_min": 802
+    }
+  },
+  "sessions": [
+    {
+      "declared_workflow": "bootstrap",
+      "observations": [
+        {
+          "cached_input_tokens": 11008,
+          "input_tokens": 15332,
+          "tools_since_previous_model_turn": [
+            "context_bootstrap"
+          ],
+          "uncached_input_tokens": 4324,
+          "workflow": "bootstrap"
+        }
+      ],
+      "pair": "cold-1",
+      "session": "rollout-2026-08-12T19-07-28-019ff570-f568-7b20-9ceb-19dca5cc95b9.jsonl",
+      "stratum": "cold"
+    },
+    {
+      "declared_workflow": "legacy",
+      "observations": [
+        {
+          "cached_input_tokens": 15104,
+          "input_tokens": 16427,
+          "tools_since_previous_model_turn": [
+            "project_resolve"
+          ],
+          "uncached_input_tokens": 1323,
+          "workflow": "legacy"
+        },
+        {
+          "cached_input_tokens": 11008,
+          "input_tokens": 16828,
+          "tools_since_previous_model_turn": [
+            "session_start"
+          ],
+          "uncached_input_tokens": 5820,
+          "workflow": "legacy"
+        },
+        {
+          "cached_input_tokens": 16128,
+          "input_tokens": 17265,
+          "tools_since_previous_model_turn": [
+            "get_context"
+          ],
+          "uncached_input_tokens": 1137,
+          "workflow": "legacy"
+        }
+      ],
+      "pair": "cold-1",
+      "session": "rollout-2026-08-12T19-07-41-019ff571-28ba-7811-9a35-20e5e870811c.jsonl",
+      "stratum": "cold"
+    },
+    {
+      "declared_workflow": "bootstrap",
+      "observations": [
+        {
+          "cached_input_tokens": 11008,
+          "input_tokens": 15332,
+          "tools_since_previous_model_turn": [
+            "context_bootstrap"
+          ],
+          "uncached_input_tokens": 4324,
+          "workflow": "bootstrap"
+        }
+      ],
+      "pair": "cold-2",
+      "session": "rollout-2026-08-12T19-08-18-019ff571-b6d9-74e3-87bd-0cf75fc88d95.jsonl",
+      "stratum": "cold"
+    },
+    {
+      "declared_workflow": "legacy",
+      "observations": [
+        {
+          "cached_input_tokens": 16128,
+          "input_tokens": 16980,
+          "tools_since_previous_model_turn": [
+            "project_resolve"
+          ],
+          "uncached_input_tokens": 852,
+          "workflow": "legacy"
+        },
+        {
+          "cached_input_tokens": 16128,
+          "input_tokens": 17345,
+          "tools_since_previous_model_turn": [
+            "session_start"
+          ],
+          "uncached_input_tokens": 1217,
+          "workflow": "legacy"
+        },
+        {
+          "cached_input_tokens": 17152,
+          "input_tokens": 17782,
+          "tools_since_previous_model_turn": [
+            "get_context"
+          ],
+          "uncached_input_tokens": 630,
+          "workflow": "legacy"
+        }
+      ],
+      "pair": "cold-2",
+      "session": "rollout-2026-08-12T19-08-30-019ff571-e527-7d62-82c5-8d5206e471ab.jsonl",
+      "stratum": "cold"
+    },
+    {
+      "declared_workflow": "bootstrap",
+      "observations": [
+        {
+          "cached_input_tokens": 11008,
+          "input_tokens": 15332,
+          "tools_since_previous_model_turn": [
+            "context_bootstrap"
+          ],
+          "uncached_input_tokens": 4324,
+          "workflow": "bootstrap"
+        }
+      ],
+      "pair": "cold-3",
+      "session": "rollout-2026-08-12T19-09-06-019ff572-723a-73f3-9888-59e14f2379f9.jsonl",
+      "stratum": "cold"
+    },
+    {
+      "declared_workflow": "legacy",
+      "observations": [
+        {
+          "cached_input_tokens": 15104,
+          "input_tokens": 22403,
+          "tools_since_previous_model_turn": [
+            "project_resolve"
+          ],
+          "uncached_input_tokens": 7299,
+          "workflow": "legacy"
+        },
+        {
+          "cached_input_tokens": 22272,
+          "input_tokens": 22798,
+          "tools_since_previous_model_turn": [
+            "session_start"
+          ],
+          "uncached_input_tokens": 526,
+          "workflow": "legacy"
+        },
+        {
+          "cached_input_tokens": 22272,
+          "input_tokens": 23229,
+          "tools_since_previous_model_turn": [
+            "get_context"
+          ],
+          "uncached_input_tokens": 957,
+          "workflow": "legacy"
+        }
+      ],
+      "pair": "cold-3",
+      "session": "rollout-2026-08-12T19-09-19-019ff572-a487-7240-96d2-b969e8f87d10.jsonl",
+      "stratum": "cold"
+    },
+    {
+      "declared_workflow": "bootstrap",
+      "observations": [
+        {
+          "cached_input_tokens": 11008,
+          "input_tokens": 15332,
+          "tools_since_previous_model_turn": [
+            "context_bootstrap"
+          ],
+          "uncached_input_tokens": 4324,
+          "workflow": "bootstrap"
+        }
+      ],
+      "pair": "warm-1",
+      "session": "rollout-2026-08-12T19-09-46-019ff573-10e0-7ac3-aa96-a491c2097866.jsonl",
+      "stratum": "warm"
+    },
+    {
+      "declared_workflow": "legacy",
+      "observations": [
+        {
+          "cached_input_tokens": 15104,
+          "input_tokens": 16145,
+          "tools_since_previous_model_turn": [
+            "project_resolve"
+          ],
+          "uncached_input_tokens": 1041,
+          "workflow": "legacy"
+        },
+        {
+          "cached_input_tokens": 15104,
+          "input_tokens": 16522,
+          "tools_since_previous_model_turn": [
+            "session_start"
+          ],
+          "uncached_input_tokens": 1418,
+          "workflow": "legacy"
+        },
+        {
+          "cached_input_tokens": 11008,
+          "input_tokens": 16954,
+          "tools_since_previous_model_turn": [
+            "get_context"
+          ],
+          "uncached_input_tokens": 5946,
+          "workflow": "legacy"
+        }
+      ],
+      "pair": "warm-1",
+      "session": "rollout-2026-08-12T19-09-59-019ff573-4211-71f3-9f52-ade81fd64971.jsonl",
+      "stratum": "warm"
+    },
+    {
+      "declared_workflow": "bootstrap",
+      "observations": [
+        {
+          "cached_input_tokens": 11008,
+          "input_tokens": 15332,
+          "tools_since_previous_model_turn": [
+            "context_bootstrap"
+          ],
+          "uncached_input_tokens": 4324,
+          "workflow": "bootstrap"
+        }
+      ],
+      "pair": "warm-2",
+      "session": "rollout-2026-08-12T19-10-36-019ff573-d47c-7be1-93ff-8512c34e7b14.jsonl",
+      "stratum": "warm"
+    },
+    {
+      "declared_workflow": "legacy",
+      "observations": [
+        {
+          "cached_input_tokens": 11008,
+          "input_tokens": 18179,
+          "tools_since_previous_model_turn": [
+            "project_resolve"
+          ],
+          "uncached_input_tokens": 7171,
+          "workflow": "legacy"
+        },
+        {
+          "cached_input_tokens": 17152,
+          "input_tokens": 18575,
+          "tools_since_previous_model_turn": [
+            "session_start"
+          ],
+          "uncached_input_tokens": 1423,
+          "workflow": "legacy"
+        },
+        {
+          "cached_input_tokens": 18176,
+          "input_tokens": 19007,
+          "tools_since_previous_model_turn": [
+            "get_context"
+          ],
+          "uncached_input_tokens": 831,
+          "workflow": "legacy"
+        }
+      ],
+      "pair": "warm-2",
+      "session": "rollout-2026-08-12T19-10-52-019ff574-12d3-72f0-a948-2979f2896da3.jsonl",
+      "stratum": "warm"
+    },
+    {
+      "declared_workflow": "bootstrap",
+      "observations": [
+        {
+          "cached_input_tokens": 11008,
+          "input_tokens": 15332,
+          "tools_since_previous_model_turn": [
+            "context_bootstrap"
+          ],
+          "uncached_input_tokens": 4324,
+          "workflow": "bootstrap"
+        }
+      ],
+      "pair": "warm-3",
+      "session": "rollout-2026-08-12T19-11-19-019ff574-7bee-7610-8319-a1a0434a5a6c.jsonl",
+      "stratum": "warm"
+    },
+    {
+      "declared_workflow": "legacy",
+      "observations": [
+        {
+          "cached_input_tokens": 15104,
+          "input_tokens": 15906,
+          "tools_since_previous_model_turn": [
+            "project_resolve",
+            "session_start",
+            "get_context"
+          ],
+          "uncached_input_tokens": 802,
+          "workflow": "legacy"
+        }
+      ],
+      "pair": "warm-3",
+      "session": "rollout-2026-08-12T19-13-29-019ff576-7660-7be1-8988-22976234750e.jsonl",
+      "stratum": "warm"
+    }
+  ],
+  "summary": {
+    "bootstrap": {
+      "input_tokens_max": 15332,
+      "input_tokens_min": 15332,
+      "observations": 6,
+      "uncached_input_tokens_max": 4324,
+      "uncached_input_tokens_min": 4324
+    },
+    "legacy": {
+      "input_tokens_max": 23229,
+      "input_tokens_min": 15906,
+      "observations": 16,
+      "uncached_input_tokens_max": 7299,
+      "uncached_input_tokens_min": 526
+    }
+  }
+}

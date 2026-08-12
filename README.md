@@ -270,6 +270,12 @@ By default, search fuses FTS5 and local-similarity ranks and returns inspectable
 
 Feedback applies small bounded importance adjustments, and context assembly suppresses near-identical blocks. Memories default to project visibility; set `visibility=global` only for non-path-scoped user preferences or constraints that should be available to every project in the same local database.
 
+For controlled Codex startup measurements, `benchmarks/run_codex_token_experiment.py`
+creates one frozen synthetic database and a private copy per run, then records a
+balanced manifest. Analyze it with `benchmarks/analyze_codex_tokens.py --manifest`.
+The runner validates the exact startup sequence and retries uncontrolled model
+runs; it never points the benchmark at the live Context Memory database.
+
 ## Reproducible comparison benchmark
 
 The repository includes [benchmarks/run_benchmark.py](benchmarks/run_benchmark.py). It starts all products through MCP stdio and uses no API keys:

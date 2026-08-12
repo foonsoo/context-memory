@@ -4,9 +4,20 @@ import unittest
 from pathlib import Path
 
 from benchmarks.analyze_codex_tokens import analyze, analyze_manifest, summarize
+from benchmarks.run_codex_token_experiment import create_snapshot, toml_string, WORKFLOWS
 
 
 class TokenMeasurementTests(unittest.TestCase):
+    def test_experiment_snapshot_is_frozen_and_synthetic(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            snapshot = root / "snapshot.db"
+            digest = create_snapshot(snapshot, root / "workspace")
+            self.assertEqual(digest, __import__("hashlib").sha256(snapshot.read_bytes()).hexdigest())
+            self.assertEqual(len(digest), 64)
+        self.assertEqual(toml_string("a b"), '"a b"')
+        self.assertIn("exact order", WORKFLOWS["legacy"])
+
     def test_extracts_counters_without_session_content(self):
         rows = [
             {"type":"response_item","payload":{"type":"function_call","name":"mcp__context_memory__context_bootstrap","arguments":"SECRET"}},
