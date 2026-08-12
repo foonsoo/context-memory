@@ -616,6 +616,20 @@ class StoreTests(unittest.TestCase):
         try: self.assertEqual(snapshot.get_source(event["id"])["content"], "committed WAL data")
         finally: snapshot.close()
 
+    def test_audit_chain_exports_deterministically_and_verifies_offline(self):
+        p = self.store.create_project("audit-offline")
+        for index in range(105): self.store.record_event(p["id"], "fact", f"audit {index}")
+        self.store.set_policy(p["id"], audit_keep_entries=100)
+        self.store.maintain(p["id"], True)
+        first = self.store.export_audit_chain(p["id"])
+        self.assertEqual(first, self.store.export_audit_chain(p["id"]))
+        verified = self.store.verify_audit_chain(first, first["head_digest"])
+        self.assertTrue(verified["ok"]); self.assertTrue(verified["anchored"])
+        tampered = json.loads(json.dumps(first)); tampered["checkpoints"][0]["digest"] = "0" * 64
+        self.assertFalse(self.store.verify_audit_chain(tampered, first["head_digest"])["ok"])
+        reordered = json.loads(json.dumps(first)); reordered["audit_entries"].reverse()
+        self.assertFalse(self.store.verify_audit_chain(reordered)["ok"])
+
     def test_scheduled_maintenance_runs_once_when_due(self):
         p = self.store.create_project("scheduled")
         self.assertEqual(self.store.maintain_scheduled(p["id"])["reason"], "disabled")

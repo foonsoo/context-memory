@@ -138,6 +138,27 @@ class CLITests(unittest.TestCase):
                                                   check=True, capture_output=True, text=True).stdout)
             self.assertEqual(evaluated["suppression"], "unchanged_recovery_state")
 
+    def test_audit_export_and_offline_verify_commands(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary) / "memory.db"
+            bundle = Path(temporary) / "audit.json"
+            store = MemoryStore(database)
+            try:
+                project = store.create_project("cli-audit")
+                for index in range(105): store.record_event(project["id"], "fact", f"audit {index}")
+                store.set_policy(project["id"], audit_keep_entries=100)
+                head = store.maintain(project["id"], True)["checkpoint"]["digest"]
+            finally: store.close()
+            env = {**os.environ, "PYTHONPATH": str(Path(__file__).parents[1] / "src")}
+            base = [sys.executable, "-m", "context_memory.cli", "--db", str(database)]
+            exported = subprocess.run(base + ["audit-export", project["id"], "--output", str(bundle)],
+                                      cwd=Path(__file__).parents[1], env=env, capture_output=True, text=True)
+            self.assertEqual(exported.returncode, 0, exported.stderr)
+            verified = subprocess.run(base + ["audit-verify", str(bundle), "--expected-head-digest", head],
+                                      cwd=Path(__file__).parents[1], env=env, capture_output=True, text=True)
+            self.assertEqual(verified.returncode, 0, verified.stderr)
+            self.assertTrue(json.loads(verified.stdout)["anchored"])
+
 
 if __name__ == "__main__":
     unittest.main()

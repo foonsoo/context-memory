@@ -248,6 +248,10 @@ def main() -> None:
     maintain.add_argument("project_id"); maintain.add_argument("--apply", action="store_true"); maintain.add_argument("--scheduled", action="store_true")
     status_cmd = sub.add_parser("status", help="Show project policy, storage counts, audit checkpoints, and search health")
     status_cmd.add_argument("project_id")
+    audit_export = sub.add_parser("audit-export", help="Export a deterministic bundle for offline audit-chain verification")
+    audit_export.add_argument("project_id"); audit_export.add_argument("--output", required=True)
+    audit_verify = sub.add_parser("audit-verify", help="Verify an exported audit chain without opening its source database")
+    audit_verify.add_argument("input"); audit_verify.add_argument("--expected-head-digest")
     backup = sub.add_parser("backup", help="Create one consistent integrity-checked SQLite snapshot")
     backup.add_argument("--output", required=True); backup.add_argument("--passphrase-env")
     decrypt = sub.add_parser("backup-decrypt", help="Decrypt an authenticated backup envelope to a SQLite snapshot")
@@ -325,6 +329,19 @@ def main() -> None:
             if args.scheduled and not args.apply: p.error("--scheduled requires --apply")
             output(store.maintain_scheduled(args.project_id) if args.scheduled else store.maintain(args.project_id, args.apply))
         elif args.command == "status": output(store.maintenance_status(args.project_id))
+        elif args.command == "audit-export":
+            destination = Path(args.output).expanduser().resolve()
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            bundle = store.export_audit_chain(args.project_id)
+            destination.write_text(json.dumps(bundle, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+            output({"ok":True,"project_id":args.project_id,"output":str(destination),
+                    "head_digest":bundle["head_digest"],"checkpoints":len(bundle["checkpoints"]),
+                    "audit_entries":len(bundle["audit_entries"])})
+        elif args.command == "audit-verify":
+            source_path = Path(args.input).expanduser().resolve()
+            result = store.verify_audit_chain(json.loads(source_path.read_text(encoding="utf-8")), args.expected_head_digest)
+            output(result)
+            if not result["ok"]: raise SystemExit(1)
         elif args.command == "backup":
             passphrase = os.environ.get(args.passphrase_env) if args.passphrase_env else None
             if args.passphrase_env and passphrase is None: p.error(f"passphrase environment variable is not set: {args.passphrase_env}")

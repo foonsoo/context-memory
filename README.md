@@ -192,6 +192,16 @@ context-memory status PROJECT_UUID
 
 Applying maintenance preserves all immutable source events, removes old terminal memory projections, and replaces excess audit detail with chained SHA-256 checkpoints. Export first if reconstructable detail older than the retention window is required.
 
+Export the checkpoint chain and remaining audit entries for verification on a machine that does not have the database:
+
+```bash
+context-memory audit-export PROJECT_UUID --output audit-chain.json
+context-memory audit-verify audit-chain.json
+context-memory audit-verify audit-chain.json --expected-head-digest TRUSTED_DIGEST
+```
+
+The export is deterministic. Verification checks project identity, checkpoint linkage and ranges, live-entry ordering, and the optional separately recorded head digest. Use `--expected-head-digest` when the bundle itself might have been replaced; unanchored verification can detect internal corruption but cannot establish that the entire chain is the expected one. Compacted row contents are intentionally absent, so keep a full project export when those historical details must remain reconstructable.
+
 For scheduler-driven maintenance, persist an interval and invoke the idempotent due-check from cron, launchd, or a systemd timer. `0` disables scheduling; the minimum enabled interval is five minutes:
 
 ```bash
