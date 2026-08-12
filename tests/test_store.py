@@ -230,6 +230,22 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(m["id"], context["items"][0]["memory_id"]); self.assertLessEqual(context["used"], context["budget"])
         self.assertEqual(self.store.get_context(p["id"], "SQLite", 10)["items"], [])
 
+    def test_compact_context_is_lossless_and_omits_duplicate_rendering(self):
+        p = self.store.create_project("compact")
+        e = self.store.record_event(p["id"], "decision", "Keep the exact source")
+        m = self.store.upsert_memory(p["id"], "Exact title", "Exact stored content", "decision", "active",
+                                     .9, .8, source_event_ids=[e["id"]])
+        legacy = self.store.get_context(p["id"], "Exact", 1000)
+        compact = self.store.get_context(p["id"], "Exact", 1000, response_format="compact")
+        self.assertIn("context", legacy)
+        self.assertNotIn("context", compact)
+        item = compact["items"][0]
+        self.assertEqual((item["memory_id"], item["status"], item["confidence"]), (m["id"], "active", .9))
+        self.assertEqual((item["title"], item["content"]), ("Exact title", "Exact stored content"))
+        self.assertEqual(item["source_event_ids"], [e["id"]])
+        self.assertFalse(item["truncated"])
+        self.assertEqual(self.store.get_source(item["source_event_ids"][0])["content"], "Keep the exact source")
+
     def test_proposed_excluded_and_transitions_audited(self):
         p = self.store.create_project("demo")
         old = self.store.upsert_memory(p["id"], "Old port", "The port is 8000", "fact", "active")

@@ -894,7 +894,10 @@ class MemoryStore:
 
     def get_context(self, project_id: str, query: str, char_budget: int = 6000, statuses: list[str] | None = None,
                     scope_id: str | None = None, event_cursor: int | None = None, event_kinds: list[str] | None = None,
-                    event_limit: int = 20, event_char_budget: int = 2000, discover_projects: bool = True) -> dict[str, Any]:
+                    event_limit: int = 20, event_char_budget: int = 2000, discover_projects: bool = True,
+                    response_format: str = "legacy") -> dict[str, Any]:
+        if response_format not in {"legacy", "compact"}:
+            raise ValueError("response_format must be legacy or compact")
         policy = self.get_policy(project_id)
         requested = max(0, char_budget)
         budget = min(requested, policy["max_context_chars"]); selected, used = [], 0
@@ -934,27 +937,39 @@ class MemoryStore:
         if discovery_used:
             candidates = [m for m in candidates if m["project_id"] == project_id or m["visibility"] == "global"
                           or m["project_id"] == selected_project_id]
+        eligible = 0
         for m in candidates:
             block = f"[{m['status']}/{m['type']}] {m['title']}\n{m['content']}\nsource_events: {', '.join(s['id'] for s in m['sources']) or 'none'}"
             comparable = f"{m['title']} {m['content']}"
             if any(self._text_similarity(comparable, previous) >= .8 for previous in selected_texts): continue
+            eligible += 1
+            if len(selected) >= policy["max_context_items"]: continue
             if used + len(block) + 2 > memory_budget: continue
-            selected.append({"memory_id": m["id"], "project_id":m["project_id"], "visibility":m["visibility"],
-                             "text": block, "confidence": m["confidence"], "importance": m["importance"]})
+            item = {"memory_id": m["id"], "project_id":m["project_id"], "visibility":m["visibility"],
+                    "confidence":m["confidence"], "importance":m["importance"]}
+            if response_format == "legacy":
+                item["text"] = block
+            else:
+                item.update({"status":m["status"], "type":m["type"], "title":m["title"], "content":m["content"],
+                             "source_event_ids":[s["id"] for s in m["sources"]], "truncated":False})
+            selected.append(item)
             selected_texts.append(comparable)
             used += len(block) + 2
-            if len(selected) >= policy["max_context_items"]: break
-        return {"query": query, "requested_budget": requested, "budget": budget, "budget_capped": requested > budget,
+        result = {"query": query, "requested_budget": requested, "budget": budget, "budget_capped": requested > budget,
                 "max_items": policy["max_context_items"], "memory_budget":memory_budget,"event_budget":reserved,
                 "used": used + event_used, "memory_used":used,"event_used":event_used,
-                "items": selected, "context": "\n\n".join(i["text"] for i in selected),"recent_events":recent_events,
+                "items": selected, "recent_events":recent_events,
                 "project_discovery":{"enabled":discover_projects,"used":discovery_used,"ambiguous":discovery_ambiguous,
                                      "project_ids":list(dict.fromkeys(i["project_id"] for i in selected if i["project_id"] != project_id)),
                                      "selected_project_id":selected_project_id,"confidence":discovery_confidence,
                                      "selection_reason":selection_reason,"candidates":project_candidates},
                 "event_cursor":event_cursor,"next_event_cursor":event_result["next_cursor"] if event_result else None,
                 "event_snapshot_cursor":event_result["snapshot_cursor"] if event_result else None,
-                "has_more_events":event_result["has_more"] if event_result else False}
+                "has_more_events":event_result["has_more"] if event_result else False,
+                "response_format":response_format,"truncated":eligible > len(selected),"has_more":eligible > len(selected)}
+        if response_format == "legacy":
+            result["context"] = "\n\n".join(i["text"] for i in selected)
+        return result
 
     def get_policy(self, project_id: str) -> dict[str, Any]:
         item = self._row("SELECT * FROM project_policies WHERE project_id=?", (project_id,))

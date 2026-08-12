@@ -2,6 +2,8 @@
 
 A small, client-neutral context memory server for any MCP agent, including Claude Code, Craft Agents, Codex, Cursor, VS Code, and local-model clients. It keeps immutable evidence separate from derived memories and the FTS search projection, so a generated summary never becomes the only source of truth.
 
+For the lowest startup overhead, call `context_bootstrap` once with the workspace, focused query, client identity, and `response_format=compact`. The older `project_resolve` → `session_start` → `get_context` sequence and legacy context response remain supported. `serve` exposes the working `core` tool profile by default; use `--tool-profile admin` for maintenance-only clients or `--tool-profile all` for the historical complete catalog.
+
 This MVP is usable now: Python 3.11+ (Python 3.14 recommended), SQLite with WAL/FTS5, zero runtime dependencies, stdio MCP, local HTTP MCP, migrations, lifecycle hooks, and a standard-library test suite.
 
 > **Sensitive-data warning:** this database is local, not encrypted. Do not record secrets, tokens, private keys, raw environment dumps, or unrelated personal data. The data directory is mode `0700`, but other processes running as your OS user and backups may still access it.

@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from context_memory.mcp import MCPServer, TOOLS
+from context_memory.mcp import CORE_TOOL_NAMES, MCPServer, TOOLS
 from context_memory.store import MemoryStore
 
 
@@ -47,6 +47,27 @@ class MCPTests(unittest.TestCase):
 
     def test_notification_has_no_response(self):
         self.assertIsNone(self.server.handle({"jsonrpc":"2.0","method":"notifications/initialized"}))
+
+    def test_bootstrap_combines_startup_and_is_idempotent(self):
+        response = self.server.handle({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"context_bootstrap","arguments":{
+            "cwd":self.temp.name,"query":"next work","client":"test","external_id":"same","response_format":"compact"
+        }}})
+        first = response["result"]["structuredContent"]["result"]
+        second = self.server.call("context_bootstrap", {"cwd":self.temp.name,"query":"next work","client":"test","external_id":"same","response_format":"compact"})
+        self.assertEqual(first["session"]["id"], second["session"]["id"])
+        self.assertEqual(first["project"]["id"], second["project"]["id"])
+        self.assertEqual(first["context"]["response_format"], "compact")
+
+    def test_tool_profiles_split_working_and_administrative_surfaces(self):
+        core = MCPServer(self.store, "core")
+        admin = MCPServer(self.store, "admin")
+        core_names = {tool["name"] for tool in core.tools}
+        admin_names = {tool["name"] for tool in admin.tools}
+        self.assertEqual(core_names, CORE_TOOL_NAMES)
+        self.assertFalse(core_names & admin_names)
+        self.assertEqual(core_names | admin_names, {tool["name"] for tool in TOOLS})
+        denied = admin.handle({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_context","arguments":{"project_id":"x","query":"q"}}})
+        self.assertEqual(denied["error"]["code"], -32602)
 
     def test_external_http_requires_token(self):
         with self.assertRaisesRegex(ValueError, "refusing external bind"): self.server.serve_http("0.0.0.0", 0)

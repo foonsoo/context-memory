@@ -11,8 +11,8 @@ from . import __version__
 from .store import MemoryStore
 
 PROTOCOL = "2025-06-18"
-INSTRUCTIONS = ("At task start call project_resolve with the current workspace, then session_start using its project/scope, then get_context with a focused query. "
-                "Use the actual MCP client name and its session/task ID when available. Preserve evidence with record_event before proposing memories. "
+INSTRUCTIONS = ("At task start prefer one context_bootstrap call with the workspace, a focused query, compact response format, actual client name, and session/task ID. "
+                "The separate project_resolve, session_start, and get_context tools remain available when individual control is needed. Preserve evidence with record_event before proposing memories. "
                 "New inferred memories should remain proposed until verified; use active only for confirmed facts/decisions. "
                 "Retrieve original evidence with get_source. Record consequential decisions during work and end the session when done.")
 
@@ -22,6 +22,7 @@ def obj(props: dict[str, Any], required: list[str] | None = None) -> dict[str, A
 
 
 TOOLS = [
+    {"name":"context_bootstrap","description":"Resolve a workspace, idempotently start its session, and retrieve focused context in one call.","inputSchema":obj({"cwd":{"type":"string"},"query":{"type":"string"},"client":{"type":"string"},"external_id":{"type":"string"},"metadata":{"type":"object"},"char_budget":{"type":"integer","minimum":0,"maximum":100000},"statuses":{"type":"array","items":{"type":"string"}},"event_cursor":{"type":"integer","minimum":0},"event_kinds":{"type":"array","items":{"type":"string"}},"event_limit":{"type":"integer","minimum":1,"maximum":1000},"event_char_budget":{"type":"integer","minimum":0,"maximum":4000},"discover_projects":{"type":"boolean"},"response_format":{"type":"string","enum":["legacy","compact"]}},["cwd","query"]),"annotations":{"readOnlyHint":False}},
     {"name": "project_create", "description": "Create a local memory project.", "inputSchema": obj({"slug":{"type":"string"},"name":{"type":"string"},"description":{"type":"string"},"idempotency_key":{"type":"string"}}, ["slug"]), "annotations":{"readOnlyHint":False}},
     {"name": "project_list", "description": "List local memory projects.", "inputSchema": obj({}), "annotations":{"readOnlyHint":True}},
     {"name": "project_resolve", "description": "Resolve a workspace hint using canonical paths and unambiguous registered project names.", "inputSchema": obj({"cwd":{"type":"string"}}, ["cwd"]), "annotations":{"readOnlyHint":False}},
@@ -44,7 +45,7 @@ TOOLS = [
     {"name":"review_queue","description":"List evidence-backed proposed memories and possible conflicts awaiting review.","inputSchema":obj({"project_id":{"type":"string"}},["project_id"]),"annotations":{"readOnlyHint":True}},
     {"name":"memory_correct","description":"Create an evidence-backed proposed correction for review.","inputSchema":obj({"project_id":{"type":"string"},"memory_id":{"type":"string"},"content":{"type":"string"},"title":{"type":"string"}},["project_id","memory_id","content"]),"annotations":{"readOnlyHint":False}},
     {"name":"review_action","description":"Approve/reject a candidate or use it to supersede/dispute an existing memory.","inputSchema":obj({"memory_id":{"type":"string"},"action":{"type":"string","enum":["approve","reject","supersede","dispute"]},"related_memory_id":{"type":"string"},"note":{"type":"string"}},["memory_id","action"]),"annotations":{"readOnlyHint":False}},
-    {"name": "get_context", "description": "Select local and global memories first, then search the whole database when local results are empty. Project candidates expose normalized relevance, identity/recency priors, and confidence; low-confidence or ambiguous matches never mix project-owned memories.", "inputSchema": obj({"project_id":{"type":"string"},"query":{"type":"string"},"char_budget":{"type":"integer","minimum":0,"maximum":100000},"statuses":{"type":"array","items":{"type":"string"}},"scope_id":{"type":"string"},"event_cursor":{"type":"integer","minimum":0},"event_kinds":{"type":"array","items":{"type":"string"}},"event_limit":{"type":"integer","minimum":1,"maximum":1000},"event_char_budget":{"type":"integer","minimum":0,"maximum":4000},"discover_projects":{"type":"boolean"}}, ["project_id","query"]), "annotations":{"readOnlyHint":True}},
+    {"name": "get_context", "description": "Retrieve bounded, provenance-preserving context; compact format removes duplicate serialization without rewriting memories.", "inputSchema": obj({"project_id":{"type":"string"},"query":{"type":"string"},"char_budget":{"type":"integer","minimum":0,"maximum":100000},"statuses":{"type":"array","items":{"type":"string"}},"scope_id":{"type":"string"},"event_cursor":{"type":"integer","minimum":0},"event_kinds":{"type":"array","items":{"type":"string"}},"event_limit":{"type":"integer","minimum":1,"maximum":1000},"event_char_budget":{"type":"integer","minimum":0,"maximum":4000},"discover_projects":{"type":"boolean"},"response_format":{"type":"string","enum":["legacy","compact"]}}, ["project_id","query"]), "annotations":{"readOnlyHint":True}},
     {"name":"policy_get","description":"Read bounded context, retention, and checkpoint trigger policy for a project.","inputSchema":obj({"project_id":{"type":"string"}},["project_id"]),"annotations":{"readOnlyHint":True}},
     {"name":"policy_set","description":"Set project operational bounds and checkpoint trigger thresholds.","inputSchema":obj({"project_id":{"type":"string"},"max_context_chars":{"type":"integer","minimum":1000,"maximum":20000},"max_context_items":{"type":"integer","minimum":1,"maximum":50},"audit_keep_entries":{"type":"integer","minimum":100,"maximum":100000},"terminal_memory_days":{"type":"integer","minimum":1,"maximum":3650},"checkpoint_soft_usage":{"type":"number","minimum":0,"maximum":1},"checkpoint_hard_usage":{"type":"number","minimum":0,"maximum":1},"checkpoint_elapsed_seconds":{"type":"integer","minimum":60,"maximum":86400},"checkpoint_event_count":{"type":"integer","minimum":1,"maximum":10000},"checkpoint_max_age_seconds":{"type":"integer","minimum":60,"maximum":604800},"checkpoint_cooldown_seconds":{"type":"integer","minimum":0,"maximum":86400},"checkpoint_hysteresis":{"type":"number","minimum":0,"maximum":0.5}},["project_id"]),"annotations":{"readOnlyHint":False}},
     {"name":"search_health","description":"Check that every authoritative memory has exactly one FTS projection and report missing, duplicate, or orphan rows.","inputSchema":obj({"project_id":{"type":"string"}},["project_id"]),"annotations":{"readOnlyHint":True}},
@@ -57,6 +58,9 @@ TOOLS = [
 
 TOOL_PAGE_SIZE = 10
 TOOL_BY_NAME = {tool["name"]: tool for tool in TOOLS}
+CORE_TOOL_NAMES = {"context_bootstrap","project_resolve","session_start","session_end","record_event","read_events_since",
+                   "memory_upsert","memory_transition","memory_search","memory_feedback","get_context","get_source",
+                   "checkpoint_create","checkpoint_evaluate","review_queue","review_action"}
 
 
 def validate_json(value: Any, schema: dict[str, Any], path: str = "arguments") -> None:
@@ -96,18 +100,18 @@ def validate_json(value: Any, schema: dict[str, Any], path: str = "arguments") -
                 validate_json(item, properties[name], f"{path}.{name}")
 
 
-def tool_page(cursor: Any = None) -> dict[str, Any]:
+def tool_page(cursor: Any = None, tools: list[dict[str, Any]] = TOOLS) -> dict[str, Any]:
     if cursor is None:
         offset = 0
     elif not isinstance(cursor, str) or not cursor.isascii() or not cursor.isdigit():
         raise ValueError("params.cursor must be an opaque cursor returned by tools/list")
     else:
         offset = int(cursor)
-    if offset < 0 or offset >= len(TOOLS):
+    if offset < 0 or offset >= len(tools):
         raise ValueError("params.cursor is invalid or expired")
-    end = min(offset + TOOL_PAGE_SIZE, len(TOOLS))
-    result: dict[str, Any] = {"tools": TOOLS[offset:end]}
-    if end < len(TOOLS):
+    end = min(offset + TOOL_PAGE_SIZE, len(tools))
+    result: dict[str, Any] = {"tools": tools[offset:end]}
+    if end < len(tools):
         result["nextCursor"] = str(end)
     return result
 
@@ -123,10 +127,22 @@ class LocalThreadingHTTPServer(ThreadingHTTPServer):
 
 
 class MCPServer:
-    def __init__(self, store: MemoryStore): self.store = store
+    def __init__(self, store: MemoryStore, tool_profile: str = "all"):
+        if tool_profile not in {"core", "admin", "all"}: raise ValueError("tool_profile must be core, admin, or all")
+        self.store = store; self.tool_profile = tool_profile
+        self.tools = TOOLS if tool_profile == "all" else [t for t in TOOLS if (t["name"] in CORE_TOOL_NAMES) == (tool_profile == "core")]
+
+    def bootstrap(self, cwd: str, query: str, client: str = "codex", external_id: str | None = None,
+                  metadata: dict | None = None, **context_args: Any) -> dict[str, Any]:
+        resolved = self.store.resolve_project(cwd)
+        session = self.store.start_session(resolved["project"]["id"], client, resolved["scope_id"], external_id, metadata)
+        context = self.store.get_context(resolved["project"]["id"], query, scope_id=resolved["scope_id"], **context_args)
+        return {"project":resolved["project"],"scope_id":resolved["scope_id"],"created":resolved["created"],
+                "session":session,"context":context}
 
     def call(self, name: str, a: dict[str, Any]) -> Any:
         mapping = {
+            "context_bootstrap":self.bootstrap,
             "project_create": self.store.create_project, "project_list": self.store.list_projects, "project_resolve": self.store.resolve_project,
             "project_alias_list":self.store.list_project_aliases,
             "scope_create": self.store.create_scope, "session_start": self.store.start_session,
@@ -141,6 +157,7 @@ class MCPServer:
             "maintenance_status":self.store.maintenance_status,"maintenance_run":self.store.maintain,"backup_create":self.store.backup_to,
             "get_source": self.store.get_source, "get_audit": self.store.audit,
         }
+        if name not in {tool["name"] for tool in self.tools}: raise KeyError(f"tool is not exposed by {self.tool_profile} profile: {name}")
         if name not in mapping: raise KeyError(f"unknown tool: {name}")
         validate_json(a, TOOL_BY_NAME[name]["inputSchema"])
         return mapping[name](**a)
@@ -158,7 +175,7 @@ class MCPServer:
                 if not isinstance(params, dict): raise ValueError("params must be object")
                 extra = sorted(set(params) - {"cursor", "_meta"})
                 if extra: raise ValueError(f"params has unknown properties: {', '.join(extra)}")
-                result = tool_page(params.get("cursor"))
+                result = tool_page(params.get("cursor"), self.tools)
             elif method == "tools/call":
                 p = req.get("params", {})
                 if not isinstance(p, dict): raise ValueError("params must be object")

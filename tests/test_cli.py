@@ -86,8 +86,7 @@ class CLITests(unittest.TestCase):
             store = MemoryStore(Path(temp) / "memory.db")
             try:
                 result = init_workspaces(store, str(root), ["generic"], "python", False)
-                self.assertEqual(result["workflow"][0], "project_resolve(cwd)")
-                self.assertIn("get_context", result["workflow"][2])
+                self.assertIn("context_bootstrap", result["workflow"][0])
                 self.assertIn("session_end", result["workflow"][-1])
             finally: store.close()
 

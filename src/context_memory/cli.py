@@ -149,9 +149,7 @@ def init_workspaces(store: MemoryStore, workspace: str, clients: list[str], laun
         "scope_id": resolved["scope_id"],
         "mcp": {"mcpServers": {"context-memory": config}},
         "workflow": [
-            "project_resolve(cwd)",
-            "session_start(project_id, scope_id, client, external_id)",
-            "get_context(project_id, scope_id, focused query, char_budget=4000..8000)",
+            "context_bootstrap(cwd, focused query, client, external_id, char_budget=4000..8000, response_format=compact)",
             "record_event -> memory_upsert(source_event_ids) for durable verified knowledge",
             "session_end(session_id)",
         ],
@@ -193,6 +191,8 @@ def main() -> None:
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8765)
     serve.add_argument("--token")
+    serve.add_argument("--tool-profile", choices=["core", "admin", "all"], default="core",
+                       help="Expose the compact working set, administrative tools, or every tool")
     init = sub.add_parser("init", help="Initialize a workspace and print/register portable MCP configuration")
     init.add_argument("--workspace", default=os.getcwd())
     client_group = init.add_mutually_exclusive_group()
@@ -269,7 +269,7 @@ def main() -> None:
     try:
         if args.command == "serve":
             token = args.token or os.environ.get("CONTEXT_MEMORY_TOKEN")
-            server = MCPServer(store)
+            server = MCPServer(store, args.tool_profile)
             server.serve_stdio() if args.transport == "stdio" else server.serve_http(args.host, args.port, token)
         elif args.command == "init":
             clients = [x.strip() for x in args.clients.split(",") if x.strip()] if args.clients else [args.client or "generic"]
