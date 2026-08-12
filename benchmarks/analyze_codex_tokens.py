@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import statistics
 from pathlib import Path
 from typing import Any
 
@@ -111,8 +112,46 @@ def summarize(reports: list[dict[str, Any]]) -> dict[str, Any]:
             "uncached_input_tokens_max": max(x["uncached_input_tokens"] for x in items),
             "items": items,
         }
-    return {"schema_version": 2, "sessions": reports, "summary": summary,
-            "session_summary": session_summary,
+    controlled: dict[str, list[dict[str, Any]]] = {"bootstrap": [], "legacy": []}
+    expected = {
+        "bootstrap": ["context_bootstrap"],
+        "legacy": ["project_resolve", "session_start", "get_context"],
+    }
+    for report in reports:
+        flattened = [name for item in report["observations"]
+                     for name in item["tools_since_previous_model_turn"]]
+        for workflow, sequence in expected.items():
+            if flattened != sequence:
+                continue
+            items = report["observations"]
+            controlled[workflow].append({
+                "session": report["session"],
+                "model_turns": len(items),
+                "input_tokens": sum(x["input_tokens"] for x in items),
+                "cached_input_tokens": sum(x["cached_input_tokens"] for x in items),
+                "uncached_input_tokens": sum(x["uncached_input_tokens"] for x in items),
+            })
+    controlled_summary: dict[str, Any] = {}
+    for workflow, items in controlled.items():
+        if not items:
+            continue
+        controlled_summary[workflow] = {
+            "sessions": len(items),
+            "input_tokens_median": statistics.median(x["input_tokens"] for x in items),
+            "uncached_input_tokens_median": statistics.median(x["uncached_input_tokens"] for x in items),
+            "items": items,
+        }
+    if all(workflow in controlled_summary for workflow in expected):
+        bootstrap = controlled_summary["bootstrap"]["uncached_input_tokens_median"]
+        legacy = controlled_summary["legacy"]["uncached_input_tokens_median"]
+        controlled_summary["comparison"] = {
+            "uncached_input_tokens_median_delta": bootstrap - legacy,
+            "uncached_input_tokens_median_change_percent": (
+                round((bootstrap / legacy - 1) * 100, 1) if legacy else None
+            ),
+        }
+    return {"schema_version": 3, "sessions": reports, "summary": summary,
+            "session_summary": session_summary, "controlled_summary": controlled_summary,
             "caveat": "Observed model-turn totals include the full Codex prompt; they are not isolated marginal tool costs."}
 
 
