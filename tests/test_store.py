@@ -3,6 +3,7 @@ import sqlite3
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -23,6 +24,15 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(self.store.conn.execute("PRAGMA journal_mode").fetchone()[0], "wal")
         self.assertEqual(oct(self.store.path.parent.stat().st_mode & 0o777), "0o700")
         self.assertEqual(self.store.list_projects()[0]["id"], project["id"])
+
+    def test_local_hash_embeddings_are_enabled_by_default_and_can_be_disabled(self):
+        self.assertIsInstance(self.store.embedding_provider, LocalHashEmbedding)
+        self.assertEqual(self.store._provider_name(), "local-hash-v1-256")
+        self.store.close()
+        with patch.dict("os.environ", {"CONTEXT_MEMORY_EMBEDDINGS":"off"}):
+            self.store = MemoryStore(Path(self.temp.name) / "disabled" / "memory.db")
+        self.assertIsNone(self.store.embedding_provider)
+        self.assertIsNone(self.store._provider_name())
 
     def test_event_is_append_only_and_idempotent(self):
         p = self.store.create_project("demo")
@@ -510,6 +520,8 @@ class StoreTests(unittest.TestCase):
         self.store.conn.execute("UPDATE memories SET title='Changed',content='replacement_token searchable wording' WHERE id=?", (memory["id"],))
         self.assertEqual(self.store.search(p["id"], "obsolete_token"), [])
         self.assertEqual(self.store.search(p["id"], "replacement_token")[0]["id"], memory["id"])
+        self.assertFalse(self.store.search_health(p["id"])["ok"], "direct SQL changes leave the rebuildable embedding stale")
+        self.store.rebuild_fts(p["id"])
         self.assertTrue(self.store.search_health(p["id"])["ok"])
         expired = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
         self.store.conn.execute("UPDATE memories SET valid_until=? WHERE id=?", (expired,memory["id"]))

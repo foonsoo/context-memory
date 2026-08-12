@@ -7,7 +7,7 @@ from typing import Protocol, Sequence
 
 
 class EmbeddingProvider(Protocol):
-    """Optional local or remote adapter; the MVP never calls one implicitly."""
+    """Local or remote adapter behind a rebuildable retrieval projection."""
 
     @property
     def dimensions(self) -> int: ...

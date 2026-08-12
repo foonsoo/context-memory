@@ -48,8 +48,9 @@ class MemoryStore:
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA synchronous=FULL")
         self.migrate()
-        mode = os.environ.get("CONTEXT_MEMORY_EMBEDDINGS", "").strip().casefold()
-        self.embedding_provider = embedding_provider or (LocalHashEmbedding() if mode in {"local", "local-hash", "hash"} else None)
+        mode = os.environ.get("CONTEXT_MEMORY_EMBEDDINGS", "local-hash").strip().casefold()
+        embeddings_enabled = mode not in {"0", "false", "off", "disabled", "none"}
+        self.embedding_provider = embedding_provider or (LocalHashEmbedding() if embeddings_enabled else None)
         if self.embedding_provider:
             with self.tx() as cx:
                 for memory in cx.execute("SELECT * FROM memories"):
@@ -916,7 +917,14 @@ class MemoryStore:
             for row in self.conn.execute(sem_sql, sem_args):
                 item = dict(row); vector = json.loads(item.pop("vector_json"))
                 similarity = sum(a * b for a, b in zip(query_vector, vector))
-                if similarity > 0.05: semantic.append((similarity, item))
+                # Feature hashing is a fuzzy projection, not a semantic model. Keep
+                # weak scores for reranking lexical hits, but require a multi-token
+                # query and stronger agreement before admitting a vector-only hit.
+                if similarity > 0.05 and (
+                    item["id"] in candidates
+                    or (not lexical and len(query_tokens) >= 2 and similarity >= 0.20)
+                ):
+                    semantic.append((similarity, item))
             semantic.sort(key=lambda value: (-value[0], value[1]["id"]))
             for rank, (similarity, row) in enumerate(semantic[:candidate_limit], 1):
                 candidates.setdefault(row["id"], row)
@@ -971,7 +979,15 @@ class MemoryStore:
             checkpoint = self._row("""SELECT id,title,type,status,updated_at FROM memories
               WHERE project_id=? AND status IN ('active','disputed') AND type IN ('task','summary')
               ORDER BY updated_at DESC,id LIMIT 1""", (candidate_id,))
-            relevance_scores = sorted((m["retrieval"]["score"] for m in matches), reverse=True)
+            # Hybrid RRF should improve ordering within a project, but counting
+            # the same hit twice would dilute path/name priors during project
+            # selection. Collapse the overlapping lexical/vector contribution.
+            relevance_scores = sorted((
+                m["retrieval"]["score"] - min(
+                    m["retrieval"]["components"].get("lexical_rrf", 0.0),
+                    m["retrieval"]["components"].get("semantic_rrf", 0.0),
+                ) for m in matches
+            ), reverse=True)
             relevance = sum(score / (index + 1) for index, score in enumerate(relevance_scores))
             evidence_quality = max(max(m["retrieval"].get("query_coverage", 0.0),
                                        m["retrieval"].get("semantic_similarity") or 0.0) for m in matches)

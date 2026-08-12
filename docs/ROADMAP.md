@@ -39,7 +39,7 @@ The delivered increments were:
 
 ## Optional retrieval improvements
 
-- Evaluate an optional neural local embedding adapter against the dependency-free feature-hash projection without changing the FTS-only default.
+- Evaluate an optional neural local embedding adapter against the default dependency-free feature-hash projection while preserving explicit `CONTEXT_MEMORY_EMBEDDINGS=off` FTS-only operation.
 - Tune reciprocal-rank fusion, confirmation-freshness decay, deduplication threshold, and feedback weights on larger personal-memory relevance fixtures. The projection, inspectable score components, conservative importance adjustment, and near-duplicate context filtering are implemented.
 - Evaluate stronger deterministic and optional model-assisted conflict classification. Session-end extraction of explicitly typed evidence into `proposed` memories, similarity-based conflict flags, and MCP review actions are implemented.
 

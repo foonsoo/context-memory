@@ -257,16 +257,16 @@ The default evidence-ledger design provides:
 
 Verified memories can now be connected with `supports`, `depends_on`, and `related_to` edges and traversed up to five hops. Traversal excludes superseded/rejected nodes by default, while the evidence ledger remains authoritative. This supplies useful graph queries without a graph daemon or automatic entity extraction.
 
-For domain paraphrases, `search_alias_set` adds explicit project vocabulary such as `database → PostgreSQL`. Query expansion is deterministic, auditable, and local. It complements rather than pretends to replace optional embeddings: unknown semantic equivalents still require an embedding projection or explicit aliases. See [docs/UTILITY.md](docs/UTILITY.md).
+For domain paraphrases, `search_alias_set` adds explicit project vocabulary such as `database → PostgreSQL`. Query expansion is deterministic, auditable, and local. It complements rather than pretends to replace the default local projection: unknown semantic equivalents still require a stronger embedding projection or explicit aliases. See [docs/UTILITY.md](docs/UTILITY.md).
 
-For zero-download fuzzy and partial-phrase recall, enable the optional on-device projection before starting the server:
+The dependency-free on-device feature-hash projection is enabled by default for zero-download fuzzy and partial-phrase recall. To explicitly use FTS5 only:
 
 ```bash
-export CONTEXT_MEMORY_EMBEDDINGS=local-hash
+export CONTEXT_MEMORY_EMBEDDINGS=off
 context-memory --db ~/.local/share/context-memory/memory.db serve --transport stdio
 ```
 
-Search then fuses FTS5 and local-similarity ranks and returns inspectable score components. The local hash projection is useful for spelling, morphology, and overlapping wording; it is not a neural semantic model and does not replace explicit aliases for unrelated synonyms. Agents may call `memory_feedback` with `retrieved`, `used`, `helpful`, or `incorrect` to personalize later ranking. `observed_at` and `last_confirmed_at` keep discovery time separate from confirmation freshness.
+By default, search fuses FTS5 and local-similarity ranks and returns inspectable score components. `CONTEXT_MEMORY_EMBEDDINGS=local-hash` may still be set explicitly. The local hash projection is useful for spelling, morphology, and overlapping wording; it is not a neural semantic model and does not replace explicit aliases for unrelated synonyms. Agents may call `memory_feedback` with `retrieved`, `used`, `helpful`, or `incorrect` to personalize later ranking. `observed_at` and `last_confirmed_at` keep discovery time separate from confirmation freshness.
 
 Feedback applies small bounded importance adjustments, and context assembly suppresses near-identical blocks. Memories default to project visibility; set `visibility=global` only for non-path-scoped user preferences or constraints that should be available to every project in the same local database.
 
