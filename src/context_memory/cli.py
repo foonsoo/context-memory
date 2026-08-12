@@ -257,6 +257,10 @@ def main() -> None:
     audit_export.add_argument("project_id"); audit_export.add_argument("--output", required=True)
     audit_verify = sub.add_parser("audit-verify", help="Verify an exported audit chain without opening its source database")
     audit_verify.add_argument("input"); audit_verify.add_argument("--expected-head-digest")
+    audit_sign = sub.add_parser("audit-anchor-sign", help="Create a detached Ed25519 anchor for an audit bundle's head digest")
+    audit_sign.add_argument("input"); audit_sign.add_argument("--output", required=True); audit_sign.add_argument("--private-key-env", required=True)
+    audit_anchor_verify = sub.add_parser("audit-anchor-verify", help="Verify a detached audit anchor and optionally its audit bundle")
+    audit_anchor_verify.add_argument("input"); audit_anchor_verify.add_argument("--audit-bundle"); audit_anchor_verify.add_argument("--expected-project-id"); audit_anchor_verify.add_argument("--expected-public-key")
     backup = sub.add_parser("backup", help="Create one consistent integrity-checked SQLite snapshot")
     backup.add_argument("--output", required=True); backup.add_argument("--passphrase-env")
     decrypt = sub.add_parser("backup-decrypt", help="Decrypt an authenticated backup envelope to a SQLite snapshot")
@@ -348,6 +352,30 @@ def main() -> None:
         elif args.command == "audit-verify":
             source_path = Path(args.input).expanduser().resolve()
             result = store.verify_audit_chain(json.loads(source_path.read_text(encoding="utf-8")), args.expected_head_digest)
+            output(result)
+            if not result["ok"]: raise SystemExit(1)
+        elif args.command == "audit-anchor-sign":
+            from .audit_anchor import create_anchor
+            source_path = Path(args.input).expanduser().resolve()
+            bundle = json.loads(source_path.read_text(encoding="utf-8"))
+            chain = store.verify_audit_chain(bundle)
+            if not chain["ok"] or not chain["head_digest"]: p.error("audit bundle must contain a valid checkpoint chain")
+            secret = os.environ.get(args.private_key_env)
+            if secret is None: p.error(f"private key environment variable is not set: {args.private_key_env}")
+            anchor = create_anchor(chain["project_id"], chain["head_digest"], secret)
+            destination = Path(args.output).expanduser().resolve(); destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(json.dumps(anchor, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+            output({"ok":True,"output":str(destination),"project_id":anchor["project_id"],"head_digest":anchor["head_digest"],"public_key":anchor["public_key"]})
+        elif args.command == "audit-anchor-verify":
+            from .audit_anchor import verify_anchor
+            anchor = json.loads(Path(args.input).expanduser().resolve().read_text(encoding="utf-8"))
+            result = verify_anchor(anchor, args.expected_project_id, args.expected_public_key)
+            if result["ok"] and args.audit_bundle:
+                bundle = json.loads(Path(args.audit_bundle).expanduser().resolve().read_text(encoding="utf-8"))
+                chain = store.verify_audit_chain(bundle, result["head_digest"])
+                result["audit_chain"] = chain
+                if not chain["ok"] or chain["project_id"] != result["project_id"]:
+                    result["ok"] = False; result["errors"].append("audit bundle does not match the signed anchor")
             output(result)
             if not result["ok"]: raise SystemExit(1)
         elif args.command == "backup":

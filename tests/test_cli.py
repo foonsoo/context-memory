@@ -159,6 +159,36 @@ class CLITests(unittest.TestCase):
             self.assertEqual(verified.returncode, 0, verified.stderr)
             self.assertTrue(json.loads(verified.stdout)["anchored"])
 
+    def test_detached_audit_anchor_sign_and_verify_commands(self):
+        try:
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        except ImportError:
+            self.skipTest("cryptography extra is not installed")
+        import base64
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary) / "memory.db"; bundle = Path(temporary) / "audit.json"; anchor = Path(temporary) / "anchor.json"
+            store = MemoryStore(database)
+            try:
+                project = store.create_project("signed-audit")
+                for index in range(105): store.record_event(project["id"], "fact", f"signed {index}")
+                store.set_policy(project["id"], audit_keep_entries=100); store.maintain(project["id"], True)
+                bundle.write_text(json.dumps(store.export_audit_chain(project["id"])), encoding="utf-8")
+            finally: store.close()
+            secret = base64.b64encode(Ed25519PrivateKey.generate().private_bytes_raw()).decode()
+            env = {**os.environ,"PYTHONPATH":str(Path(__file__).parents[1] / "src"),"AUDIT_SIGNING_KEY":secret}
+            base = [sys.executable,"-m","context_memory.cli","--db",str(database)]
+            signed = subprocess.run(base + ["audit-anchor-sign",str(bundle),"--output",str(anchor),"--private-key-env","AUDIT_SIGNING_KEY"],
+                                    cwd=Path(__file__).parents[1],env=env,capture_output=True,text=True)
+            self.assertEqual(signed.returncode, 0, signed.stderr)
+            public_key = json.loads(signed.stdout)["public_key"]
+            verified = subprocess.run(base + ["audit-anchor-verify",str(anchor),"--audit-bundle",str(bundle),"--expected-project-id",project["id"],"--expected-public-key",public_key],
+                                      cwd=Path(__file__).parents[1],env=env,capture_output=True,text=True)
+            self.assertEqual(verified.returncode, 0, verified.stderr)
+            self.assertTrue(json.loads(verified.stdout)["audit_chain"]["anchored"])
+            tampered = json.loads(anchor.read_text()); tampered["head_digest"] = "0" * 64; anchor.write_text(json.dumps(tampered))
+            rejected = subprocess.run(base + ["audit-anchor-verify",str(anchor)],cwd=Path(__file__).parents[1],env=env,capture_output=True,text=True)
+            self.assertEqual(rejected.returncode, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

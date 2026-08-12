@@ -202,6 +202,15 @@ context-memory audit-verify audit-chain.json --expected-head-digest TRUSTED_DIGE
 
 The export is deterministic. Verification checks project identity, checkpoint linkage and ranges, live-entry ordering, and the optional separately recorded head digest. Use `--expected-head-digest` when the bundle itself might have been replaced; unanchored verification can detect internal corruption but cannot establish that the entire chain is the expected one. Compacted row contents are intentionally absent, so keep a full project export when those historical details must remain reconstructable.
 
+To create a portable detached trust anchor, provide a base64-encoded 32-byte Ed25519 private key through an environment variable. The private key is never written to the anchor; distribute the returned public key through a separate trusted channel:
+
+```bash
+context-memory audit-anchor-sign audit-chain.json --output audit-anchor.json --private-key-env CONTEXT_MEMORY_AUDIT_SIGNING_KEY
+context-memory audit-anchor-verify audit-anchor.json --audit-bundle audit-chain.json --expected-project-id PROJECT_UUID --expected-public-key TRUSTED_PUBLIC_KEY
+```
+
+Signing requires the `crypto` extra. Verification authenticates the detached project/head-digest/timestamp tuple and, when `--audit-bundle` is supplied, anchors full offline chain verification to that signed digest.
+
 For scheduler-driven maintenance, persist an interval and invoke the idempotent due-check from cron, launchd, or a systemd timer. `0` disables scheduling; the minimum enabled interval is five minutes:
 
 ```bash

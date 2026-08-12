@@ -63,6 +63,8 @@ Project policy controls context limits, retained audit detail, and terminal-memo
 
 Copying only `memory.db` while WAL writes are active can miss committed pages still represented by WAL state. `backup` uses SQLite's Online Backup API and runs `integrity_check`, producing one mode-0600 snapshot plus a SHA-256 digest. This snapshot is the synchronization/backup artifact; the live database, `-wal`, and `-shm` files should not be copied independently.
 
+Audit checkpoint exports can be anchored outside the database with a detached Ed25519 signature over a canonical project ID, head digest, and timestamp. The anchor contains only the public key and signature; signing keys enter through a caller-selected environment variable. Trust still depends on distributing or pinning the public key independently of the audit bundle and anchor.
+
 Encrypted backups wrap that verified snapshot in a versioned AES-256-GCM envelope using a scrypt-derived key. The optional crypto dependency is loaded only for encryption/decryption, so the default local database and plain snapshot path remain dependency-free. Scheduled maintenance is a persisted due-check around the same explicit maintenance transaction; an external scheduler invokes it, and no resident worker is required.
 
 ## Threat model
