@@ -21,6 +21,7 @@ class TokenMeasurementTests(unittest.TestCase):
         self.assertNotIn("SECRET", rendered)
         self.assertNotIn("PRIVATE", rendered)
         self.assertEqual(report["summary"]["bootstrap"]["uncached_input_tokens_min"], 300)
+        self.assertEqual(report["session_summary"]["bootstrap"]["items"][0]["input_tokens"], 1200)
 
     def test_groups_legacy_calls_before_next_model_turn(self):
         rows = []
@@ -34,6 +35,23 @@ class TokenMeasurementTests(unittest.TestCase):
         self.assertEqual(report["observations"][0]["workflow"], "legacy")
         self.assertEqual(report["observations"][0]["tools_since_previous_model_turn"],
                          ["project_resolve", "session_start", "get_context"])
+
+    def test_sums_multi_turn_workflow_per_session(self):
+        rows = [
+            {"type":"response_item","payload":{"type":"function_call","name":"mcp__context_memory__project_resolve"}},
+            {"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"cached_input_tokens":80}}}},
+            {"type":"response_item","payload":{"type":"function_call","name":"mcp__context_memory__session_start"}},
+            {"type":"response_item","payload":{"type":"function_call","name":"mcp__context_memory__get_context"}},
+            {"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":150,"cached_input_tokens":100}}}},
+        ]
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "rollout.jsonl"
+            path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+            report = summarize([analyze(path)])
+        item = report["session_summary"]["legacy"]["items"][0]
+        self.assertEqual(item["model_turns"], 2)
+        self.assertEqual(item["input_tokens"], 250)
+        self.assertEqual(item["uncached_input_tokens"], 70)
 
     def test_extracts_calls_orchestrated_inside_exec(self):
         rows = [

@@ -84,7 +84,35 @@ def summarize(reports: list[dict[str, Any]]) -> dict[str, Any]:
             "uncached_input_tokens_min": min(x["uncached_input_tokens"] for x in items),
             "uncached_input_tokens_max": max(x["uncached_input_tokens"] for x in items),
         }
-    return {"schema_version": 1, "sessions": reports, "summary": summary,
+    session_groups: dict[str, list[dict[str, Any]]] = {"bootstrap": [], "legacy": []}
+    for report in reports:
+        by_workflow: dict[str, list[dict[str, Any]]] = {"bootstrap": [], "legacy": []}
+        for item in report["observations"]:
+            by_workflow[item["workflow"]].append(item)
+        for workflow, items in by_workflow.items():
+            if not items:
+                continue
+            session_groups[workflow].append({
+                "session": report["session"],
+                "model_turns": len(items),
+                "input_tokens": sum(x["input_tokens"] for x in items),
+                "cached_input_tokens": sum(x["cached_input_tokens"] for x in items),
+                "uncached_input_tokens": sum(x["uncached_input_tokens"] for x in items),
+            })
+    session_summary: dict[str, Any] = {}
+    for workflow, items in session_groups.items():
+        if not items:
+            continue
+        session_summary[workflow] = {
+            "sessions": len(items),
+            "input_tokens_min": min(x["input_tokens"] for x in items),
+            "input_tokens_max": max(x["input_tokens"] for x in items),
+            "uncached_input_tokens_min": min(x["uncached_input_tokens"] for x in items),
+            "uncached_input_tokens_max": max(x["uncached_input_tokens"] for x in items),
+            "items": items,
+        }
+    return {"schema_version": 2, "sessions": reports, "summary": summary,
+            "session_summary": session_summary,
             "caveat": "Observed model-turn totals include the full Codex prompt; they are not isolated marginal tool costs."}
 
 
