@@ -76,6 +76,42 @@ def analyze(path: Path) -> dict[str, Any]:
     return {"session": path.name, "observations": observations}
 
 
+def analyze_manifest(path: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Load paired-run metadata without copying prompts or tool results."""
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    runs = manifest.get("runs")
+    if not isinstance(runs, list) or not runs:
+        raise ValueError("manifest.runs must be a non-empty array")
+    reports: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    seen_sessions: set[str] = set()
+    for index, run in enumerate(runs):
+        if not isinstance(run, dict):
+            raise ValueError(f"manifest.runs[{index}] must be an object")
+        workflow, pair, stratum = run.get("workflow"), run.get("pair"), run.get("stratum")
+        if workflow not in {"bootstrap", "legacy"} or not isinstance(pair, str) or not pair:
+            raise ValueError(f"manifest.runs[{index}] requires workflow bootstrap|legacy and pair")
+        if not isinstance(stratum, str) or not stratum:
+            raise ValueError(f"manifest.runs[{index}].stratum must be a non-empty string")
+        key = (pair, workflow)
+        if key in seen:
+            raise ValueError(f"duplicate run for pair={pair!r}, workflow={workflow!r}")
+        seen.add(key)
+        session_path = Path(run.get("session", ""))
+        if not session_path.is_absolute():
+            session_path = path.parent / session_path
+        report = analyze(session_path)
+        if report["session"] in seen_sessions:
+            raise ValueError(f"duplicate session filename in manifest: {report['session']!r}")
+        seen_sessions.add(report["session"])
+        report.update({"pair": pair, "stratum": stratum, "declared_workflow": workflow})
+        reports.append(report)
+    snapshot = manifest.get("snapshot_sha256")
+    if not isinstance(snapshot, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", snapshot):
+        raise ValueError("manifest.snapshot_sha256 must be a 64-character hexadecimal digest")
+    return reports, {"snapshot_sha256": snapshot.lower(), "manifest": path.name}
+
+
 def summarize(reports: list[dict[str, Any]]) -> dict[str, Any]:
     groups: dict[str, list[dict[str, Any]]] = {"bootstrap": [], "legacy": []}
     for report in reports:
@@ -133,6 +169,8 @@ def summarize(reports: list[dict[str, Any]]) -> dict[str, Any]:
             items = report["observations"]
             controlled[workflow].append({
                 "session": report["session"],
+                **({"pair": report["pair"], "stratum": report["stratum"]}
+                   if "pair" in report else {}),
                 "model_turns": len(items),
                 "input_tokens": sum(x["input_tokens"] for x in items),
                 "cached_input_tokens": sum(x["cached_input_tokens"] for x in items),
@@ -159,17 +197,57 @@ def summarize(reports: list[dict[str, Any]]) -> dict[str, Any]:
                 round((bootstrap / legacy - 1) * 100, 1) if legacy else None
             )
         controlled_summary["comparison"] = comparison
-    return {"schema_version": 3, "sessions": reports, "summary": summary,
+    paired: dict[str, Any] = {}
+    paired_reports = [report for report in reports if "pair" in report]
+    if paired_reports:
+        controlled_by_session = {item["session"]: (workflow, item)
+                                 for workflow, items in controlled.items() for item in items}
+        pairs: dict[str, dict[str, tuple[str, dict[str, Any]]]] = {}
+        for report in paired_reports:
+            found = controlled_by_session.get(report["session"])
+            if found is None or found[0] != report["declared_workflow"]:
+                raise ValueError(f"completed startup sequence does not match manifest for {report['session']}")
+            pairs.setdefault(report["pair"], {})[found[0]] = (report["stratum"], found[1])
+        strata: dict[str, list[dict[str, Any]]] = {}
+        for pair, workflows in pairs.items():
+            if set(workflows) != set(expected):
+                raise ValueError(f"pair {pair!r} must contain exactly one bootstrap and one legacy run")
+            bootstrap_stratum, bootstrap = workflows["bootstrap"]
+            legacy_stratum, legacy = workflows["legacy"]
+            if bootstrap_stratum != legacy_stratum:
+                raise ValueError(f"pair {pair!r} has mismatched strata")
+            delta = {"pair": pair}
+            for metric in ("input_tokens", "cached_input_tokens", "uncached_input_tokens"):
+                delta[f"{metric}_delta"] = bootstrap[metric] - legacy[metric]
+            strata.setdefault(bootstrap_stratum, []).append(delta)
+        for stratum, items in strata.items():
+            metrics: dict[str, Any] = {"pairs": len(items), "items": items}
+            for metric in ("input_tokens", "cached_input_tokens", "uncached_input_tokens"):
+                values = [item[f"{metric}_delta"] for item in items]
+                metrics[f"{metric}_delta_min"] = min(values)
+                metrics[f"{metric}_delta_median"] = statistics.median(values)
+                metrics[f"{metric}_delta_max"] = max(values)
+            paired[stratum] = metrics
+    return {"schema_version": 4, "sessions": reports, "summary": summary,
             "session_summary": session_summary, "controlled_summary": controlled_summary,
+            "paired_summary": paired,
             "caveat": "Observed model-turn totals include the full Codex prompt; they are not isolated marginal tool costs."}
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("sessions", nargs="+", type=Path, help="Explicit Codex rollout JSONL paths")
+    parser.add_argument("sessions", nargs="*", type=Path, help="Explicit Codex rollout JSONL paths")
+    parser.add_argument("--manifest", type=Path, help="Paired experiment manifest with snapshot digest and strata")
     parser.add_argument("--output", type=Path, help="Write aggregate JSON to this path")
     args = parser.parse_args()
-    result = summarize([analyze(path) for path in args.sessions])
+    if bool(args.manifest) == bool(args.sessions):
+        parser.error("provide either --manifest or one or more session paths")
+    if args.manifest:
+        reports, experiment = analyze_manifest(args.manifest)
+        result = summarize(reports)
+        result["experiment"] = experiment
+    else:
+        result = summarize([analyze(path) for path in args.sessions])
     rendered = json.dumps(result, indent=2, sort_keys=True) + "\n"
     if args.output:
         args.output.write_text(rendered, encoding="utf-8")

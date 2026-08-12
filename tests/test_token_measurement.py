@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from benchmarks.analyze_codex_tokens import analyze, summarize
+from benchmarks.analyze_codex_tokens import analyze, analyze_manifest, summarize
 
 
 class TokenMeasurementTests(unittest.TestCase):
@@ -67,7 +67,7 @@ class TokenMeasurementTests(unittest.TestCase):
         ]}
         mixed = {"session":"mixed.jsonl", "observations":bootstrap["observations"] + legacy["observations"]}
         report = summarize([bootstrap, legacy, mixed])
-        self.assertEqual(report["schema_version"], 3)
+        self.assertEqual(report["schema_version"], 4)
         self.assertEqual(report["controlled_summary"]["bootstrap"]["sessions"], 1)
         self.assertEqual(report["controlled_summary"]["legacy"]["sessions"], 1)
         comparison = report["controlled_summary"]["comparison"]
@@ -104,6 +104,52 @@ class TokenMeasurementTests(unittest.TestCase):
         self.assertEqual(report["observations"][0]["tools_since_previous_model_turn"],
                          ["context_bootstrap"])
         self.assertEqual(report["observations"][0]["uncached_input_tokens"], 20)
+
+    def test_manifest_reports_paired_distributions_by_cache_stratum(self):
+        def rows(names, total, cached):
+            result = [{"type":"response_item", "payload":{"type":"function_call",
+                       "name":f"mcp__context_memory__{name}"}} for name in names]
+            result.append({"type":"event_msg", "payload":{"type":"token_count", "info":{
+                "last_token_usage":{"input_tokens":total, "cached_input_tokens":cached}}}})
+            return result
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            runs = []
+            for pair, stratum, bootstrap, legacy in (
+                ("cold-1", "cold", (120, 20), (150, 30)),
+                ("cold-2", "cold", (110, 10), (160, 40)),
+                ("warm-1", "warm", (100, 80), (130, 100)),
+            ):
+                for workflow, values, names in (
+                    ("bootstrap", bootstrap, ["context_bootstrap"]),
+                    ("legacy", legacy, ["project_resolve", "session_start", "get_context"]),
+                ):
+                    session = f"{pair}-{workflow}.jsonl"
+                    (root / session).write_text("".join(json.dumps(row) + "\n" for row in rows(names, *values)), encoding="utf-8")
+                    runs.append({"pair":pair, "stratum":stratum, "workflow":workflow, "session":session})
+            manifest = root / "manifest.json"
+            manifest.write_text(json.dumps({"snapshot_sha256":"a" * 64, "runs":runs}), encoding="utf-8")
+            reports, experiment = analyze_manifest(manifest)
+            report = summarize(reports)
+        self.assertEqual(experiment["snapshot_sha256"], "a" * 64)
+        self.assertEqual(report["paired_summary"]["cold"]["pairs"], 2)
+        self.assertEqual(report["paired_summary"]["cold"]["input_tokens_delta_median"], -40)
+        self.assertEqual(report["paired_summary"]["warm"]["uncached_input_tokens_delta_median"], -10)
+
+    def test_manifest_rejects_incomplete_pair(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            session = root / "bootstrap.jsonl"
+            session.write_text(json.dumps({"type":"response_item", "payload":{"type":"function_call",
+                "name":"mcp__context_memory__context_bootstrap"}}) + "\n" +
+                json.dumps({"type":"event_msg", "payload":{"type":"token_count", "info":{
+                    "last_token_usage":{"input_tokens":1}}}}) + "\n", encoding="utf-8")
+            manifest = root / "manifest.json"
+            manifest.write_text(json.dumps({"snapshot_sha256":"b" * 64, "runs":[{
+                "pair":"p1", "stratum":"cold", "workflow":"bootstrap", "session":session.name}]}), encoding="utf-8")
+            reports, _ = analyze_manifest(manifest)
+            with self.assertRaisesRegex(ValueError, "exactly one bootstrap"):
+                summarize(reports)
 
     def test_completed_mcp_event_does_not_duplicate_literal_exec_call(self):
         rows = [
