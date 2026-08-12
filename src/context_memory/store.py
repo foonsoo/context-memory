@@ -317,10 +317,15 @@ class MemoryStore:
             return hit
         if not content.strip(): raise ValueError("event content cannot be empty")
         with self.tx() as cx:
+            stored_metadata = dict(metadata or {})
+            if kind == "message" and "expires_at" not in stored_metadata:
+                policy = cx.execute("SELECT message_ttl_seconds FROM project_policies WHERE project_id=?", (project_id,)).fetchone()
+                if policy and policy["message_ttl_seconds"]:
+                    stored_metadata["expires_at"] = (datetime.now(timezone.utc) + timedelta(seconds=policy["message_ttl_seconds"])).isoformat()
             cursor = cx.execute("UPDATE project_event_cursors SET next_seq=next_seq+1 WHERE project_id=? RETURNING next_seq-1", (project_id,)).fetchone()
             if not cursor: raise KeyError("project not found")
             item = {"id": uid(), "project_id": project_id, "scope_id": scope_id, "session_id": session_id, "kind": kind,
-                    "content": content, "source_uri": source_uri, "metadata_json": canonical(metadata or {}),
+                    "content": content, "source_uri": source_uri, "metadata_json": canonical(stored_metadata),
                     "content_hash": hashlib.sha256(content.encode()).hexdigest(), "created_at": now(), "event_seq": cursor[0]}
             cx.execute("""INSERT INTO events(id,project_id,scope_id,session_id,kind,content,source_uri,metadata_json,content_hash,created_at,event_seq)
               VALUES(:id,:project_id,:scope_id,:session_id,:kind,:content,:source_uri,:metadata_json,:content_hash,:created_at,:event_seq)""", item)
@@ -632,10 +637,71 @@ class MemoryStore:
         rows = [dict(row) for row in self.conn.execute(sql, args)]
         has_more = len(rows) > limit
         rows = rows[:limit]
-        for row in rows: row["metadata"] = json.loads(row.pop("metadata_json"))
-        next_cursor = rows[-1]["event_seq"] if has_more else snapshot
+        page_cursor = rows[-1]["event_seq"] if has_more and rows else snapshot
+        visible = []
+        current = datetime.now(timezone.utc)
+        for row in rows:
+            row["metadata"] = json.loads(row.pop("metadata_json"))
+            expires_at = row["metadata"].get("expires_at") if row["kind"] == "message" else None
+            if expires_at:
+                try:
+                    expired = datetime.fromisoformat(expires_at.replace("Z", "+00:00")) <= current
+                except (TypeError, ValueError):
+                    expired = False
+                if expired: continue
+            visible.append(row)
+        rows = visible
+        next_cursor = page_cursor if has_more else snapshot
         return {"project_id":project_id,"cursor":cursor,"snapshot_cursor":snapshot,"next_cursor":next_cursor,
                 "has_more":has_more,"events":rows}
+
+    @staticmethod
+    def _receipt_stream(kinds: list[str] | None, scope_id: str | None) -> tuple[str, str, list[str] | None]:
+        normalized = sorted(set(kinds)) if kinds else None
+        return scope_id or "", canonical(normalized or []), normalized
+
+    def poll_events(self, project_id: str, consumer_id: str, kinds: list[str] | None = None,
+                    scope_id: str | None = None, limit: int = 100) -> dict[str, Any]:
+        """Read from a durable per-consumer receipt without acknowledging delivery."""
+        consumer_id = consumer_id.strip()
+        if not consumer_id: raise ValueError("consumer_id cannot be empty")
+        scope_key, kinds_json, normalized = self._receipt_stream(kinds, scope_id)
+        receipt = self._row("""SELECT * FROM event_receipts WHERE project_id=? AND consumer_id=?
+          AND scope_key=? AND kinds_json=?""", (project_id, consumer_id, scope_key, kinds_json))
+        cursor = receipt["acknowledged_cursor"] if receipt else 0
+        result = self.read_events_since(project_id, cursor, normalized, scope_id, limit)
+        delivered = max(cursor, result["next_cursor"])
+        ts = now()
+        with self.tx() as cx:
+            cx.execute("""INSERT INTO event_receipts(project_id,consumer_id,scope_key,kinds_json,acknowledged_cursor,delivered_cursor,created_at,updated_at)
+              VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(project_id,consumer_id,scope_key,kinds_json)
+              DO UPDATE SET delivered_cursor=max(event_receipts.delivered_cursor,excluded.delivered_cursor),updated_at=excluded.updated_at""",
+              (project_id, consumer_id, scope_key, kinds_json, cursor, delivered, ts, ts))
+        result.update({"consumer_id":consumer_id,"acknowledged_cursor":cursor,"delivered_cursor":delivered})
+        return result
+
+    def acknowledge_events(self, project_id: str, consumer_id: str, cursor: int,
+                           kinds: list[str] | None = None, scope_id: str | None = None) -> dict[str, Any]:
+        """Monotonically acknowledge a cursor previously delivered for this exact stream."""
+        consumer_id = consumer_id.strip()
+        if not consumer_id: raise ValueError("consumer_id cannot be empty")
+        if cursor < 0: raise ValueError("cursor must be non-negative")
+        scope_key, kinds_json, _ = self._receipt_stream(kinds, scope_id)
+        with self.tx() as cx:
+            row = cx.execute("""SELECT * FROM event_receipts WHERE project_id=? AND consumer_id=?
+              AND scope_key=? AND kinds_json=?""", (project_id, consumer_id, scope_key, kinds_json)).fetchone()
+            if not row: raise KeyError("event receipt not found; poll this stream before acknowledging")
+            if cursor < row["acknowledged_cursor"]: raise ValueError("acknowledged cursor cannot move backwards")
+            if cursor > row["delivered_cursor"]: raise ValueError("cannot acknowledge beyond the delivered cursor")
+            ts = now()
+            cx.execute("""UPDATE event_receipts SET acknowledged_cursor=?,updated_at=? WHERE project_id=?
+              AND consumer_id=? AND scope_key=? AND kinds_json=?""",
+              (cursor, ts, project_id, consumer_id, scope_key, kinds_json))
+            item = dict(cx.execute("""SELECT * FROM event_receipts WHERE project_id=? AND consumer_id=?
+              AND scope_key=? AND kinds_json=?""", (project_id, consumer_id, scope_key, kinds_json)).fetchone())
+            item["kinds"] = json.loads(item.pop("kinds_json")); item["scope_id"] = item.pop("scope_key") or None
+            self._audit(cx, project_id, "event_receipt", f"{consumer_id}:{scope_key}:{kinds_json}", "acknowledged", item)
+        return item
 
     def upsert_memory(self, project_id: str, title: str, content: str, memory_type: str = "other", status: str = "proposed",
                       confidence: float = .5, importance: float = .5, scope_id: str | None = None, source_event_ids: list[str] | None = None,
@@ -1042,18 +1108,20 @@ class MemoryStore:
                    checkpoint_soft_usage: float | None = None, checkpoint_hard_usage: float | None = None,
                    checkpoint_elapsed_seconds: int | None = None, checkpoint_event_count: int | None = None,
                    checkpoint_max_age_seconds: int | None = None, checkpoint_cooldown_seconds: int | None = None,
-                   checkpoint_hysteresis: float | None = None, maintenance_interval_seconds: int | None = None) -> dict[str, Any]:
+                   checkpoint_hysteresis: float | None = None, maintenance_interval_seconds: int | None = None,
+                   message_ttl_seconds: int | None = None) -> dict[str, Any]:
         current = self.get_policy(project_id)
         values = {"max_context_chars":max_context_chars,"max_context_items":max_context_items,
                   "audit_keep_entries":audit_keep_entries,"terminal_memory_days":terminal_memory_days,
                   "checkpoint_soft_usage":checkpoint_soft_usage,"checkpoint_hard_usage":checkpoint_hard_usage,
                   "checkpoint_elapsed_seconds":checkpoint_elapsed_seconds,"checkpoint_event_count":checkpoint_event_count,
                   "checkpoint_max_age_seconds":checkpoint_max_age_seconds,"checkpoint_cooldown_seconds":checkpoint_cooldown_seconds,
-                  "checkpoint_hysteresis":checkpoint_hysteresis,"maintenance_interval_seconds":maintenance_interval_seconds}
+                  "checkpoint_hysteresis":checkpoint_hysteresis,"maintenance_interval_seconds":maintenance_interval_seconds,
+                  "message_ttl_seconds":message_ttl_seconds}
         limits = {"max_context_chars":(1000,20000),"max_context_items":(1,50),"audit_keep_entries":(100,100000),"terminal_memory_days":(1,3650),
                   "checkpoint_soft_usage":(0,1),"checkpoint_hard_usage":(0,1),"checkpoint_elapsed_seconds":(60,86400),
                   "checkpoint_event_count":(1,10000),"checkpoint_max_age_seconds":(60,604800)}
-        limits.update({"checkpoint_cooldown_seconds":(0,86400),"checkpoint_hysteresis":(0,.5)})
+        limits.update({"checkpoint_cooldown_seconds":(0,86400),"checkpoint_hysteresis":(0,.5),"message_ttl_seconds":(0,2592000)})
         for key, value in values.items():
             if value is not None:
                 if key == "maintenance_interval_seconds":
@@ -1072,6 +1140,7 @@ class MemoryStore:
               checkpoint_elapsed_seconds=:checkpoint_elapsed_seconds,checkpoint_event_count=:checkpoint_event_count,
               checkpoint_max_age_seconds=:checkpoint_max_age_seconds,checkpoint_cooldown_seconds=:checkpoint_cooldown_seconds,
               checkpoint_hysteresis=:checkpoint_hysteresis,maintenance_interval_seconds=:maintenance_interval_seconds,
+              message_ttl_seconds=:message_ttl_seconds,
               updated_at=:updated_at WHERE project_id=:project_id""", current)
             self._audit(cx, project_id, "policy", project_id, "updated", current)
         return current
@@ -1288,6 +1357,7 @@ class MemoryStore:
             ("edge", "SELECT * FROM edges WHERE project_id=? ORDER BY created_at,id"),
             ("search_alias", "SELECT * FROM search_aliases WHERE project_id=? ORDER BY term"),
             ("project_alias", "SELECT * FROM project_aliases WHERE project_id=? ORDER BY kind,normalized"),
+            ("event_receipt", "SELECT * FROM event_receipts WHERE project_id=? ORDER BY consumer_id,scope_key,kinds_json"),
             ("policy", "SELECT * FROM project_policies WHERE project_id=?"),
             ("audit_checkpoint", "SELECT * FROM audit_checkpoints WHERE project_id=? ORDER BY through_seq"),
             ("audit", "SELECT * FROM audit_log WHERE project_id=? ORDER BY seq"),
@@ -1300,7 +1370,7 @@ class MemoryStore:
         """Restore one exported project. Existing project IDs are never overwritten."""
         if not records or records[0].get("record_type") != "project":
             raise ValueError("export must begin with a project record")
-        allowed = {"project", "scope", "session", "event", "memory", "memory_source", "memory_usage", "review_conflict", "edge", "search_alias", "project_alias", "policy", "audit_checkpoint", "audit"}
+        allowed = {"project", "scope", "session", "event", "memory", "memory_source", "memory_usage", "review_conflict", "edge", "search_alias", "project_alias", "event_receipt", "policy", "audit_checkpoint", "audit"}
         if any(record.get("record_type") not in allowed or not isinstance(record.get("data"), dict) for record in records):
             raise ValueError("invalid export record")
         project = records[0]["data"]
@@ -1318,6 +1388,7 @@ class MemoryStore:
             "edge": ("edges", ["id","project_id","from_memory_id","to_memory_id","relation","note","created_at"]),
             "search_alias": ("search_aliases", ["project_id","term","aliases_json","created_at","updated_at"]),
             "project_alias": ("project_aliases", ["project_id","kind","value","normalized","created_at","updated_at"]),
+            "event_receipt": ("event_receipts", ["project_id","consumer_id","scope_key","kinds_json","acknowledged_cursor","delivered_cursor","created_at","updated_at"]),
             "audit_checkpoint": ("audit_checkpoints", ["id","project_id","from_seq","through_seq","entry_count","previous_digest","digest","created_at"]),
         }
         counts: dict[str, int] = {}
@@ -1336,15 +1407,15 @@ class MemoryStore:
                     defaults = {"checkpoint_soft_usage":.60,"checkpoint_hard_usage":.75,
                                 "checkpoint_elapsed_seconds":1800,"checkpoint_event_count":25,
                                 "checkpoint_max_age_seconds":3600,"checkpoint_cooldown_seconds":300,
-                                "checkpoint_hysteresis":.05,"maintenance_interval_seconds":0}
+                                "checkpoint_hysteresis":.05,"maintenance_interval_seconds":0,"message_ttl_seconds":0}
                     for name, value in defaults.items(): data.setdefault(name, value)
                     names = ["max_context_chars","max_context_items","audit_keep_entries","terminal_memory_days",
                              "checkpoint_soft_usage","checkpoint_hard_usage","checkpoint_elapsed_seconds",
                              "checkpoint_event_count","checkpoint_max_age_seconds","checkpoint_cooldown_seconds",
-                             "checkpoint_hysteresis","maintenance_interval_seconds","updated_at","project_id"]
+                             "checkpoint_hysteresis","maintenance_interval_seconds","message_ttl_seconds","updated_at","project_id"]
                     cx.execute("""UPDATE project_policies SET max_context_chars=?,max_context_items=?,audit_keep_entries=?,
                       terminal_memory_days=?,checkpoint_soft_usage=?,checkpoint_hard_usage=?,checkpoint_elapsed_seconds=?,
-                      checkpoint_event_count=?,checkpoint_max_age_seconds=?,checkpoint_cooldown_seconds=?,checkpoint_hysteresis=?,maintenance_interval_seconds=?,
+                      checkpoint_event_count=?,checkpoint_max_age_seconds=?,checkpoint_cooldown_seconds=?,checkpoint_hysteresis=?,maintenance_interval_seconds=?,message_ttl_seconds=?,
                       updated_at=? WHERE project_id=?""", tuple(data[name] for name in names))
                 else:
                     table, names = columns[kind]

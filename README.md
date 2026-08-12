@@ -366,6 +366,7 @@ Project hooks require a trusted project and explicit review in Codex. Use `/hook
 | `checkpoint_create` | Idempotent interim recovery marker or atomic evidence-backed final handoff/session closure; captures semantic progress, objective Git facts, tests, and an optional existing commit |
 | `checkpoint_evaluate` | Read-only threshold/fallback evaluation with cooldown, hysteresis, recovery hashing, and a stable idempotency key |
 | `read_events_since` | Cursor-based incremental event/message polling with pagination |
+| `event_poll`, `event_ack` | Durable per-consumer polling and monotonic acknowledgement for an exact kind/scope stream |
 | `memory_upsert` | Proposed/active derived memory with source event IDs |
 | `memory_transition` | Activate, supersede, dispute, expire, or reject; add relationship edge |
 | `search_alias_set`, `search_alias_list` | Manage deterministic project vocabulary for paraphrase expansion |

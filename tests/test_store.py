@@ -244,6 +244,33 @@ class StoreTests(unittest.TestCase):
         self.assertFalse(final["has_more"]); self.assertEqual(final["next_cursor"], 3)
         self.assertEqual(final["events"][0]["metadata"], {})
 
+    def test_durable_event_receipts_redeliver_until_acknowledged(self):
+        p = self.store.create_project("durable-receipts")
+        first = self.store.record_event(p["id"], "message", "first")
+        second = self.store.record_event(p["id"], "message", "second")
+        delivered = self.store.poll_events(p["id"], "worker-a", ["message"], limit=1)
+        self.assertEqual([event["id"] for event in delivered["events"]], [first["id"]])
+        repeated = self.store.poll_events(p["id"], "worker-a", ["message"], limit=1)
+        self.assertEqual([event["id"] for event in repeated["events"]], [first["id"]])
+        receipt = self.store.acknowledge_events(p["id"], "worker-a", delivered["next_cursor"], ["message"])
+        self.assertEqual(receipt["acknowledged_cursor"], first["event_seq"])
+        resumed = self.store.poll_events(p["id"], "worker-a", ["message"])
+        self.assertEqual([event["id"] for event in resumed["events"]], [second["id"]])
+        with self.assertRaisesRegex(ValueError, "beyond the delivered"):
+            self.store.acknowledge_events(p["id"], "worker-a", second["event_seq"] + 1, ["message"])
+        independent = self.store.poll_events(p["id"], "worker-b", ["message"])
+        self.assertEqual([event["id"] for event in independent["events"]], [first["id"], second["id"]])
+
+    def test_message_expiry_policy_hides_expired_messages_without_deleting_events(self):
+        p = self.store.create_project("message-expiry")
+        self.store.set_policy(p["id"], message_ttl_seconds=60)
+        future = self.store.record_event(p["id"], "message", "temporary")
+        self.assertIn("expires_at", json.loads(future["metadata_json"]))
+        expired = self.store.record_event(p["id"], "message", "expired", metadata={"expires_at":"2000-01-01T00:00:00+00:00"})
+        events = self.store.read_events_since(p["id"], 0, ["message"])["events"]
+        self.assertEqual([event["id"] for event in events], [future["id"]])
+        self.assertEqual(self.store.get_source(expired["id"])["content"], "expired")
+
     def test_get_context_keeps_recent_messages_separate_and_budgeted(self):
         p = self.store.create_project("message-context")
         self.store.upsert_memory(p["id"], "Stable choice", "SQLite remains authoritative", "decision", "active")

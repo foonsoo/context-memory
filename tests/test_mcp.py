@@ -31,6 +31,10 @@ class MCPTests(unittest.TestCase):
         polled = self.server.handle({"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"read_events_since","arguments":{"project_id":value["id"],"cursor":0,"kinds":["message"]}}})
         stream = polled["result"]["structuredContent"]["result"]
         self.assertEqual(stream["events"][0]["id"], event["id"]); self.assertEqual(stream["next_cursor"], event["event_seq"])
+        durable = self.server.call("event_poll", {"project_id":value["id"],"consumer_id":"mcp-test","kinds":["message"]})
+        self.assertEqual(durable["events"][0]["id"], event["id"])
+        receipt = self.server.call("event_ack", {"project_id":value["id"],"consumer_id":"mcp-test","cursor":durable["next_cursor"],"kinds":["message"]})
+        self.assertEqual(receipt["acknowledged_cursor"], event["event_seq"])
         checkpointed = self.server.handle({"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"checkpoint_create","arguments":{
             "project_id":value["id"],"mode":"interim","reason":"manual","goal":"Resume MCP test","idempotency_key":"mcp-checkpoint",
             "test_results":[{"name":"MCP test","status":"passed"}]

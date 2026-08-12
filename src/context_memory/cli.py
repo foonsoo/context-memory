@@ -225,6 +225,10 @@ def main() -> None:
     checkpoint_eval.add_argument("--next-step"); checkpoint_eval.add_argument("--blocker", action="append", default=[])
     events_since = sub.add_parser("events-since", help="Read immutable project events after a cursor")
     events_since.add_argument("project_id"); events_since.add_argument("--cursor", type=int, default=0); events_since.add_argument("--kind", action="append"); events_since.add_argument("--scope-id"); events_since.add_argument("--limit", type=int, default=100)
+    event_poll = sub.add_parser("event-poll", help="Poll from a durable per-consumer event receipt")
+    event_poll.add_argument("project_id"); event_poll.add_argument("consumer_id"); event_poll.add_argument("--kind", action="append"); event_poll.add_argument("--scope-id"); event_poll.add_argument("--limit", type=int, default=100)
+    event_ack = sub.add_parser("event-ack", help="Acknowledge a previously delivered event cursor")
+    event_ack.add_argument("project_id"); event_ack.add_argument("consumer_id"); event_ack.add_argument("cursor", type=int); event_ack.add_argument("--kind", action="append"); event_ack.add_argument("--scope-id")
     memory = sub.add_parser("memory"); memory.add_argument("project_id"); memory.add_argument("title"); memory.add_argument("content"); memory.add_argument("--type", default="other"); memory.add_argument("--status", default="proposed"); memory.add_argument("--source", action="append", default=[]); memory.add_argument("--confidence", type=float, default=.5); memory.add_argument("--importance", type=float, default=.5)
     search = sub.add_parser("search"); search.add_argument("project_id"); search.add_argument("query"); search.add_argument("--limit", type=int, default=10)
     context = sub.add_parser("context"); context.add_argument("project_id"); context.add_argument("query"); context.add_argument("--budget", type=int, default=6000)
@@ -244,6 +248,7 @@ def main() -> None:
     policy.add_argument("--checkpoint-max-age-seconds", type=int)
     policy.add_argument("--checkpoint-cooldown-seconds", type=int); policy.add_argument("--checkpoint-hysteresis", type=float)
     policy.add_argument("--maintenance-interval-seconds", type=int)
+    policy.add_argument("--message-ttl-seconds", type=int)
     maintain = sub.add_parser("maintain", help="Plan/apply terminal-memory cleanup and checkpointed audit compaction")
     maintain.add_argument("project_id"); maintain.add_argument("--apply", action="store_true"); maintain.add_argument("--scheduled", action="store_true")
     status_cmd = sub.add_parser("status", help="Show project policy, storage counts, audit checkpoints, and search health")
@@ -297,6 +302,8 @@ def main() -> None:
             args.project_id, args.context_usage, args.session_id, args.repository_path,
             args.goal, args.completed, args.next_step, args.blocker))
         elif args.command == "events-since": output(store.read_events_since(args.project_id, args.cursor, args.kind, args.scope_id, args.limit))
+        elif args.command == "event-poll": output(store.poll_events(args.project_id, args.consumer_id, args.kind, args.scope_id, args.limit))
+        elif args.command == "event-ack": output(store.acknowledge_events(args.project_id, args.consumer_id, args.cursor, args.kind, args.scope_id))
         elif args.command == "memory": output(store.upsert_memory(args.project_id, args.title, args.content, args.type, args.status, args.confidence, args.importance, source_event_ids=args.source))
         elif args.command == "search": output(store.search(args.project_id, args.query, args.limit))
         elif args.command == "context": output(store.get_context(args.project_id, args.query, args.budget, event_cursor=args.event_cursor,
@@ -323,7 +330,8 @@ def main() -> None:
                        "checkpoint_elapsed_seconds":args.checkpoint_elapsed_seconds,"checkpoint_event_count":args.checkpoint_event_count,
                        "checkpoint_max_age_seconds":args.checkpoint_max_age_seconds,
                        "checkpoint_cooldown_seconds":args.checkpoint_cooldown_seconds,"checkpoint_hysteresis":args.checkpoint_hysteresis,
-                       "maintenance_interval_seconds":args.maintenance_interval_seconds}
+                       "maintenance_interval_seconds":args.maintenance_interval_seconds,
+                       "message_ttl_seconds":args.message_ttl_seconds}
             output(store.set_policy(args.project_id, **changes) if any(value is not None for value in changes.values()) else store.get_policy(args.project_id))
         elif args.command == "maintain":
             if args.scheduled and not args.apply: p.error("--scheduled requires --apply")
