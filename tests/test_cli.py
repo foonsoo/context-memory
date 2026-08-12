@@ -114,12 +114,17 @@ class CLITests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             database = Path(temp) / "memory.db"
             store = MemoryStore(database)
-            try: project = store.create_project("cli-checkpoint")
+            try:
+                project = store.create_project("cli-checkpoint")
+                session = store.start_session(project["id"], "test", external_id="cli-final")
+                evidence = store.record_event(project["id"], "deployment", "CLI verification", session_id=session["id"])
             finally: store.close()
             env = {**os.environ, "PYTHONPATH": str(Path(__file__).parents[1] / "src")}
             command = [sys.executable, "-m", "context_memory.cli", "--db", str(database), "checkpoint",
                        project["id"], "final", "completed", "--goal", "Ship checkpoint core",
                        "--completed", "All tests passed", "--next-step", "Add repository facts", "--key", "cli-1",
+                       "--session-id", session["id"], "--verified-event", evidence["id"],
+                       "--handoff-title", "CLI handoff", "--handoff-content", "Proceed to repository facts",
                        "--test-result", '{"name":"CLI test","status":"passed"}']
             result = subprocess.run(command, cwd=Path(__file__).parents[1], env=env, check=True, capture_output=True, text=True)
             checkpoint = json.loads(result.stdout)

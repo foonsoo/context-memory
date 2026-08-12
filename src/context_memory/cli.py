@@ -215,6 +215,9 @@ def main() -> None:
     checkpoint.add_argument("--context-usage", type=float)
     checkpoint.add_argument("--repository", dest="repository_path")
     checkpoint.add_argument("--test-result", action="append", default=[], help='JSON object with name, status, and optional command/details')
+    checkpoint.add_argument("--verified-event", action="append", default=[])
+    checkpoint.add_argument("--handoff-title"); checkpoint.add_argument("--handoff-content")
+    checkpoint.add_argument("--previous-handoff-memory-id"); checkpoint.add_argument("--commit")
     checkpoint_eval = sub.add_parser("checkpoint-evaluate", help="Evaluate checkpoint thresholds without writing")
     checkpoint_eval.add_argument("project_id"); checkpoint_eval.add_argument("--context-usage", type=float)
     checkpoint_eval.add_argument("--session-id"); checkpoint_eval.add_argument("--repository", dest="repository_path")
@@ -281,7 +284,8 @@ def main() -> None:
         elif args.command == "checkpoint": output(store.create_checkpoint(
             args.project_id, args.mode, args.reason, args.goal, args.key, args.session_id, args.scope_id,
             args.completed, args.next_step, args.blocker, args.source_event_cursor, args.context_usage,
-            args.repository_path, [json.loads(value) for value in args.test_result]))
+            args.repository_path, [json.loads(value) for value in args.test_result], args.verified_event,
+            args.handoff_title, args.handoff_content, args.previous_handoff_memory_id, args.commit))
         elif args.command == "checkpoint-evaluate": output(store.evaluate_checkpoint(
             args.project_id, args.context_usage, args.session_id, args.repository_path,
             args.goal, args.completed, args.next_step, args.blocker))

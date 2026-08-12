@@ -78,7 +78,7 @@ class StoreTests(unittest.TestCase):
                 {"name":"integration", "status":"skipped"},
             ])
         objective = result["objective"]
-        self.assertEqual(result["schema_version"], 4)
+        self.assertEqual(result["schema_version"], 5)
         self.assertEqual(objective["repository"]["branch"], "main")
         self.assertTrue(objective["repository"]["dirty"])
         self.assertEqual({item["path"] for item in objective["repository"]["changed_files"]}, {"tracked.txt", "new.txt"})
@@ -123,6 +123,45 @@ class StoreTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "active session"):
             self.store.create_checkpoint(
                 p["id"], "interim", "manual", "Resume", "interim-ended-session", session_id=session["id"])
+
+    def test_final_checkpoint_atomically_replaces_handoff_links_evidence_and_ends_session(self):
+        p = self.store.create_project("checkpoint-final")
+        session = self.store.start_session(p["id"], "test", external_id="final-checkpoint")
+        evidence = self.store.record_event(p["id"], "deployment", "Tests passed for commit", session_id=session["id"])
+        previous = self.store.upsert_memory(
+            p["id"], "Previous handoff", "Continue final semantics", "task", "active",
+            source_event_ids=[evidence["id"]])
+        repository = Path(self.temp.name) / "final-repo"; repository.mkdir()
+        subprocess.run(["git", "init", "-b", "main"], cwd=repository, check=True, capture_output=True)
+        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repository, check=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=repository, check=True)
+        (repository / "done.txt").write_text("done\n", encoding="utf-8")
+        subprocess.run(["git", "add", "done.txt"], cwd=repository, check=True)
+        subprocess.run(["git", "commit", "-m", "done"], cwd=repository, check=True, capture_output=True)
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repository, check=True, capture_output=True, text=True).stdout.strip()
+
+        result = self.store.create_checkpoint(
+            p["id"], "final", "completed", "Finish final semantics", "final-1",
+            session_id=session["id"], completed=["All tests passed"], repository_path=str(repository),
+            verified_event_ids=[evidence["id"]], handoff_title="Next implementation handoff",
+            handoff_content="Final semantics shipped; implement hooks next", previous_handoff_memory_id=previous["id"],
+            commit=head[:12], test_results=[{"name":"unit tests", "status":"passed"}])
+
+        self.assertTrue(result["session_ended"]); self.assertEqual(result["commit"], head)
+        self.assertIsNotNone(self.store._row("SELECT ended_at FROM sessions WHERE id=?", (session["id"],))["ended_at"])
+        self.assertEqual(self.store._row("SELECT status FROM memories WHERE id=?", (previous["id"],))["status"], "superseded")
+        handoff = self.store._row("SELECT * FROM memories WHERE id=?", (result["handoff_memory_id"],))
+        self.assertEqual(handoff["status"], "active")
+        sources = {row[0] for row in self.store.conn.execute("SELECT event_id FROM memory_sources WHERE memory_id=?", (handoff["id"],))}
+        self.assertEqual(sources, {evidence["id"], result["checkpoint_id"]})
+        edge = self.store._row("SELECT * FROM edges WHERE from_memory_id=? AND to_memory_id=?", (handoff["id"], previous["id"]))
+        self.assertEqual(edge["relation"], "supersedes")
+        self.assertEqual(result, self.store.create_checkpoint(
+            p["id"], "final", "completed", "Finish final semantics", "final-1",
+            session_id=session["id"], completed=["All tests passed"], repository_path=str(repository),
+            verified_event_ids=[evidence["id"]], handoff_title="Next implementation handoff",
+            handoff_content="Final semantics shipped; implement hooks next", previous_handoff_memory_id=previous["id"],
+            commit=head[:12], test_results=[{"name":"unit tests", "status":"passed"}]))
 
     def test_checkpoint_rejects_invalid_objective_evidence(self):
         p = self.store.create_project("checkpoint-invalid-objective")
