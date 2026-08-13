@@ -53,6 +53,48 @@ QUERIES = [
 ]
 
 
+def load_fixture(path: str | Path) -> tuple[list[tuple[str, str, str]], list[tuple[str, set[str], str]]]:
+    """Load relevance judgments without copying personal content into report metadata."""
+    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    if raw.get("schema_version") != 1:
+        raise ValueError("fixture schema_version must be 1")
+    memories_raw, queries_raw = raw.get("memories"), raw.get("queries")
+    if not isinstance(memories_raw, list) or not memories_raw:
+        raise ValueError("fixture memories must be a non-empty list")
+    if not isinstance(queries_raw, list) or not queries_raw:
+        raise ValueError("fixture queries must be a non-empty list")
+    memories: list[tuple[str, str, str]] = []
+    keys: set[str] = set()
+    for index, item in enumerate(memories_raw):
+        if not isinstance(item, dict):
+            raise ValueError(f"fixture memory {index} must be an object")
+        values = item.get("key"), item.get("title"), item.get("content")
+        if not all(isinstance(value, str) and value.strip() for value in values):
+            raise ValueError(f"fixture memory {index} requires non-empty key, title, and content")
+        key, title, content = values
+        if key in keys:
+            raise ValueError(f"duplicate fixture memory key: {key}")
+        keys.add(key)
+        memories.append((key, title, content))
+    queries: list[tuple[str, set[str], str]] = []
+    for index, item in enumerate(queries_raw):
+        if not isinstance(item, dict):
+            raise ValueError(f"fixture query {index} must be an object")
+        query, category, relevant_raw = item.get("query"), item.get("category"), item.get("relevant")
+        if not isinstance(query, str) or not query.strip() or not isinstance(category, str) or not category.strip():
+            raise ValueError(f"fixture query {index} requires non-empty query and category")
+        if not isinstance(relevant_raw, list) or not all(isinstance(key, str) for key in relevant_raw):
+            raise ValueError(f"fixture query {index} relevant must be a list of memory keys")
+        relevant = set(relevant_raw)
+        unknown = relevant - keys
+        if unknown:
+            raise ValueError(f"fixture query {index} references unknown memories: {sorted(unknown)}")
+        queries.append((query, relevant, category))
+    if not any(relevant for _, relevant, _ in queries):
+        raise ValueError("fixture requires at least one positive relevance judgment")
+    return memories, queries
+
+
 @contextmanager
 def embedding_mode(value: str) -> Iterator[None]:
     previous = os.environ.get("CONTEXT_MEMORY_EMBEDDINGS")
@@ -66,7 +108,8 @@ def embedding_mode(value: str) -> Iterator[None]:
             os.environ["CONTEXT_MEMORY_EMBEDDINGS"] = previous
 
 
-def evaluate(name: str, provider: Any, root: Path, repeats: int) -> dict[str, Any]:
+def evaluate(name: str, provider: Any, root: Path, repeats: int,
+             memories: list[tuple[str, str, str]], queries: list[tuple[str, set[str], str]]) -> dict[str, Any]:
     db_path = root / f"{name}.db"
     started = time.perf_counter()
     if provider is None:
@@ -76,7 +119,7 @@ def evaluate(name: str, provider: Any, root: Path, repeats: int) -> dict[str, An
         store = MemoryStore(db_path, embedding_provider=provider)
     project = store.create_project(f"embedding-eval-{name}")
     ids: dict[str, str] = {}
-    for key, title, content in MEMORIES:
+    for key, title, content in memories:
         ids[key] = store.upsert_memory(project["id"], title, content, "fact", "active")["id"]
     index_ms = (time.perf_counter() - started) * 1000
     outcomes = []
@@ -84,7 +127,7 @@ def evaluate(name: str, provider: Any, root: Path, repeats: int) -> dict[str, An
     reciprocal_ranks = []
     positive_hits = 0
     false_vector_only = 0
-    for query, relevant_keys, category in QUERIES:
+    for query, relevant_keys, category in queries:
         runs = []
         for _ in range(repeats):
             query_started = time.perf_counter()
@@ -104,14 +147,16 @@ def evaluate(name: str, provider: Any, root: Path, repeats: int) -> dict[str, An
             "relevant": sorted(relevant_keys),
             "rank": rank,
             "returned": [next(key for key, memory_id in ids.items() if memory_id == value) for value in returned],
+            "top_semantic_similarity": next((row["retrieval"]["semantic_similarity"] for row in runs
+                                               if row["retrieval"]["semantic_similarity"] is not None), None),
         })
     store.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     provider_name = store._provider_name()
     store.close()
-    positive_queries = sum(bool(keys) for _, keys, _ in QUERIES)
-    negative_queries = len(QUERIES) - positive_queries
+    positive_queries = sum(bool(keys) for _, keys, _ in queries)
+    negative_queries = len(queries) - positive_queries
     categories = {}
-    for category in sorted({category for _, _, category in QUERIES}):
+    for category in sorted({category for _, _, category in queries}):
         selected = [item for item in outcomes if item["category"] == category and item["relevant"]]
         if selected:
             categories[category] = {
@@ -123,7 +168,10 @@ def evaluate(name: str, provider: Any, root: Path, repeats: int) -> dict[str, An
         "provider": provider_name or "fts-only",
         "recall_at_5": positive_hits / positive_queries,
         "mrr_at_5": statistics.mean(reciprocal_ranks),
-        "negative_query_result_rate": false_vector_only / negative_queries,
+        "negative_query_result_rate": false_vector_only / negative_queries if negative_queries else None,
+        "negative_queries": {"count": negative_queries, "returned_count": false_vector_only,
+                             "top_semantic_similarities": [item["top_semantic_similarity"] for item in outcomes
+                                                            if not item["relevant"] and item["top_semantic_similarity"] is not None]},
         "categories": categories,
         "index_ms": round(index_ms, 3),
         "query_latency_ms": {
@@ -135,16 +183,23 @@ def evaluate(name: str, provider: Any, root: Path, repeats: int) -> dict[str, An
     }
 
 
-def run(model: str | None = None, repeats: int = 5) -> dict[str, Any]:
+def run(model: str | None = None, repeats: int = 5, fixture: str | Path | None = None) -> dict[str, Any]:
+    if repeats < 1:
+        raise ValueError("repeats must be at least 1")
+    memories, queries = load_fixture(fixture) if fixture else (MEMORIES, QUERIES)
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         providers: list[tuple[str, Any]] = [("fts", None), ("local_hash", LocalHashEmbedding())]
         if model:
             providers.append(("neural", SentenceTransformerEmbedding(model)))
-        results = {name: evaluate(name, provider, root, repeats) for name, provider in providers}
+        results = {name: evaluate(name, provider, root, repeats, memories, queries) for name, provider in providers}
+        if fixture:
+            for result in results.values():
+                result.pop("outcomes", None)
     return {
-        "schema_version": 1,
-        "fixture": {"memories": len(MEMORIES), "queries": len(QUERIES), "repeats": repeats},
+        "schema_version": 2,
+        "fixture": {"source": "external" if fixture else "built-in-synthetic",
+                    "memories": len(memories), "queries": len(queries), "repeats": repeats},
         "neural_model": model,
         "results": results,
     }
@@ -154,9 +209,10 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", help="Local path or explicit sentence-transformers model identifier")
     parser.add_argument("--repeats", type=int, default=5)
+    parser.add_argument("--fixture", help="Private schema-v1 JSON relevance fixture")
     parser.add_argument("--output")
     args = parser.parse_args()
-    result = run(args.model, args.repeats)
+    result = run(args.model, args.repeats, args.fixture)
     rendered = json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True)
     print(rendered)
     if args.output:
