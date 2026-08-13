@@ -18,6 +18,10 @@ External clients may read Confluence or another source with the user's existing 
 
 ## Priority order
 
+### Current implementation priority
+
+P0 Decision Brief/evaluation, P1 Research-to-Decision provenance, and P2 topic Wiki revisions are implemented. The next active work is **P2.5 non-neural retrieval quality and latency**, followed by P3 lint/review. Neural embedding remains an optional evaluated adapter and is not part of the active implementation path because its measured latency cost did not justify making it the default.
+
 ### P0 — Decision Brief contract and evaluation
 
 Prove that the system helps a user make a better current choice before adding a persistent Wiki schema.
@@ -68,6 +72,22 @@ Add durable, human-readable synthesis only after the Decision Brief contract is 
 
 **Exit gate:** a topic page can be regenerated from cited current memories, retains revision history, and becomes stale deterministically when its evidence changes.
 
+### P2.5 — Non-neural retrieval quality and latency
+
+Improve the shared `get_context`/`decision_context` path using FTS5, explicit aliases, local-hash, lifecycle state, provenance, and graph relationships. Preserve response compatibility and require measured evidence before changing ranking or acceptance thresholds.
+
+1. **Freeze the evaluation baseline — do now.** Extend the versioned Decision Brief scenarios with irrelevant/negative questions, lexical paraphrases, duplicate summaries, current-versus-superseded decisions, cross-project ambiguity, and larger candidate sets. Record Recall@5/MRR, current-decision accuracy, stale-decision leakage, negative-query false-result rate, source recovery, useful-history recall, duplicate rate, payload size, and p50/p95 latency for FTS-only and default local-hash modes.
+2. **Remove query-path overhead without changing results.** Batch source-event provenance loading for returned candidates, restrict `memory_usage` reads to candidate IDs, avoid loading unused vector/JSON data, and add query-count regression assertions. The ranked memory IDs and score components must remain identical to the frozen baseline.
+3. **Implement strict lexical candidate generation with fallback.** Try phrase/core-term conjunction before the existing expanded `OR` query; run the broader query only when the strict pass does not supply enough qualified candidates. Keep explicit project aliases deterministic and inspectable. Verify recall does not regress on changed-decision and paraphrase scenarios.
+4. **Add a calibrated negative-result gate.** Use lexical rank, original-query coverage, local-hash similarity, lexical/vector agreement, and top-result separation to return `no_confident_match` instead of weak unrelated memories. Derive thresholds only from versioned fixtures plus privacy-preserving external judgments; do not tune directly against one private corpus. Report the gate reason and component values.
+5. **Bound local-hash work.** When lexical candidates exist, use local-hash primarily to rerank that bounded set. Permit vector-only fallback only when lexical recall fails, with explicit candidate/time limits and the calibrated acceptance gate. Preserve deterministic ordering and the ability to disable embeddings entirely.
+6. **Add Decision Brief reranking.** Rerank only the bounded top candidates using question intent, memory type/status, direct provenance, decision/rationale/constraint/outcome role, and penalties for unsupported, stale proposed, or repetitive handoff content. Keep general `memory_search` semantics separate and expose every added score component.
+7. **Expand from decision seeds.** After retrieving a small set of current decision seeds, traverse at most one hop by default for supports/depends-on/supersession and shared investigation relations. Deduplicate expanded evidence and charge it to the existing item/character budgets; use a second hop only when explicitly requested or when a tested retrieval gap requires it.
+8. **Reduce cross-project discovery work.** Generate project candidates from lexical/alias/identity evidence first, run bounded local-hash only for plausible projects, and retain the existing conservative confidence and ambiguity rules. Never trade ambiguous project mixing for higher recall.
+9. **Re-run the complete matrix after every ranking change.** Accept a change only when it improves a named accuracy or latency failure without worsening stale leakage, unsupported claims, source recovery, ambiguity safety, or bounded context size beyond a documented tolerance.
+
+**Exit gate:** default non-neural retrieval materially lowers negative false results and p95 latency while preserving or improving Decision Brief accuracy, useful-history recall, citations, deterministic ranking, and conservative cross-project isolation.
+
 ### P3 — Decision Wiki lint and review
 
 1. Detect missing citations, missing sources, citations to terminal memories, unresolved disputes, stale page revisions, and current memories omitted from a relevant page.
@@ -97,7 +117,7 @@ Add browsing, backlinks, topic indexes, and richer Markdown export only after re
 | Immutable events, provenance, lifecycle states, review actions | Authoritative foundation | Retain unchanged |
 | `get_context`, FTS/local-hash ranking, aliases, graph traversal | Retrieval foundation for Decision Briefs | Reuse; extend rather than duplicate |
 | Cross-project discovery calibration | Helps locate prior context from another checkout/project | Retain as a safety regression; expand only for demonstrated Decision Brief failures |
-| Optional neural embeddings and ranking tuning | May improve paraphrase recall | Defer new tuning until the Decision Wiki benchmark identifies a retrieval gap |
+| Optional neural embeddings | Improved recall in an experiment but had an unacceptable default latency trade-off | Keep opt-in and out of the active implementation sequence; do not expand unless future non-neural evidence shows an unresolved material gap |
 | Conflict classification | Directly supports decision history and lint | Fold into P0/P3 scenarios; avoid a separate parallel workstream |
 | Session-end extraction and review queue | Produces reviewed atomic memories | Reuse; do not auto-publish Wiki revisions from unreviewed output |
 | Interim/final checkpoints and handoffs | Work recovery rather than durable knowledge synthesis | Keep as completed infrastructure; exclude checkpoints from topic Wiki unless explicitly cited |
@@ -115,6 +135,7 @@ There is no architectural conflict between the current evidence ledger and the D
 - An independently indexed Wiki search stack that duplicates `get_context`.
 - Uncited free-form Wiki generation or autonomous publication/promotion to active state.
 - Broad embedding, ranking, or discovery tuning without a failing decision-quality scenario.
+- Neural-model expansion, neural reranking, model acquisition, or making neural embeddings the default.
 - Early Wiki UI work before the Decision Brief, revision, and lint contracts are validated.
 - Repeating detailed implementation histories for completed Craft, checkpoint, token, backup, and audit work in the active roadmap; Git history and release notes are the appropriate record.
 
