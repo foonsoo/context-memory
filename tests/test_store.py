@@ -322,6 +322,42 @@ class StoreTests(unittest.TestCase):
         self.assertFalse(item["truncated"])
         self.assertEqual(self.store.get_source(item["source_event_ids"][0])["content"], "Keep the exact source")
 
+    def test_decision_context_reconstructs_cited_current_choice_and_history(self):
+        p = self.store.create_project("decision-brief")
+        old_event = self.store.record_event(p["id"], "decision", "Originally choose files")
+        old = self.store.upsert_memory(p["id"], "Old choice", "Use flat files", "decision", "superseded",
+                                       source_event_ids=[old_event["id"]], observed_at="2026-01-01T00:00:00+00:00")
+        current_event = self.store.record_event(p["id"], "decision", "Choose SQLite for transactions")
+        current = self.store.upsert_memory(p["id"], "Current choice", "Use SQLite", "decision", "active",
+                                           source_event_ids=[current_event["id"]], observed_at="2026-02-01T00:00:00+00:00")
+        reason_event = self.store.record_event(p["id"], "fact", "Concurrent writes need transactions")
+        self.store.upsert_memory(p["id"], "Storage rationale", "Storage transactions prevent partial writes", "fact", "active",
+                                 source_event_ids=[reason_event["id"]], tags=["rationale"])
+        rejected_event = self.store.record_event(p["id"], "decision", "Postgres adds operations overhead")
+        rejected = self.store.upsert_memory(p["id"], "Storage alternative", "Do not operate Postgres storage", "decision", "rejected",
+                                            source_event_ids=[rejected_event["id"]], tags=["alternative"])
+
+        brief = self.store.decision_context(p["id"], "storage choice", 5000)
+
+        self.assertEqual(brief["contract_version"], "decision-brief/v1")
+        self.assertEqual([item["citations"]["memory_id"] for item in brief["current_decisions"]], [current["id"]])
+        self.assertEqual(brief["rationale"][0]["citations"]["source_event_ids"], [reason_event["id"]])
+        self.assertEqual(brief["alternatives"][0]["citations"]["memory_id"], rejected["id"])
+        self.assertEqual([item["citations"]["memory_id"] for item in brief["history"]], [old["id"], current["id"], rejected["id"]])
+        self.assertIsNone(brief["recommendation"])
+        self.assertEqual({item["memory_id"] for item in brief["retrieval"]["items"]},
+                         {old["id"], current["id"], rejected["id"], brief["rationale"][0]["citations"]["memory_id"]})
+
+    def test_decision_context_labels_disputes_proposals_and_missing_sources(self):
+        p = self.store.create_project("decision-uncertainty")
+        disputed = self.store.upsert_memory(p["id"], "Contested", "Launch date is Friday", "decision", "disputed")
+        proposed = self.store.upsert_memory(p["id"], "Possible outcome", "Conversion may improve", "fact", "proposed", tags=["outcome"])
+        brief = self.store.decision_context(p["id"], "launch outcome", 3000)
+        self.assertEqual(brief["disputes"][0]["citations"]["memory_id"], disputed["id"])
+        reasons = {(item["citations"] or {}).get("memory_id"): item["reason"] for item in brief["uncertainty"]}
+        self.assertIn(reasons[proposed["id"]], {"unreviewed_proposed_memory", "missing_source_event"})
+        self.assertIn("missing_source_event", [item["reason"] for item in brief["uncertainty"]])
+
     def test_proposed_excluded_and_transitions_audited(self):
         p = self.store.create_project("demo")
         old = self.store.upsert_memory(p["id"], "Old port", "The port is 8000", "fact", "active")

@@ -80,6 +80,16 @@ class MCPTests(unittest.TestCase):
             self.assertIn(f"`{kind}`", description)
         self.assertIn("Other kinds", description)
 
+    def test_decision_context_is_read_only_core_tool(self):
+        self.assertIn("decision_context", CORE_TOOL_NAMES)
+        self.assertTrue(TOOL_BY_NAME["decision_context"]["annotations"]["readOnlyHint"])
+        p = self.store.create_project("brief-tool")
+        event = self.store.record_event(p["id"], "decision", "Use the existing retrieval stack")
+        memory = self.store.upsert_memory(p["id"], "Architecture", "Reuse get_context", "decision", "active", source_event_ids=[event["id"]])
+        brief = self.server.call("decision_context", {"project_id":p["id"], "question":"retrieval architecture"})
+        self.assertEqual(brief["current_decisions"][0]["citations"]["memory_id"], memory["id"])
+        self.assertIsNone(brief["recommendation"])
+
     def test_external_http_requires_token(self):
         with self.assertRaisesRegex(ValueError, "refusing external bind"): self.server.serve_http("0.0.0.0", 0)
 

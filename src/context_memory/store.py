@@ -1133,7 +1133,9 @@ class MemoryStore:
                 item["text"] = block
             else:
                 item.update({"status":m["status"], "type":m["type"], "title":m["title"], "content":m["content"],
-                             "source_event_ids":[s["id"] for s in m["sources"]], "truncated":False})
+                             "source_event_ids":[s["id"] for s in m["sources"]], "tags":json.loads(m["tags_json"]),
+                             "observed_at":m["observed_at"], "valid_from":m["valid_from"], "valid_until":m["valid_until"],
+                             "last_confirmed_at":m["last_confirmed_at"], "truncated":False})
             selected.append(item)
             selected_texts.append(comparable)
             used += len(block) + 2
@@ -1152,6 +1154,58 @@ class MemoryStore:
         if response_format == "legacy":
             result["context"] = "\n\n".join(i["text"] for i in selected)
         return result
+
+    def decision_context(self, project_id: str, question: str, char_budget: int = 6000,
+                         scope_id: str | None = None, discover_projects: bool = True) -> dict[str, Any]:
+        """Compose a cited, read-only Decision Brief from the existing retrieval path."""
+        context = self.get_context(
+            project_id, question, char_budget,
+            statuses=["active", "disputed", "proposed", "superseded", "rejected", "expired"],
+            scope_id=scope_id, discover_projects=discover_projects, response_format="compact",
+        )
+        sections: dict[str, list[dict[str, Any]]] = {
+            "current_decisions": [], "rationale": [], "constraints": [], "alternatives": [],
+            "outcomes": [], "history": [], "disputes": [], "open_questions": [],
+        }
+        citations: dict[str, dict[str, Any]] = {}
+        uncertain: list[dict[str, Any]] = []
+        for memory in context["items"]:
+            tags = {tag.casefold().replace("_", "-") for tag in memory.get("tags", [])}
+            entry = {
+                "claim": memory["content"], "title": memory["title"], "status": memory["status"],
+                "memory_type": memory["type"], "observed_at": memory.get("observed_at"),
+                "citations": {"memory_id": memory["memory_id"], "source_event_ids": memory["source_event_ids"]},
+            }
+            citations[memory["memory_id"]] = entry["citations"]
+            if memory["status"] == "disputed":
+                sections["disputes"].append(entry)
+            if memory["status"] == "proposed":
+                uncertain.append({**entry, "reason": "unreviewed_proposed_memory", "kind": "evidence_state"})
+            if "open-question" in tags or "question" in tags:
+                sections["open_questions"].append(entry)
+            elif "outcome" in tags or "observed-outcome" in tags:
+                sections["outcomes"].append(entry)
+            elif "alternative" in tags or memory["status"] == "rejected":
+                sections["alternatives"].append(entry)
+            elif "rationale" in tags or "reason" in tags:
+                sections["rationale"].append(entry)
+            elif memory["type"] == "constraint":
+                sections["constraints"].append(entry)
+            elif memory["type"] == "decision" and memory["status"] == "active":
+                sections["current_decisions"].append(entry)
+            if memory["type"] == "decision" and memory["status"] in {"active", "superseded", "rejected", "disputed"}:
+                sections["history"].append(entry)
+            if not memory["source_event_ids"]:
+                uncertain.append({**entry, "reason": "missing_source_event", "kind": "evidence_gap"})
+        sections["history"].sort(key=lambda item: (item["observed_at"] or "", item["citations"]["memory_id"]))
+        if not sections["current_decisions"]:
+            uncertain.append({"kind":"retrieval_gap", "reason":"no_current_decision_retrieved", "citations":None})
+        return {
+            "contract_version": "decision-brief/v1", "question": question, **sections,
+            "uncertainty": uncertain, "citation_index": citations,
+            "retrieval": context,
+            "recommendation": None,
+        }
 
     def get_policy(self, project_id: str) -> dict[str, Any]:
         item = self._row("SELECT * FROM project_policies WHERE project_id=?", (project_id,))
