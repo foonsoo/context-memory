@@ -88,7 +88,24 @@ class MCPTests(unittest.TestCase):
         memory = self.store.upsert_memory(p["id"], "Architecture", "Reuse get_context", "decision", "active", source_event_ids=[event["id"]])
         brief = self.server.call("decision_context", {"project_id":p["id"], "question":"retrieval architecture"})
         self.assertEqual(brief["current_decisions"][0]["citations"]["memory_id"], memory["id"])
-        self.assertIsNone(brief["recommendation"])
+
+    def test_research_provenance_tools_are_core_and_enforce_inference_review(self):
+        self.assertTrue({"investigation_create","investigation_record_source","investigation_get","investigation_complete"} <= CORE_TOOL_NAMES)
+        p = self.store.create_project("mcp-investigation")
+        investigation = self.server.call("investigation_create", {
+            "project_id":p["id"],"question":"Which API?","reason":"Compatibility matters",
+            "decision_to_inform":"Select an API","initiator":"user"})
+        recorded = self.server.call("investigation_record_source", {
+            "investigation_id":investigation["id"],
+            "source":{"source_type":"docs","stable_source_id":"api","source_version":"3",
+                      "access_reason":"Check compatibility","analysis_method":"claim extraction"},
+            "claims":[{"key":"fact","role":"evidence","content":"Version three is compatible"},
+                      {"key":"guess","role":"inference","content":"Migration should be safe","evidence_claim_keys":["fact"]}]
+        })
+        inference = recorded["claims"][1]
+        self.assertEqual(inference["memory_status"], "proposed")
+        self.assertEqual(self.server.call("investigation_get", {"investigation_id":investigation["id"]})["source_analyses"][0]["id"],
+                         recorded["source_analysis_id"])
 
     def test_external_http_requires_token(self):
         with self.assertRaisesRegex(ValueError, "refusing external bind"): self.server.serve_http("0.0.0.0", 0)

@@ -367,6 +367,71 @@ class StoreTests(unittest.TestCase):
         brief = self.store.decision_context(p["id"], "Vega export format", 3000)
         self.assertIn("missing_rationale", [item["reason"] for item in brief["uncertainty"]])
 
+    def test_research_provenance_records_cited_chain_and_source_versions(self):
+        p = self.store.create_project("research-chain")
+        investigation = self.store.create_investigation(
+            p["id"], "Which queue should billing use?", "Retries can duplicate charges",
+            "Select the billing queue", ["No external service"], "user", idempotency_key="intent-1")
+        source = {"source_type":"documentation","stable_source_id":"billing-queue-page",
+                  "canonical_uri":"https://example.invalid/billing","source_version":"v3",
+                  "access_reason":"Verify delivery guarantees","analysis_method":"manual claim extraction"}
+        claims = [
+            {"key":"evidence","role":"evidence","content":"The durable queue provides at-least-once delivery", "memory_status":"active"},
+            {"key":"inference","role":"inference","content":"Idempotent consumers are required", "evidence_claim_keys":["evidence"]},
+            {"key":"decision","role":"decision","content":"Use the durable queue for billing", "evidence_claim_keys":["evidence","inference"]},
+        ]
+        recorded = self.store.record_source_analysis(investigation["id"], source, claims)
+        chain = self.store.get_investigation(investigation["id"])
+        self.assertEqual(chain["contract_version"], "research-provenance/v1")
+        self.assertEqual(chain["investigation"]["constraints"], ["No external service"])
+        self.assertEqual([claim["role"] for claim in chain["source_analyses"][0]["claims"]],
+                         ["evidence", "inference", "decision"])
+        by_role = {claim["role"]: claim for claim in chain["source_analyses"][0]["claims"]}
+        self.assertEqual(self.store.get_source(by_role["evidence"]["event_id"])["source_uri"], source["canonical_uri"])
+        inference = self.store._row("SELECT * FROM memories WHERE id=?", (by_role["inference"]["memory_id"],))
+        self.assertEqual(inference["status"], "proposed")
+        self.assertEqual(by_role["decision"]["evidence"][0]["relation"], "informed")
+        repeated = self.store.record_source_analysis(investigation["id"], source, claims)
+        self.assertTrue(repeated["idempotent"])
+        self.assertEqual(repeated["source_analysis_id"], recorded["source_analysis_id"])
+        self.assertEqual([claim["claim_key"] for claim in repeated["claims"]], ["evidence", "inference", "decision"])
+        newer = self.store.record_source_analysis(investigation["id"], {**source,"source_version":"v4"}, claims)
+        self.assertNotEqual(newer["source_analysis_id"], recorded["source_analysis_id"])
+        completed = self.store.complete_investigation(investigation["id"])
+        self.assertEqual(completed["status"], "completed")
+        with self.assertRaisesRegex(ValueError, "completed"):
+            self.store.record_source_analysis(investigation["id"], {**source,"source_version":"v5"}, claims)
+
+    def test_research_provenance_rolls_back_invalid_claim_batch(self):
+        p = self.store.create_project("research-rollback")
+        investigation = self.store.create_investigation(p["id"], "Question", "Reason", "Decision", initiator="user")
+        source = {"source_type":"web","stable_source_id":"page","source_version":"1",
+                  "access_reason":"Research decision","analysis_method":"extract claims"}
+        with self.assertRaisesRegex(ValueError, "earlier claims"):
+            self.store.record_source_analysis(investigation["id"], source, [
+                {"key":"bad","role":"decision","content":"Choose it","evidence_claim_keys":["missing"]}
+            ])
+        self.assertEqual(self.store.get_investigation(investigation["id"])["source_analyses"], [])
+        self.assertEqual(self.store.conn.execute("SELECT count(*) FROM events WHERE project_id=?", (p["id"],)).fetchone()[0], 0)
+
+    def test_research_provenance_export_import_round_trip(self):
+        p = self.store.create_project("research-export")
+        investigation = self.store.create_investigation(p["id"], "Question", "Reason", "Decision", initiator="user")
+        self.store.record_source_analysis(investigation["id"], {
+            "source_type":"paper","stable_source_id":"paper-1","content_fingerprint":"sha256:abc",
+            "access_reason":"Compare options","analysis_method":"structured reading"
+        }, [{"key":"evidence","role":"evidence","content":"Observed result"}])
+        records = self.store.export_project(p["id"])
+        self.assertIn("source_analysis", {record["record_type"] for record in records})
+        other = MemoryStore(Path(self.temp.name) / "research-import.db")
+        try:
+            other.import_project(records)
+            restored = other.get_investigation(investigation["id"])
+            self.assertEqual(restored["source_analyses"][0]["stable_source_id"], "paper-1")
+            self.assertEqual(restored["source_analyses"][0]["claims"][0]["role"], "evidence")
+        finally:
+            other.close()
+
     def test_proposed_excluded_and_transitions_audited(self):
         p = self.store.create_project("demo")
         old = self.store.upsert_memory(p["id"], "Old port", "The port is 8000", "fact", "active")

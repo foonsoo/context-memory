@@ -426,6 +426,10 @@ The response places verified memory in `context`/`items` and unverified stream e
 
 Run `PYTHONPATH=src python3 benchmarks/run_decision_evaluation.py` to evaluate this contract against the frozen public Decision Brief scenarios. The report includes accuracy, stale leakage, citation and source recovery, history recall, payload size, and latency metrics.
 
+### Research-to-Decision provenance
+
+`investigation_create` records why a focused research question matters, the decision it will inform, constraints, initiator, and start time. `investigation_record_source` then atomically records one stable source identity and version (or privacy-safe analyzed-content fingerprint) plus only its consequential typed claims: evidence, inference, action, decision, rationale, or outcome. Every claim creates an immutable event and a cited memory; inference memories are always `proposed`, and causal claim links retain the exact evidence used. Repeating the same source identity and version returns the existing analysis, while a changed version creates new evidence. `investigation_get` reconstructs the complete chain and `investigation_complete` closes its lifecycle. The core stores concise analyzed claims and source metadata, never the full page or browsing log.
+
 ## Test and smoke test
 
 ```bash
