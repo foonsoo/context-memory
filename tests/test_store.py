@@ -414,6 +414,53 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(self.store.get_investigation(investigation["id"])["source_analyses"], [])
         self.assertEqual(self.store.conn.execute("SELECT count(*) FROM events WHERE project_id=?", (p["id"],)).fetchone()[0], 0)
 
+    def test_later_outcome_links_to_decision_and_brief_compares_results(self):
+        p = self.store.create_project("decision-outcome")
+        investigation = self.store.create_investigation(p["id"], "Ship the cache?", "Latency is high", "Release cache", initiator="user")
+        first = self.store.record_source_analysis(investigation["id"], {
+            "source_type":"benchmark","stable_source_id":"baseline","source_version":"1",
+            "access_reason":"Measure latency","analysis_method":"benchmark",
+        }, [
+            {"key":"baseline","role":"evidence","content":"p95 latency is 800 ms","memory_status":"active"},
+            {"key":"ship","role":"decision","content":"Ship the cache","expected_outcome":"p95 below 300 ms",
+             "evidence_claim_keys":["baseline"],"memory_status":"active"},
+        ])
+        decision = first["claims"][1]
+        second = self.store.record_source_analysis(investigation["id"], {
+            "source_type":"benchmark","stable_source_id":"followup","source_version":"1",
+            "access_reason":"Verify outcome","analysis_method":"benchmark",
+        }, [
+            {"key":"measured","role":"evidence","content":"p95 latency is 240 ms","memory_status":"active"},
+            {"key":"result","role":"outcome","content":"Latency fell to 240 ms","outcome_effect":"confirms",
+             "evidence_claim_keys":["measured"],"evidence_claim_refs":[{"source_analysis_id":first["source_analysis_id"],"claim_key":"ship"}],
+             "memory_status":"active"},
+        ])
+        chain = self.store.get_investigation(investigation["id"])
+        outcome = chain["source_analyses"][1]["claims"][1]
+        self.assertEqual({item["claim_key"] for item in outcome["evidence"]}, {"measured", "ship"})
+        brief = self.store.decision_context(p["id"], "cache latency", 6000)
+        comparison = brief["expected_vs_observed"][0]
+        self.assertEqual((comparison["expected_outcome"], comparison["observed_outcome"], comparison["effect"]),
+                         ("p95 below 300 ms", "Latency fell to 240 ms", "confirms"))
+        self.assertEqual(comparison["decision_citation"]["memory_id"], decision["memory_id"])
+        self.assertEqual(comparison["outcome_citation"]["memory_id"], second["claims"][1]["memory_id"])
+
+    def test_cross_analysis_claim_reference_must_stay_in_investigation(self):
+        p = self.store.create_project("isolated-investigations")
+        first = self.store.create_investigation(p["id"], "First?", "Reason", "Decision", initiator="user")
+        second = self.store.create_investigation(p["id"], "Second?", "Reason", "Decision", initiator="user")
+        prior = self.store.record_source_analysis(first["id"], {
+            "source_type":"test","stable_source_id":"one","source_version":"1",
+            "access_reason":"Test isolation","analysis_method":"fixture",
+        }, [{"key":"fact","role":"evidence","content":"First fact"}])
+        with self.assertRaisesRegex(ValueError, "existing claim in this investigation"):
+            self.store.record_source_analysis(second["id"], {
+                "source_type":"test","stable_source_id":"two","source_version":"1",
+                "access_reason":"Test isolation","analysis_method":"fixture",
+            }, [{"key":"decision","role":"decision","content":"Invalid decision",
+                 "evidence_claim_refs":[{"source_analysis_id":prior["source_analysis_id"],"claim_key":"fact"}]}])
+        self.assertEqual(self.store.get_investigation(second["id"])["source_analyses"], [])
+
     def test_research_provenance_export_import_round_trip(self):
         p = self.store.create_project("research-export")
         investigation = self.store.create_investigation(p["id"], "Question", "Reason", "Decision", initiator="user")

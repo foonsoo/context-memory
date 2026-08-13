@@ -20,6 +20,7 @@ TYPES = {"fact", "decision", "preference", "constraint", "procedure", "summary",
 STATUSES = {"proposed", "active", "superseded", "disputed", "expired", "rejected"}
 RELATIONS = {"supersedes", "disputes", "supports", "depends_on", "related_to"}
 INVESTIGATION_ROLES = {"evidence", "inference", "action", "decision", "rationale", "outcome"}
+OUTCOME_EFFECTS = {"confirms", "weakens", "disputes", "supersedes"}
 CHECKPOINT_MODES = {"interim", "final"}
 CHECKPOINT_REASONS = {"context_budget", "elapsed", "material_change", "completed", "manual"}
 DISCOVERY_MIN_CONFIDENCE = .45
@@ -430,16 +431,34 @@ class MemoryStore:
                 if role not in INVESTIGATION_ROLES or not isinstance(content, str) or not content.strip():
                     raise ValueError("each claim requires a valid role and non-empty content")
                 refs = claim.get("evidence_claim_keys", [])
+                external_refs = claim.get("evidence_claim_refs", [])
                 if not isinstance(refs, list) or any(ref not in created for ref in refs):
                     raise ValueError("evidence_claim_keys must reference earlier claims in this analysis")
-                if role in {"inference", "action", "decision", "rationale", "outcome"} and not refs:
-                    raise ValueError(f"{role} claims require evidence_claim_keys")
+                if not isinstance(external_refs, list):
+                    raise ValueError("evidence_claim_refs must be a list")
+                resolved_external = []
+                for ref in external_refs:
+                    if not isinstance(ref, dict) or not isinstance(ref.get("source_analysis_id"), str) or not isinstance(ref.get("claim_key"), str):
+                        raise ValueError("evidence_claim_refs require source_analysis_id and claim_key")
+                    prior = cx.execute("""SELECT c.* FROM investigation_claims c
+                      WHERE c.investigation_id=? AND c.source_analysis_id=? AND c.claim_key=?""",
+                      (investigation_id, ref["source_analysis_id"], ref["claim_key"])).fetchone()
+                    if not prior: raise ValueError("evidence_claim_refs must reference an existing claim in this investigation")
+                    resolved_external.append(dict(prior))
+                if role in {"inference", "action", "decision", "rationale", "outcome"} and not (refs or resolved_external):
+                    raise ValueError(f"{role} claims require evidence claim references")
+                expected_outcome, outcome_effect = claim.get("expected_outcome"), claim.get("outcome_effect")
+                if expected_outcome is not None and (role != "decision" or not isinstance(expected_outcome, str) or not expected_outcome.strip()):
+                    raise ValueError("expected_outcome is only valid as non-empty text on decision claims")
+                if outcome_effect is not None and (role != "outcome" or outcome_effect not in OUTCOME_EFFECTS):
+                    raise ValueError("outcome_effect is only valid on outcome claims")
                 event_id, claim_id = uid(), uid()
                 cursor = cx.execute("UPDATE project_event_cursors SET next_seq=next_seq+1 WHERE project_id=? RETURNING next_seq-1",
                                     (investigation["project_id"],)).fetchone()
-                evidence_events = [created[key]["event_id"] for key in refs]
+                evidence_events = [created[key]["event_id"] for key in refs] + [item["event_id"] for item in resolved_external]
                 metadata = {"investigation_id":investigation_id,"source_analysis_id":analysis_id,"claim_key":claim["key"],
-                            "role":role,"evidence_event_ids":evidence_events}
+                            "role":role,"evidence_event_ids":evidence_events,"expected_outcome":expected_outcome,
+                            "outcome_effect":outcome_effect}
                 event = {"id":event_id,"project_id":investigation["project_id"],"scope_id":investigation["scope_id"],
                          "session_id":session_id,"kind":"fact" if role in {"evidence","rationale","outcome"} else role,
                          "content":content.strip(),"source_uri":source_item["canonical_uri"],"metadata_json":canonical(metadata),
@@ -471,14 +490,21 @@ class MemoryStore:
                 self._audit(cx, investigation["project_id"], "memory", memory_id, "created", memory)
                 claim_item = {"id":claim_id,"investigation_id":investigation_id,"source_analysis_id":analysis_id,
                               "claim_key":claim["key"],"ordinal":ordinal,"role":role,"event_id":event_id,
-                              "memory_id":memory_id,"created_at":ts}
-                cx.execute("INSERT INTO investigation_claims VALUES(:id,:investigation_id,:source_analysis_id,:claim_key,:ordinal,:role,:event_id,:memory_id,:created_at)", claim_item)
+                              "memory_id":memory_id,"created_at":ts,"expected_outcome":expected_outcome.strip() if expected_outcome else None,
+                              "outcome_effect":outcome_effect}
+                cx.execute("""INSERT INTO investigation_claims(id,investigation_id,source_analysis_id,claim_key,ordinal,
+                  role,event_id,memory_id,created_at,expected_outcome,outcome_effect)
+                  VALUES(:id,:investigation_id,:source_analysis_id,:claim_key,:ordinal,:role,:event_id,:memory_id,
+                  :created_at,:expected_outcome,:outcome_effect)""", claim_item)
                 relation = "derived_from" if role == "inference" else "informed" if role in {"action","decision"} else "supports"
                 for ref in refs:
                     cx.execute("INSERT INTO investigation_claim_links VALUES(?,?,?,?)",
                                (created[ref]["id"],claim_id,relation,ts))
+                for prior in resolved_external:
+                    cx.execute("INSERT INTO investigation_claim_links VALUES(?,?,?,?)", (prior["id"],claim_id,relation,ts))
                 created[claim["key"]] = claim_item
-                result_claims.append({**claim_item,"evidence_claim_keys":refs,"memory_status":status})
+                result_claims.append({**claim_item,"evidence_claim_keys":refs,"evidence_claim_refs":external_refs,
+                                      "memory_status":status})
             response = {"contract_version":"research-provenance/v1","investigation_id":investigation_id,
                         "source_analysis_id":analysis_id,"identity_key":identity_key,"claims":result_claims,"idempotent":False}
             self._audit(cx, investigation["project_id"], "source_analysis", analysis_id, "recorded", response)
@@ -496,7 +522,7 @@ class MemoryStore:
             for claim in self.conn.execute("SELECT * FROM investigation_claims WHERE source_analysis_id=? ORDER BY ordinal", (analysis["id"],)):
                 item = dict(claim)
                 item["evidence"] = [dict(link) for link in self.conn.execute(
-                    """SELECT l.relation,c.claim_key,c.event_id,c.memory_id FROM investigation_claim_links l
+                    """SELECT l.relation,c.source_analysis_id,c.claim_key,c.event_id,c.memory_id FROM investigation_claim_links l
                     JOIN investigation_claims c ON c.id=l.from_claim_id WHERE l.to_claim_id=? ORDER BY c.claim_key""", (item["id"],))]
                 analysis["claims"].append(item)
             analyses.append(analysis)
@@ -1368,10 +1394,30 @@ class MemoryStore:
             uncertain.append({"kind":"evidence_gap", "reason":"missing_rationale", "citations":None})
         return {
             "contract_version": "decision-brief/v1", "question": question, **sections,
+            "expected_vs_observed": self._decision_outcome_comparisons(
+                [item["memory_id"] for item in context["items"]]
+            ),
             "uncertainty": uncertain, "citation_index": citations,
             "retrieval": context,
             "recommendation": None,
         }
+
+    def _decision_outcome_comparisons(self, retrieved_memory_ids: list[str]) -> list[dict[str, Any]]:
+        if not retrieved_memory_ids: return []
+        placeholders = ",".join("?" for _ in retrieved_memory_ids)
+        rows = self.conn.execute(f"""SELECT d.memory_id decision_memory_id,d.expected_outcome,
+          o.memory_id outcome_memory_id,o.outcome_effect,om.content observed_outcome,
+          d.event_id decision_event_id,o.event_id outcome_event_id
+          FROM investigation_claim_links l
+          JOIN investigation_claims d ON d.id=l.from_claim_id AND d.role='decision'
+          JOIN investigation_claims o ON o.id=l.to_claim_id AND o.role='outcome'
+          JOIN memories om ON om.id=o.memory_id
+          WHERE (d.memory_id IN ({placeholders}) OR o.memory_id IN ({placeholders}))
+          ORDER BY o.created_at,o.id""", (*retrieved_memory_ids, *retrieved_memory_ids))
+        return [{"expected_outcome":row["expected_outcome"],"observed_outcome":row["observed_outcome"],
+                 "effect":row["outcome_effect"],"decision_citation":{"memory_id":row["decision_memory_id"],
+                 "source_event_ids":[row["decision_event_id"]]},"outcome_citation":{"memory_id":row["outcome_memory_id"],
+                 "source_event_ids":[row["outcome_event_id"]]}} for row in rows]
 
     def get_policy(self, project_id: str) -> dict[str, Any]:
         item = self._row("SELECT * FROM project_policies WHERE project_id=?", (project_id,))
@@ -1664,7 +1710,7 @@ class MemoryStore:
             "memory_source": ("memory_sources", ["memory_id","event_id","note","created_at"]),
             "investigation": ("investigations", ["id","project_id","scope_id","question","reason","decision_to_inform","constraints_json","initiator","status","started_at","completed_at"]),
             "source_analysis": ("source_analyses", ["id","investigation_id","source_type","stable_source_id","canonical_uri","source_version","source_updated_at","retrieved_at","section_anchor","access_reason","analysis_method","content_fingerprint","identity_key","created_at"]),
-            "investigation_claim": ("investigation_claims", ["id","investigation_id","source_analysis_id","claim_key","ordinal","role","event_id","memory_id","created_at"]),
+            "investigation_claim": ("investigation_claims", ["id","investigation_id","source_analysis_id","claim_key","ordinal","role","event_id","memory_id","created_at","expected_outcome","outcome_effect"]),
             "investigation_claim_link": ("investigation_claim_links", ["from_claim_id","to_claim_id","relation","created_at"]),
             "memory_usage": ("memory_usage", ["memory_id","retrieved_count","used_count","helpful_count","incorrect_count","last_retrieved_at","last_used_at","updated_at"]),
             "review_conflict": ("review_conflicts", ["candidate_memory_id","existing_memory_id","similarity","reason","created_at"]),
@@ -1683,6 +1729,9 @@ class MemoryStore:
                     imported_event_seq += 1
                     data["event_seq"] = data.get("event_seq") or imported_event_seq
                 if kind == "memory": data.setdefault("visibility", "project")
+                if kind == "investigation_claim":
+                    data.setdefault("expected_outcome", None)
+                    data.setdefault("outcome_effect", None)
                 if kind == "audit":
                     names = ["project_id","entity_type","entity_id","action","snapshot_json","created_at"]
                     cx.execute(f"INSERT INTO audit_log({','.join(names)}) VALUES({','.join('?' for _ in names)})", tuple(data[name] for name in names))
