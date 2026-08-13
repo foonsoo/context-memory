@@ -1,48 +1,122 @@
 # Roadmap
 
-## Near term
+## Product direction
 
-### Implemented — Craft Agents durable-kind contract
+Context Memory is evolving into a provenance-aware **Decision Wiki**. Its primary job is not to archive documents. It should reconstruct the decisions, rationale, constraints, alternatives, outcomes, and unresolved questions relevant to a user's current choice.
 
-- Closed the Craft Agents durable-kind contract gap without restricting the append-only event vocabulary. Promotable kinds now come from one code constant shared by extraction, MCP guidance, generated client instructions, and synchronization tests. Session-bound arbitrary kinds remain accepted and return an additive advisory that is stable on idempotent replay. The repository owns synchronized `AGENTS.md` and Craft `guide.md` templates; `init` emits the complete contract, portable MCP JSON, exact `sources/context-memory/guide.md` installation path, manual status, and the seven kinds. Local inspection of the installed Craft Agents 0.10.0 bundle confirmed that source guides use `guide.md` and are required before the first API call and after compaction. The Craft-style regression records `task` and `todo`, verifies the advisory, and extracts only the sourced task candidate. Existing accidental kinds are preserved and documented with append-only recovery guidance.
+The core remains client-neutral and evidence-ledger-first:
 
-- Startup-footprint check: the serialized core tool catalog increased from 10,619 to 10,818 characters, an additive 199 characters (+1.874%), due to the explicit `record_event` contract. This is a dependency-free catalog proxy, not a model-token claim.
+```text
+Accessible source, conversation, or repository state
+  -> immutable evidence events
+  -> reviewed atomic memories
+  -> topic-oriented Decision Wiki revisions
+  -> query-specific Decision Brief
+```
 
-The delivered increments were:
-  1. Define the promotable durable kinds once in code (`fact`, `decision`, `preference`, `constraint`, `procedure`, `task`, `summary`) and reuse that source for session-end candidate extraction, MCP tool guidance, generated client instructions, and tests so documentation cannot drift from behavior.
-  2. Add a repository-owned Craft `guide.md` instruction template and keep the shared `AGENTS.md` contract synchronized with it. Confirm the installed Craft client loads `guide.md` before claiming automatic delivery. Include the complete startup, evidence, promotion/review, secret-handling, and session-end contract.
-  3. Expand the `record_event` tool description with the promotable list and clarify that other kinds remain valid immutable events but are not automatically converted to proposed memories. Measure the resulting core tool-catalog character/token delta so the earlier startup-footprint work is not silently regressed.
-  4. Return an additive, non-fatal `promotion`/warning field when a recorded session event uses a non-promotable kind. Preserve arbitrary kinds such as `message`, `deployment`, and `benchmark`; do not introduce a schema enum or reject writes. Make idempotent replay responses consistent with first-write responses.
-  5. Include the complete generated contract and template installation instructions in `init --client craft` and `init --clients ...craft` output, with regression tests proving the seven kinds, manual status, portable MCP JSON, and contract stay synchronized.
-  6. Add an end-to-end regression: a Craft-style session records `task` and a non-promotable `todo`, receives the appropriate advisory, and `session_end` creates only the sourced `task` candidate. Document recovery/migration guidance for already-recorded `todo` events rather than silently rewriting immutable history.
+External clients may read Confluence or another source with the user's existing access. The core stores useful analyzed claims and source identity/version metadata, not uploaded files, page replicas, or OCR output. SQLite events and memories remain authoritative; Wiki content is a cited, rebuildable projection.
 
-### Other near-term work
+## Priority order
 
-- Implemented token-footprint optimization: `context_bootstrap` preserves the legacy resolve/start/context tools while reducing normal startup from three model-mediated calls to one; stdio servers expose a smaller working profile by default with explicit `admin` and backward-compatible `all` profiles; shared workflow guidance remains in `initialize.instructions`; and `get_context(response_format=compact)` returns exact stored fields and provenance once, with explicit truncation signals and the unchanged legacy response still available. A deterministic five-memory fixture reduced advertised tool JSON by 39.8% and context response JSON by 18.0%; these are dependency-free character proxies, while the call count fell 66.7%. `benchmarks/analyze_codex_tokens.py` extracts privacy-safe counters from explicitly selected Codex rollout logs, supports both literal and dynamically orchestrated MCP calls, and rejects mixed startup sequences. Its experiment manifest pins a frozen snapshot digest, requires exactly one completed bootstrap and legacy sequence per pair, separates cache strata, and reports paired total/cached/uncached delta distributions. `benchmarks/run_codex_token_experiment.py` creates that synthetic snapshot, gives every run a private copy, executes balanced cold/warm pairs, immediately rejects uncontrolled tool sequences, retries them, and writes provenance without copying prompts or tool results into the manifest. The balanced six-pair result in `benchmarks/results/codex-token-balanced-2026-08-12.json` reduced total input tokens in every pair: median deltas were -36,775 cold and -34,289 warm. Uncached deltas varied in sign in one of three pairs per stratum but had medians of -3,956 cold and -4,081 warm. Keep `context_bootstrap` as the normal startup policy. These whole-turn counters still include prompt and orchestration effects and are not isolated marginal tool costs.
+### P0 — Decision Brief contract and evaluation
 
-- Continue expanding cross-project discovery calibration scenarios as real workloads reveal new vocabulary and ambiguity shapes. The deterministic 12-domain calibration fixture now validates strong, dominant, low-confidence, and ambiguous selection over more than 1,200 memories; the existing `.45` minimum, `.60` dominant, and `.12` margin thresholds passed without adjustment. Normalized relevance, bounded path/name identity priors, recency, dominant-candidate selection, explicit low-confidence/ambiguity results, global-memory merging, and sparse-project fallback are implemented.
-- Add client-neutral automatic handoff checkpoints. MCP 2026-07-28 Tasks can make an explicitly invoked checkpoint observable but cannot detect completion of the host agent's overall work item. Implement the feature in these increments:
-  1. Implemented: one idempotent `checkpoint_create` store operation, MCP tool, and CLI command with `mode=interim|final` and reasons `context_budget`, `elapsed`, `material_change`, `completed`, and `manual`. The explicit primitive records caller-supplied recovery state and does not mutate Git, memories, or session lifecycle.
-  2. Implemented: persist an immutable checkpoint event containing the current goal, completed work, next executable step, blockers, source event cursor, optional client-reported context usage, captured HEAD/branch/dirty state/changed files, and explicitly supplied structured test results. Objective evidence is stored under `objective`, separate from unverified semantic summaries.
-  3. Implemented: configurable client-reported context thresholds with a soft checkpoint near 60% after material change and a hard checkpoint near 75%. The read-only `checkpoint_evaluate` policy engine uses client-neutral elapsed-time, durable-event-count, repository-change, and last-checkpoint-age fallbacks when usage is unavailable.
-  4. Implemented: configurable cooldown and context-usage hysteresis, deterministic recovery-state hashing, and stable suggested idempotency keys prevent repeated prompts or hooks from creating checkpoint storms. Evaluation skips checkpoints when no recoverable state changed.
-  5. Implemented: interim checkpoints are non-mutating to Git and non-terminal for the memory session. They reject `reason=completed` and ended sessions, store explicit false completion/verification claims, and preserve inferred summaries without promoting them to active memory.
-  6. Implemented: final checkpoints atomically link verified event evidence into a new active handoff, replace a specified previous active handoff, close the active memory session, and verify and record an already-created commit when supplied. Repository commits remain an explicit agent/CLI workflow step rather than an implicit MCP server side effect.
-  7. Implemented: optional client lifecycle hooks evaluate portable triggers and call the same core checkpoint operation. A dependency-free Tasks host adapter maps `working`/`completed`/`failed` status publication to that operation while leaving protocol negotiation, polling, and cancellation to the opt-in host. Stored semantics, fallback triggers, and recovery remain usable without Codex-, Claude-, Cursor-, or vendor-specific SDKs.
-  8. Implemented: crash/restart recovery, concurrent-client idempotency, missing-usage fallbacks, exact threshold/cooldown persistence, transactional provenance rollback, and installed-wheel process-restart E2E coverage.
-- Implemented optional encrypted backup envelopes and scheduled maintenance: AES-256-GCM/scrypt encryption is an opt-in dependency and scheduler invocations use persisted due-time/run state without requiring a resident daemon. Online consistent snapshots, policy-based retention, and checkpointed audit compaction remain the underlying primitives.
-- Implemented offline audit-checkpoint verification/export plus optional detached Ed25519 anchors. A signed anchor authenticates the project/head-digest/timestamp tuple, can be verified without the source database, and binds full offline chain verification to a public key distributed through a separate trusted channel.
-- Implemented optional durable per-client cursor receipts and message acknowledgement/expiry policy. Stateless cursor polling remains available; durable polling redelivers until an exact stream cursor is acknowledged, and policy-based message expiry hides stale coordination without deleting immutable evidence.
-- Expand cursor pagination beyond the MCP tool catalog when additional unbounded list endpoints are introduced. Tool arguments are validated against their advertised JSON Schemas and `tools/list` is cursor-paginated.
-- Keep official MCP SDK conformance and concurrent multi-client stdio E2E coverage current as SDK protocol support evolves. The installed-wheel CI test covers SDK initialization, paginated tool discovery, structured tool calls, JSON-RPC validation errors, and two simultaneous clients sharing one WAL database.
-- Add direct registration adapters when Craft Agents and other workspace-scoped clients publish stable non-interactive configuration APIs. Portable JSON and guided setup are implemented.
+Prove that the system helps a user make a better current choice before adding a persistent Wiki schema.
 
-## Optional retrieval improvements
+1. Define a structured Decision Brief containing:
+   - the question being decided;
+   - current applicable decisions;
+   - rationale and constraints;
+   - alternatives previously considered;
+   - observed outcomes and trade-offs;
+   - chronological changes and superseded decisions;
+   - disputes, uncertainty, missing evidence, and open questions;
+   - exact source event and memory citations.
+2. Add a read-only `decision_context` operation that composes this evidence bundle from current retrieval and graph primitives. The server must not generate an uncited recommendation or promote model output.
+3. Keep `get_context` backward compatible. Reuse its character/item budgets, project discovery, lifecycle filtering, and inspectable ranking instead of building a second search stack.
+4. Create versioned synthetic decision scenarios covering changed decisions, conflicting evidence, rejected alternatives, outcome feedback, missing rationale, and stale external sources.
+5. Measure current-decision accuracy, stale-decision leakage, unsupported-claim rate, source recovery, useful-history recall, context size, and p50/p95 latency. Do not tune retrieval globally until a failure is demonstrated by these scenarios.
 
-- Initial optional-neural evaluation implemented: an explicit sentence-transformers adapter preserves the dependency-free default and `CONTEXT_MEMORY_EMBEDDINGS=off`. A fixed 12-memory/18-query fixture compares FTS-only, local-hash, and neural Recall@5/MRR, negative-query result rate, indexing/query latency, and database size. The runner also accepts a validated external relevance-judgment fixture, labels its report as external without copying fixture content into metadata, and reports negative-query semantic similarities for false-result analysis. The first measured multilingual MiniLM run improved Recall@5/MRR over the baselines but cost roughly two orders of magnitude more query latency; retain `local-hash` as the default until a private personal-memory fixture has been measured and reviewed.
-- Tune reciprocal-rank fusion, confirmation-freshness decay, deduplication threshold, and feedback weights on larger personal-memory relevance fixtures. The projection, inspectable score components, conservative importance adjustment, and near-duplicate context filtering are implemented.
-- Evaluate stronger deterministic and optional model-assisted conflict classification. Session-end extraction of explicitly typed evidence into `proposed` memories, similarity-based conflict flags, and MCP review actions are implemented.
+**Exit gate:** a Decision Brief reconstructs the correct current decision and material history with citations, while clearly separating evidence from inference and uncertainty.
 
-## Deliberately out of scope for the MVP
+### P1 — External source-analysis evidence contract
 
-Multi-user authorization, remote synchronization, automatic secret detection, CRDT conflict resolution, and autonomous promotion to `active` need a larger security and correctness design.
+Make analysis of accessible pages durable without turning Context Memory into a document store or connector platform.
+
+1. Standardize optional event metadata for `source_type`, stable source/page ID, canonical URI, source version, source updated time, retrieval time, section/anchor, and analysis method.
+2. Distinguish source-explicit claims, concise excerpts when needed for verification, and agent inference. Inference remains proposed until verified.
+3. Define idempotency and change detection from stable source identity plus version or a privacy-safe analyzed-content fingerprint. A changed page creates new evidence; it never rewrites an old event.
+4. Add helpers for recording several typed claims from one analyzed source while preserving a shared source reference and transactional provenance.
+5. Document the client workflow: read with an authorized connector/browser, analyze in the client, record only durable decision-relevant claims, and retain the external URI for reinspection.
+
+**Exit gate:** two analyses of the same source version are idempotent, a newer version is distinguishable, and every promoted memory can recover its source identity without storing the full page.
+
+### P2 — Topic Wiki projection and revision lifecycle
+
+Add durable, human-readable synthesis only after the Decision Brief contract is useful.
+
+1. Introduce topic-oriented Wiki pages and immutable revisions with `proposed`, `published`, `stale`, and `rejected` states.
+2. Link each material Wiki claim or section to source memories/events. Store generation metadata without making the generator authoritative.
+3. Define a standard page shape: current position, why it exists, governing constraints, considered alternatives, trade-offs, decision timeline, observed outcomes, and open questions.
+4. Mark affected published revisions stale when a cited memory is superseded, disputed, expired, or materially corrected. Never silently rewrite a published revision.
+5. Render Markdown as a portable view/export. SQLite remains authoritative; generated Markdown is not a second writable source of truth.
+6. Keep manually authored notes separate from generated sections so regeneration cannot overwrite user content.
+
+**Exit gate:** a topic page can be regenerated from cited current memories, retains revision history, and becomes stale deterministically when its evidence changes.
+
+### P3 — Decision Wiki lint and review
+
+1. Detect missing citations, missing sources, citations to terminal memories, unresolved disputes, stale page revisions, and current memories omitted from a relevant page.
+2. Detect unsupported recommendations and require them to be labeled as inference rather than evidence.
+3. Report source-version age as a reinspection prompt, not as proof that an external page changed. The core must not claim freshness it cannot verify.
+4. Integrate lint findings into the existing review queue and explicit approve/reject/supersede/dispute workflow instead of creating an unrelated review system.
+5. Make lint deterministic where possible. Optional model-assisted checks must be separately labeled and must not change active state autonomously.
+
+**Exit gate:** known stale, contradicted, or unsupported Wiki claims are surfaced before a Decision Brief presents them as current guidance.
+
+### P4 — Source revalidation and client adapters
+
+1. Let a client request reinspection when a cited external source is old, unavailable, or known to have a newer version.
+2. Add thin client examples for Confluence-like pages only after the generic source-analysis contract is stable.
+3. Keep authorization, page retrieval, and vendor-specific APIs outside the core server. Add direct adapters only when a stable non-interactive client API exists and real use demonstrates repeated manual friction.
+
+**Exit gate:** a client can refresh relevant evidence without granting the core persistent access to an external knowledge system.
+
+### P5 — Human navigation and export
+
+Add browsing, backlinks, topic indexes, and richer Markdown export only after real Decision Wiki revisions exist. A review UI is useful here but is not a prerequisite for P0–P3.
+
+## Existing work: overlap and disposition
+
+| Existing area | Decision Wiki relationship | Disposition |
+|---|---|---|
+| Immutable events, provenance, lifecycle states, review actions | Authoritative foundation | Retain unchanged |
+| `get_context`, FTS/local-hash ranking, aliases, graph traversal | Retrieval foundation for Decision Briefs | Reuse; extend rather than duplicate |
+| Cross-project discovery calibration | Helps locate prior context from another checkout/project | Retain as a safety regression; expand only for demonstrated Decision Brief failures |
+| Optional neural embeddings and ranking tuning | May improve paraphrase recall | Defer new tuning until the Decision Wiki benchmark identifies a retrieval gap |
+| Conflict classification | Directly supports decision history and lint | Fold into P0/P3 scenarios; avoid a separate parallel workstream |
+| Session-end extraction and review queue | Produces reviewed atomic memories | Reuse; do not auto-publish Wiki revisions from unreviewed output |
+| Interim/final checkpoints and handoffs | Work recovery rather than durable knowledge synthesis | Keep as completed infrastructure; exclude checkpoints from topic Wiki unless explicitly cited |
+| Craft durable-kind contract and client templates | Portable evidence workflow | Keep as completed infrastructure; update templates only when the source-analysis contract stabilizes |
+| Token-footprint optimization | Protects bounded startup/query cost | Keep the existing baseline and add Decision Brief payload measurements |
+| Backup, audit anchors, maintenance, cursor receipts | Operational foundation | Keep; no active roadmap expansion unless a Decision Wiki schema requires migration/export coverage |
+| Direct registration adapters | Unrelated to validating Decision Wiki value | Defer |
+
+There is no architectural conflict between the current evidence ledger and the Decision Wiki. The principal risk is creating a second authoritative knowledge store. This roadmap avoids that by making Wiki revisions cited projections over events and memories.
+
+## Removed from the active roadmap
+
+- Uploaded document/file storage, binary asset management, OCR, and general-purpose document ingestion.
+- A server-owned Confluence crawler or persistent vendor credentials.
+- An independently indexed Wiki search stack that duplicates `get_context`.
+- Uncited free-form Wiki generation or autonomous publication/promotion to active state.
+- Broad embedding, ranking, or discovery tuning without a failing decision-quality scenario.
+- Early Wiki UI work before the Decision Brief, revision, and lint contracts are validated.
+- Repeating detailed implementation histories for completed Craft, checkpoint, token, backup, and audit work in the active roadmap; Git history and release notes are the appropriate record.
+
+## Completed baseline
+
+The repository already provides the prerequisites this plan builds on: compact `context_bootstrap`, immutable sequenced events, evidence-linked memory states, explicit review and conflict actions, bounded FTS/local-hash retrieval, optional neural evaluation, aliases and verified graph edges, cross-project discovery, client-neutral interim/final checkpoints, Craft workflow guidance, consistent backup, audit verification/anchors, maintenance, and durable cursor receipts. These are maintained as tested infrastructure rather than competing roadmap priorities.
+
+## Still out of scope
+
+Multi-user authorization, continuous remote synchronization, CRDT editing, autonomous promotion to `active`, automatic secret detection, and trusting provenance as proof that an external source is correct require separate security or correctness designs.
