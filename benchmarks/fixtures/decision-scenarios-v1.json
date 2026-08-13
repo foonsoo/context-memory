@@ -54,6 +54,60 @@
         {"key": "stale", "title": "Stale Nimbus documentation", "content": "The cited Nimbus compatibility page is stale and requires reinspection", "type": "fact", "status": "disputed", "source_uri": "https://example.invalid/nimbus-v2"}
       ],
       "expected": {"current_decisions": ["decision"], "disputes": ["stale"], "history": ["decision"]}
+    },
+    {
+      "id": "negative-irrelevant-question",
+      "question": "How should a brass quartet tune before a concert?",
+      "memories": [
+        {"key": "unrelated", "title": "Database maintenance", "content": "Vacuum the ledger database after archival", "type": "procedure", "status": "active"}
+      ],
+      "relevant": [],
+      "expected": {"current_decisions": [], "history": [], "uncertainty_reasons": ["no_current_decision_retrieved"]}
+    },
+    {
+      "id": "lexical-paraphrase",
+      "question": "Which checkout retry policy prevents duplicate charges?",
+      "memories": [
+        {"key": "decision", "title": "Checkout retry choice", "content": "Use idempotent checkout retries to prevent duplicate payment charges", "type": "decision", "status": "active"},
+        {"key": "rationale", "title": "Retry rationale", "content": "Idempotent retry keys prevent duplicate checkout charges after a timeout", "type": "fact", "status": "active", "tags": ["rationale"]}
+      ],
+      "relevant": ["decision"],
+      "expected": {"current_decisions": ["decision"], "rationale": ["rationale"], "history": ["decision"]}
+    },
+    {
+      "id": "duplicate-summaries",
+      "question": "Which Cedar export format is current?",
+      "memories": [
+        {"key": "decision", "title": "Cedar export decision", "content": "Use Arrow IPC for the Cedar export format", "type": "decision", "status": "active"},
+        {"key": "summary-a", "title": "Cedar summary A", "content": "Use Arrow IPC for the Cedar export format", "type": "summary", "status": "active"},
+        {"key": "summary-b", "title": "Cedar summary B", "content": "Use Arrow IPC for the Cedar export format", "type": "summary", "status": "active"}
+      ],
+      "relevant": ["decision"],
+      "expected": {"current_decisions": ["decision"], "history": ["decision"]}
+    },
+    {
+      "id": "large-current-versus-superseded",
+      "question": "Which Juniper retention period is current?",
+      "distractor_count": 120,
+      "memories": [
+        {"key": "old", "title": "Old Juniper retention", "content": "Retain Juniper audit records for thirty days", "type": "decision", "status": "superseded", "observed_at": "2025-01-01T00:00:00+00:00"},
+        {"key": "current", "title": "Current Juniper retention", "content": "Retain Juniper audit records for ninety days", "type": "decision", "status": "active", "observed_at": "2026-01-01T00:00:00+00:00"}
+      ],
+      "relevant": ["current"],
+      "expected": {"current_decisions": ["current"], "history": ["old", "current"], "excluded_current": ["old"]}
+    },
+    {
+      "id": "cross-project-ambiguity",
+      "question": "Which Falcon deployment window is approved?",
+      "memories": [
+        {"key": "local", "title": "Unrelated local note", "content": "The local project tracks garden irrigation", "type": "fact", "status": "active"}
+      ],
+      "other_projects": [
+        {"name": "falcon-east", "memories": [{"title": "Falcon east window", "content": "Approve the Falcon deployment window on Tuesday", "type": "decision", "status": "active"}]},
+        {"name": "falcon-west", "memories": [{"title": "Falcon west window", "content": "Approve the Falcon deployment window on Thursday", "type": "decision", "status": "active"}]}
+      ],
+      "relevant": [],
+      "expected": {"current_decisions": [], "history": [], "uncertainty_reasons": ["no_current_decision_retrieved"]}
     }
   ]
 }
