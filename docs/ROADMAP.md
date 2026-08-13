@@ -38,17 +38,22 @@ Prove that the system helps a user make a better current choice before adding a 
 
 **Exit gate:** a Decision Brief reconstructs the correct current decision and material history with citations, while clearly separating evidence from inference and uncertainty.
 
-### P1 — External source-analysis evidence contract
+### P1 — Research-to-Decision provenance contract
 
-Make analysis of accessible pages durable without turning Context Memory into a document store or connector platform.
+Make the consequential path from a research question to a decision durable without turning Context Memory into a document store, browsing log, or connector platform.
 
-1. Standardize optional event metadata for `source_type`, stable source/page ID, canonical URI, source version, source updated time, retrieval time, section/anchor, and analysis method.
-2. Distinguish source-explicit claims, concise excerpts when needed for verification, and agent inference. Inference remains proposed until verified.
-3. Define idempotency and change detection from stable source identity plus version or a privacy-safe analyzed-content fingerprint. A changed page creates new evidence; it never rewrites an old event.
-4. Add helpers for recording several typed claims from one analyzed source while preserving a shared source reference and transactional provenance.
-5. Document the client workflow: read with an authorized connector/browser, analyze in the client, record only durable decision-relevant claims, and retain the external URI for reinspection.
+1. Define an `investigation_id`-centered chain with explicit stages: research question and reason, consulted sources and access reason, extracted evidence, agent inference, resulting action, decision and rationale, and later observed outcome.
+2. Record selectively. Preserve only research that materially informed an action or decision; do not capture every search query, page visit, browser interaction, or full source page.
+3. Standardize investigation intent: the question being answered, why it matters, the decision it is expected to inform, relevant constraints, initiator, and start/completion times.
+4. Standardize optional source metadata for `source_type`, stable source/page ID, canonical URI, source version, source updated time, retrieval time, section/anchor, reason for access, and analysis method.
+5. Distinguish source-explicit claims, concise excerpts when needed for verification, and agent inference. Inferences carry confidence and exact evidence links and remain proposed until verified.
+6. Link actions and decisions to the evidence and inference that motivated them. A decision records selected option, alternatives considered, rationale, governing constraints, and unresolved uncertainty; an action records what changed or was produced.
+7. Allow later outcomes to confirm, weaken, dispute, or supersede the original decision without rewriting its historical evidence. Decision Briefs should be able to compare the expected and observed result.
+8. Define idempotency and change detection from stable source identity plus version or a privacy-safe analyzed-content fingerprint. A changed page creates new evidence; it never rewrites an old event.
+9. Add a transactional helper for recording several typed claims from one analyzed source under one investigation while preserving shared source provenance and causal links.
+10. Document the client workflow: read with an authorized connector/browser, analyze in the client, record decision-relevant claims and their role in the investigation, and retain the external URI for reinspection.
 
-**Exit gate:** two analyses of the same source version are idempotent, a newer version is distinguishable, and every promoted memory can recover its source identity without storing the full page.
+**Exit gate:** the system can answer why a source was consulted, what was learned, how evidence differed from inference, what action and decision followed, and what outcome was later observed. Two analyses of the same source version are idempotent, a newer version is distinguishable, and every promoted memory can recover its investigation and source identity without storing the full page.
 
 ### P2 — Topic Wiki projection and revision lifecycle
 
