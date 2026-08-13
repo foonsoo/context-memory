@@ -541,6 +541,170 @@ class MemoryStore:
         result["constraints"] = json.loads(result.pop("constraints_json"))
         return result
 
+    def create_wiki_page(self, project_id: str, topic: str, title: str, scope_id: str | None = None,
+                         idempotency_key: str | None = None) -> dict[str, Any]:
+        request = {"project_id":project_id,"topic":topic,"title":title,"scope_id":scope_id}
+        if hit := self._idem("create_wiki_page", idempotency_key, request): return hit
+        if not topic.strip() or not title.strip(): raise ValueError("topic and title cannot be empty")
+        if not self._row("SELECT id FROM projects WHERE id=?", (project_id,)): raise KeyError("project not found")
+        if scope_id and not self._row("SELECT id FROM scopes WHERE id=? AND project_id=?", (scope_id,project_id)):
+            raise ValueError("scope must belong to project")
+        ts = now(); item = {"id":uid(),"project_id":project_id,"scope_id":scope_id,"topic":topic.strip(),
+                            "title":title.strip(),"manual_notes":"","created_at":ts,"updated_at":ts}
+        with self.tx() as cx:
+            cx.execute("INSERT INTO wiki_pages VALUES(:id,:project_id,:scope_id,:topic,:title,:manual_notes,:created_at,:updated_at)", item)
+            self._audit(cx, project_id, "wiki_page", item["id"], "created", item)
+            self._save_idem(cx, "create_wiki_page", idempotency_key, request, item)
+        return item
+
+    def set_wiki_notes(self, page_id: str, manual_notes: str) -> dict[str, Any]:
+        page = self._row("SELECT * FROM wiki_pages WHERE id=?", (page_id,))
+        if not page: raise KeyError("wiki page not found")
+        ts = now()
+        with self.tx() as cx:
+            cx.execute("UPDATE wiki_pages SET manual_notes=?,updated_at=? WHERE id=?", (manual_notes,ts,page_id))
+            result = {**page,"manual_notes":manual_notes,"updated_at":ts}
+            self._audit(cx, page["project_id"], "wiki_page", page_id, "manual_notes_updated",
+                        {"length":len(manual_notes),"updated_at":ts})
+        return result
+
+    @staticmethod
+    def _wiki_sections(brief: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "current_position":brief["current_decisions"], "why_it_exists":brief["rationale"],
+            "governing_constraints":brief["constraints"], "considered_alternatives":brief["alternatives"],
+            "trade_offs":brief["expected_vs_observed"], "decision_timeline":brief["history"],
+            "observed_outcomes":brief["outcomes"], "open_questions":brief["open_questions"],
+        }
+
+    def generate_wiki_revision(self, page_id: str, question: str, char_budget: int = 6000,
+                               generation_metadata: dict[str, Any] | None = None,
+                               idempotency_key: str | None = None) -> dict[str, Any]:
+        request = {"page_id":page_id,"question":question,"char_budget":char_budget,
+                   "generation_metadata":generation_metadata or {}}
+        if hit := self._idem("generate_wiki_revision", idempotency_key, request): return hit
+        page = self._row("SELECT * FROM wiki_pages WHERE id=?", (page_id,))
+        if not page: raise KeyError("wiki page not found")
+        if not question.strip(): raise ValueError("question cannot be empty")
+        brief = self.decision_context(page["project_id"], question.strip(), char_budget, page["scope_id"], False)
+        sections = self._wiki_sections(brief)
+        cited_entries: list[tuple[str, int, str, str]] = []
+        for section_name, entries in sections.items():
+            for ordinal, entry in enumerate(entries):
+                citation_groups = []
+                if isinstance(entry, dict) and entry.get("citations"): citation_groups.append(entry["citations"])
+                if isinstance(entry, dict):
+                    citation_groups.extend(entry[key] for key in ("decision_citation","outcome_citation") if entry.get(key))
+                for citation in citation_groups:
+                    for event_id in citation.get("source_event_ids", []):
+                        cited_entries.append((section_name,ordinal,citation["memory_id"],event_id))
+        if not cited_entries: raise ValueError("wiki revision requires at least one cited memory event")
+        metadata = {"contract_version":"topic-wiki/v1","generator":"decision_context",
+                    "decision_brief_contract":brief["contract_version"],"retrieval_used":brief["retrieval"]["used"],
+                    "caller":generation_metadata or {}}
+        ts = now(); revision_id = uid()
+        with self.tx() as cx:
+            revision_no = cx.execute("SELECT coalesce(max(revision_no),0)+1 FROM wiki_revisions WHERE page_id=?", (page_id,)).fetchone()[0]
+            item = {"id":revision_id,"page_id":page_id,"revision_no":revision_no,"status":"proposed",
+                    "question":question.strip(),"sections_json":canonical(sections),"generation_json":canonical(metadata),
+                    "created_at":ts,"published_at":None,"stale_reason":None}
+            cx.execute("""INSERT INTO wiki_revisions VALUES(:id,:page_id,:revision_no,:status,:question,:sections_json,
+              :generation_json,:created_at,:published_at,:stale_reason)""", item)
+            for section_name, ordinal, memory_id, event_id in cited_entries:
+                source = cx.execute("""SELECT m.project_id FROM memory_sources s JOIN memories m ON m.id=s.memory_id
+                  JOIN events e ON e.id=s.event_id WHERE s.memory_id=? AND s.event_id=? AND m.project_id=e.project_id""",
+                  (memory_id,event_id)).fetchone()
+                if not source or source["project_id"] != page["project_id"]:
+                    raise ValueError("wiki citations must be exact memory sources in the page project")
+                cx.execute("INSERT OR IGNORE INTO wiki_revision_citations VALUES(?,?,?,?,?)",
+                           (revision_id,section_name,ordinal,memory_id,event_id))
+            response = self._wiki_revision_result(item, cited_entries)
+            self._audit(cx, page["project_id"], "wiki_revision", revision_id, "created", response)
+            self._save_idem(cx, "generate_wiki_revision", idempotency_key, request, response)
+        return response
+
+    @staticmethod
+    def _wiki_revision_result(item: dict[str, Any], citations: list[tuple[str, int, str, str]]) -> dict[str, Any]:
+        result = dict(item)
+        result["sections"] = json.loads(result.pop("sections_json")); result["generation"] = json.loads(result.pop("generation_json"))
+        result["citations"] = [{"section":s,"ordinal":o,"memory_id":m,"event_id":e}
+                               for s,o,m,e in sorted(citations)]
+        return result
+
+    def transition_wiki_revision(self, revision_id: str, status: str, reason: str = "") -> dict[str, Any]:
+        if status not in {"published","stale","rejected"}: raise ValueError("invalid wiki revision status")
+        row = self._row("SELECT r.*,p.project_id FROM wiki_revisions r JOIN wiki_pages p ON p.id=r.page_id WHERE r.id=?", (revision_id,))
+        if not row: raise KeyError("wiki revision not found")
+        allowed = {"proposed":{"published","rejected"},"published":{"stale"},"stale":set(),"rejected":set()}
+        if status not in allowed[row["status"]]: raise ValueError(f"cannot transition {row['status']} revision to {status}")
+        ts = now()
+        with self.tx() as cx:
+            if status == "published":
+                replaced = [item[0] for item in cx.execute(
+                    "SELECT id FROM wiki_revisions WHERE page_id=? AND status='published'", (row["page_id"],))]
+                replacement_reason = f"replaced by revision {row['revision_no']}"
+                cx.execute("UPDATE wiki_revisions SET status='stale',stale_reason=? WHERE page_id=? AND status='published'",
+                           (replacement_reason,row["page_id"]))
+                for replaced_id in replaced:
+                    self._audit(cx, row["project_id"], "wiki_revision", replaced_id, "status:stale",
+                                {"reason":replacement_reason,"at":ts})
+            cx.execute("UPDATE wiki_revisions SET status=?,published_at=?,stale_reason=? WHERE id=?",
+                       (status,ts if status == "published" else row["published_at"],
+                        reason or None if status == "stale" else None,revision_id))
+            self._audit(cx, row["project_id"], "wiki_revision", revision_id, f"status:{status}", {"reason":reason,"at":ts})
+        return self.get_wiki_revision(revision_id)
+
+    def get_wiki_revision(self, revision_id: str) -> dict[str, Any]:
+        row = self._row("SELECT * FROM wiki_revisions WHERE id=?", (revision_id,))
+        if not row: raise KeyError("wiki revision not found")
+        citations = [(r["section_name"],r["ordinal"],r["memory_id"],r["event_id"]) for r in self.conn.execute(
+            "SELECT * FROM wiki_revision_citations WHERE revision_id=? ORDER BY section_name,ordinal,memory_id,event_id", (revision_id,))]
+        return self._wiki_revision_result(row,citations)
+
+    def get_wiki_page(self, page_id: str) -> dict[str, Any]:
+        page = self._row("SELECT * FROM wiki_pages WHERE id=?", (page_id,))
+        if not page: raise KeyError("wiki page not found")
+        page["contract_version"] = "topic-wiki/v1"
+        page["revisions"] = [self.get_wiki_revision(row["id"]) for row in self.conn.execute(
+            "SELECT id FROM wiki_revisions WHERE page_id=? ORDER BY revision_no", (page_id,))]
+        return page
+
+    def render_wiki_revision(self, revision_id: str) -> dict[str, Any]:
+        revision = self.get_wiki_revision(revision_id)
+        page = self._row("SELECT * FROM wiki_pages WHERE id=?", (revision["page_id"],))
+        labels = {"current_position":"Current position","why_it_exists":"Why it exists",
+                  "governing_constraints":"Governing constraints","considered_alternatives":"Considered alternatives",
+                  "trade_offs":"Trade-offs","decision_timeline":"Decision timeline",
+                  "observed_outcomes":"Observed outcomes","open_questions":"Open questions"}
+        lines = [f"# {page['title']}","",f"Status: {revision['status']} · Revision {revision['revision_no']}",""]
+        for key, label in labels.items():
+            lines.extend([f"## {label}",""])
+            entries = revision["sections"].get(key, [])
+            if not entries: lines.extend(["_No cited material._",""]); continue
+            for entry in entries:
+                claim = entry.get("claim") or entry.get("observed_outcome") or canonical(entry)
+                refs=[]
+                for citation_key in ("citations","decision_citation","outcome_citation"):
+                    citation=entry.get(citation_key)
+                    if citation: refs.append(f"memory:{citation['memory_id']} events:{','.join(citation['source_event_ids'])}")
+                lines.append(f"- {claim} ({'; '.join(refs)})")
+            lines.append("")
+        lines.extend(["## Manual notes","",page["manual_notes"] or "_None._",""])
+        return {"contract_version":"topic-wiki-markdown/v1","revision_id":revision_id,"markdown":"\n".join(lines)}
+
+    def _stale_wiki_revisions_for_memory(self, cx: sqlite3.Connection, memory_id: str, reason: str) -> list[str]:
+        rows = list(cx.execute("""SELECT DISTINCT r.id,p.project_id FROM wiki_revisions r
+          JOIN wiki_pages p ON p.id=r.page_id JOIN wiki_revision_citations c ON c.revision_id=r.id
+          WHERE c.memory_id=? AND r.status='published'""", (memory_id,)))
+        ids = [row["id"] for row in rows]
+        if ids:
+            cx.execute(f"UPDATE wiki_revisions SET status='stale',stale_reason=? WHERE id IN ({','.join('?' for _ in ids)})",
+                       (reason,*ids))
+            for row in rows:
+                self._audit(cx, row["project_id"], "wiki_revision", row["id"], "status:stale",
+                            {"reason":reason,"memory_id":memory_id,"at":now()})
+        return ids
+
     @staticmethod
     def _add_promotion_advisory(item: dict[str, Any]) -> None:
         if not item.get("session_id"):
@@ -954,6 +1118,8 @@ class MemoryStore:
                   importance=:importance,valid_from=:valid_from,valid_until=:valid_until,tags_json=:tags_json,updated_at=:updated_at,
                   observed_at=:observed_at,last_confirmed_at=:last_confirmed_at,visibility=:visibility WHERE id=:id""", item)
                 action = "updated"
+                if any(existing[name] != item[name] for name in ("title","content","type","status","valid_from","valid_until","tags_json")):
+                    self._stale_wiki_revisions_for_memory(cx, mid, "cited memory materially updated")
             else:
                 cx.execute("""INSERT INTO memories(id,project_id,scope_id,type,status,title,content,confidence,importance,valid_from,valid_until,
                   tags_json,created_at,updated_at,observed_at,last_confirmed_at,visibility)
@@ -1006,6 +1172,9 @@ class MemoryStore:
                 # New/contesting memory points to old/disputed memory.
                 cx.execute("INSERT OR IGNORE INTO edges VALUES(?,?,?,?,?,?,?)", (uid(), row["project_id"], related_memory_id, memory_id, relation, note, ts))
             result = dict(row); result["status"] = status; result["updated_at"] = ts
+            if status in {"superseded","disputed","expired","rejected"}:
+                result["stale_wiki_revision_ids"] = self._stale_wiki_revisions_for_memory(
+                    cx, memory_id, f"cited memory became {status}")
             self._audit(cx, row["project_id"], "memory", memory_id, f"status:{status}", {"note": note, **result})
         return result
 
@@ -1677,6 +1846,9 @@ class MemoryStore:
             ("source_analysis", "SELECT s.* FROM source_analyses s JOIN investigations i ON i.id=s.investigation_id WHERE i.project_id=? ORDER BY s.created_at,s.id"),
             ("investigation_claim", "SELECT c.* FROM investigation_claims c JOIN investigations i ON i.id=c.investigation_id WHERE i.project_id=? ORDER BY c.created_at,c.source_analysis_id,c.ordinal"),
             ("investigation_claim_link", "SELECT l.* FROM investigation_claim_links l JOIN investigation_claims c ON c.id=l.from_claim_id JOIN investigations i ON i.id=c.investigation_id WHERE i.project_id=? ORDER BY l.created_at,l.from_claim_id,l.to_claim_id"),
+            ("wiki_page", "SELECT * FROM wiki_pages WHERE project_id=? ORDER BY created_at,id"),
+            ("wiki_revision", "SELECT r.* FROM wiki_revisions r JOIN wiki_pages p ON p.id=r.page_id WHERE p.project_id=? ORDER BY r.created_at,r.id"),
+            ("wiki_revision_citation", "SELECT c.* FROM wiki_revision_citations c JOIN wiki_revisions r ON r.id=c.revision_id JOIN wiki_pages p ON p.id=r.page_id WHERE p.project_id=? ORDER BY c.revision_id,c.section_name,c.ordinal,c.memory_id,c.event_id"),
             ("memory_usage", "SELECT u.* FROM memory_usage u JOIN memories m ON m.id=u.memory_id WHERE m.project_id=? ORDER BY u.memory_id"),
             ("review_conflict", "SELECT c.* FROM review_conflicts c JOIN memories m ON m.id=c.candidate_memory_id WHERE m.project_id=? ORDER BY c.created_at,c.candidate_memory_id,c.existing_memory_id"),
             ("edge", "SELECT * FROM edges WHERE project_id=? ORDER BY created_at,id"),
@@ -1695,7 +1867,7 @@ class MemoryStore:
         """Restore one exported project. Existing project IDs are never overwritten."""
         if not records or records[0].get("record_type") != "project":
             raise ValueError("export must begin with a project record")
-        allowed = {"project", "scope", "session", "event", "memory", "memory_source", "investigation", "source_analysis", "investigation_claim", "investigation_claim_link", "memory_usage", "review_conflict", "edge", "search_alias", "project_alias", "event_receipt", "policy", "audit_checkpoint", "audit"}
+        allowed = {"project", "scope", "session", "event", "memory", "memory_source", "investigation", "source_analysis", "investigation_claim", "investigation_claim_link", "wiki_page", "wiki_revision", "wiki_revision_citation", "memory_usage", "review_conflict", "edge", "search_alias", "project_alias", "event_receipt", "policy", "audit_checkpoint", "audit"}
         if any(record.get("record_type") not in allowed or not isinstance(record.get("data"), dict) for record in records):
             raise ValueError("invalid export record")
         project = records[0]["data"]
@@ -1712,6 +1884,9 @@ class MemoryStore:
             "source_analysis": ("source_analyses", ["id","investigation_id","source_type","stable_source_id","canonical_uri","source_version","source_updated_at","retrieved_at","section_anchor","access_reason","analysis_method","content_fingerprint","identity_key","created_at"]),
             "investigation_claim": ("investigation_claims", ["id","investigation_id","source_analysis_id","claim_key","ordinal","role","event_id","memory_id","created_at","expected_outcome","outcome_effect"]),
             "investigation_claim_link": ("investigation_claim_links", ["from_claim_id","to_claim_id","relation","created_at"]),
+            "wiki_page": ("wiki_pages", ["id","project_id","scope_id","topic","title","manual_notes","created_at","updated_at"]),
+            "wiki_revision": ("wiki_revisions", ["id","page_id","revision_no","status","question","sections_json","generation_json","created_at","published_at","stale_reason"]),
+            "wiki_revision_citation": ("wiki_revision_citations", ["revision_id","section_name","ordinal","memory_id","event_id"]),
             "memory_usage": ("memory_usage", ["memory_id","retrieved_count","used_count","helpful_count","incorrect_count","last_retrieved_at","last_used_at","updated_at"]),
             "review_conflict": ("review_conflicts", ["candidate_memory_id","existing_memory_id","similarity","reason","created_at"]),
             "edge": ("edges", ["id","project_id","from_memory_id","to_memory_id","relation","note","created_at"]),

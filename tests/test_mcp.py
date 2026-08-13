@@ -107,6 +107,11 @@ class MCPTests(unittest.TestCase):
         self.assertEqual(self.server.call("investigation_get", {"investigation_id":investigation["id"]})["source_analyses"][0]["id"],
                          recorded["source_analysis_id"])
 
+    def test_topic_wiki_tools_are_core(self):
+        expected = {"wiki_page_create","wiki_note_set","wiki_revision_generate","wiki_revision_transition",
+                    "wiki_page_get","wiki_revision_render"}
+        self.assertTrue(expected <= CORE_TOOL_NAMES)
+
     def test_external_http_requires_token(self):
         with self.assertRaisesRegex(ValueError, "refusing external bind"): self.server.serve_http("0.0.0.0", 0)
 

@@ -395,6 +395,8 @@ Project hooks require a trusted project and explicit review in Codex. Use `/hook
 | `memory_correct` | Create a sourced correction candidate without overwriting history |
 | `get_context` | Strict shared-budget local/global selection, registry fallback, and optional recent events |
 | `decision_context` | Versioned, cited Decision Brief over the existing retrieval path; never generates a recommendation or changes memory state |
+| `wiki_page_create`, `wiki_note_set`, `wiki_page_get` | Topic page identity and separately managed manual notes |
+| `wiki_revision_generate`, `wiki_revision_transition`, `wiki_revision_render` | Immutable cited revisions, explicit publication lifecycle, deterministic staleness, and portable Markdown |
 | `get_source` | Retrieve original event evidence |
 | `get_audit` | Inspect append-only entity history |
 
@@ -429,6 +431,10 @@ Run `PYTHONPATH=src python3 benchmarks/run_decision_evaluation.py` to evaluate t
 ### Research-to-Decision provenance
 
 `investigation_create` records why a focused research question matters, the decision it will inform, constraints, initiator, and start time. `investigation_record_source` then atomically records one stable source identity and version (or privacy-safe analyzed-content fingerprint) plus only its consequential typed claims: evidence, inference, action, decision, rationale, or outcome. Every claim creates an immutable event and a cited memory; inference memories are always `proposed`, and causal claim links retain the exact evidence used. Repeating the same source identity and version returns the existing analysis, while a changed version creates new evidence. `investigation_get` reconstructs the complete chain and `investigation_complete` closes its lifecycle. The core stores concise analyzed claims and source metadata, never the full page or browsing log.
+
+### Topic Wiki revisions
+
+`wiki_page_create` creates a stable topic page, while `wiki_note_set` manages human-authored notes outside generated content. `wiki_revision_generate` snapshots the standard Decision Brief sections and exact memory/event citation pairs into an immutable `proposed` revision. Reviewers explicitly publish or reject it with `wiki_revision_transition`; publishing a replacement makes the prior published revision stale. A published revision also becomes stale when a cited memory is materially changed, superseded, disputed, expired, or rejected. `wiki_revision_render` produces Markdown from SQLite on demand, leaving SQLite as the only writable authority.
 
 ## Test and smoke test
 

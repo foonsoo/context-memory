@@ -461,6 +461,74 @@ class StoreTests(unittest.TestCase):
                  "evidence_claim_refs":[{"source_analysis_id":prior["source_analysis_id"],"claim_key":"fact"}]}])
         self.assertEqual(self.store.get_investigation(second["id"])["source_analyses"], [])
 
+    def test_topic_wiki_revision_lifecycle_staleness_and_markdown(self):
+        p = self.store.create_project("topic-wiki")
+        event = self.store.record_event(p["id"], "decision", "Use SQLite for durable local writes")
+        decision = self.store.upsert_memory(p["id"], "Storage choice", "Use SQLite", "decision", "active",
+                                            source_event_ids=[event["id"]])
+        reason_event = self.store.record_event(p["id"], "fact", "Transactions prevent partial writes")
+        self.store.upsert_memory(p["id"], "Storage rationale", "Transactions prevent partial writes", "fact", "active",
+                                 source_event_ids=[reason_event["id"]], tags=["rationale"])
+        page = self.store.create_wiki_page(p["id"], "storage", "Storage architecture", idempotency_key="page")
+        self.store.set_wiki_notes(page["id"], "Keep the migration checklist here.")
+        revision = self.store.generate_wiki_revision(page["id"], "storage choice", generation_metadata={"client":"test"})
+        self.assertEqual(revision["status"], "proposed")
+        self.assertEqual(revision["sections"]["current_position"][0]["claim"], "Use SQLite")
+        self.assertTrue(revision["citations"])
+        published = self.store.transition_wiki_revision(revision["id"], "published")
+        self.assertEqual(published["status"], "published")
+        rendered = self.store.render_wiki_revision(revision["id"])["markdown"]
+        self.assertIn("# Storage architecture", rendered)
+        self.assertIn("memory:" + decision["id"], rendered)
+        self.assertIn("Keep the migration checklist here.", rendered)
+        changed = self.store.transition(decision["id"], "superseded")
+        self.assertEqual(changed["stale_wiki_revision_ids"], [revision["id"]])
+        stale = self.store.get_wiki_page(page["id"])["revisions"][0]
+        self.assertEqual(stale["status"], "stale")
+        self.assertEqual(stale["stale_reason"], "cited memory became superseded")
+
+    def test_publishing_new_wiki_revision_stales_prior_and_preserves_manual_notes(self):
+        p = self.store.create_project("wiki-history")
+        event = self.store.record_event(p["id"], "decision", "Keep the current API")
+        decision = self.store.upsert_memory(p["id"], "API choice", "Keep the current API", "decision", "active",
+                                            source_event_ids=[event["id"]])
+        rationale_event = self.store.record_event(p["id"], "fact", "Clients remain compatible")
+        self.store.upsert_memory(p["id"], "API rationale", "Clients remain compatible", "fact", "active",
+                                 source_event_ids=[rationale_event["id"]], tags=["rationale"])
+        page = self.store.create_wiki_page(p["id"], "api", "API")
+        self.store.set_wiki_notes(page["id"], "Owner: platform")
+        first = self.store.generate_wiki_revision(page["id"], "API choice")
+        self.store.transition_wiki_revision(first["id"], "published")
+        second = self.store.generate_wiki_revision(page["id"], "API choice")
+        self.store.transition_wiki_revision(second["id"], "published")
+        result = self.store.get_wiki_page(page["id"])
+        self.assertEqual([item["status"] for item in result["revisions"]], ["stale", "published"])
+        self.assertEqual(result["manual_notes"], "Owner: platform")
+        self.store.upsert_memory(p["id"], "API choice", "Adopt the revised API", "decision", "active",
+                                 memory_id=decision["id"])
+        self.assertEqual(self.store.get_wiki_revision(second["id"])["stale_reason"], "cited memory materially updated")
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.store.conn.execute("UPDATE wiki_revisions SET sections_json='{}' WHERE id=?", (second["id"],))
+
+    def test_topic_wiki_export_import_round_trip(self):
+        p = self.store.create_project("wiki-export")
+        event = self.store.record_event(p["id"], "decision", "Choose option A")
+        self.store.upsert_memory(p["id"], "Choice", "Choose option A", "decision", "active", source_event_ids=[event["id"]])
+        reason = self.store.record_event(p["id"], "fact", "Option A is supported")
+        self.store.upsert_memory(p["id"], "Why", "Option A is supported", "fact", "active",
+                                 source_event_ids=[reason["id"]], tags=["rationale"])
+        page = self.store.create_wiki_page(p["id"], "choice", "Choice")
+        revision = self.store.generate_wiki_revision(page["id"], "option choice")
+        records = self.store.export_project(p["id"])
+        other = MemoryStore(Path(self.temp.name) / "wiki-import.db")
+        try:
+            other.import_project(records)
+            restored = other.get_wiki_page(page["id"])
+            self.assertEqual(restored["revisions"][0]["id"], revision["id"])
+            self.assertEqual(restored["revisions"][0]["citations"], revision["citations"])
+        finally:
+            other.close()
+
     def test_research_provenance_export_import_round_trip(self):
         p = self.store.create_project("research-export")
         investigation = self.store.create_investigation(p["id"], "Question", "Reason", "Decision", initiator="user")
