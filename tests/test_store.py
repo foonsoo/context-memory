@@ -869,6 +869,31 @@ class StoreTests(unittest.TestCase):
         self.assertAlmostEqual(reranked[0]["retrieval"]["score"], sum(value for key, value in components.items() if key != "total"))
         self.assertEqual({first["id"], second["id"]}, {item["id"] for item in reranked})
 
+    def test_search_batches_candidate_usage_and_source_queries(self):
+        p = self.store.create_project("batched-search")
+        memories = []
+        for index in range(8):
+            event = self.store.record_event(p["id"], "fact", f"shared retrieval evidence {index}")
+            memories.append(self.store.upsert_memory(
+                p["id"], f"Shared result {index}", "shared retrieval content", "fact", "active",
+                source_event_ids=[event["id"]]))
+        self.store.record_memory_feedback(memories[0]["id"], "helpful")
+
+        selects = []
+        self.store.conn.set_trace_callback(
+            lambda statement: selects.append(statement) if statement.lstrip().upper().startswith("SELECT") else None)
+        try:
+            results = self.store.search(p["id"], "shared retrieval", limit=8)
+        finally:
+            self.store.conn.set_trace_callback(None)
+
+        self.assertEqual(len(results), 8)
+        usage_by_id = {result["id"]: result["usage"] for result in results}
+        self.assertEqual(usage_by_id[memories[0]["id"]]["helpful_count"], 1)
+        self.assertTrue(all(len(result["sources"]) == 1 for result in results))
+        self.assertEqual(sum("FROM memory_usage" in statement for statement in selects), 1)
+        self.assertEqual(sum("FROM memory_sources" in statement for statement in selects), 1)
+
     def test_context_budget_is_capped_by_project_policy(self):
         p = self.store.create_project("bounded-context")
         self.store.upsert_memory(p["id"], "Budget", "bounded context " * 20, "constraint", "active")

@@ -1283,33 +1283,49 @@ class MemoryStore:
             vector_only_threshold = getattr(self.embedding_provider, "vector_only_threshold", None)
             supplements_lexical = bool(getattr(self.embedding_provider, "supplements_lexical_results", False))
             sem_boundary = boundary
-            sem_sql = f"""SELECT m.*, e.vector_json FROM memory_embeddings e JOIN memories m ON m.id=e.memory_id
+            sem_sql = f"""SELECT m.id, e.vector_json FROM memory_embeddings e JOIN memories m ON m.id=e.memory_id
               WHERE {sem_boundary} AND m.status IN ({placeholders}) AND e.provider=? AND e.dimensions=?
               AND (m.valid_from IS NULL OR m.valid_from<=?) AND (m.valid_until IS NULL OR m.valid_until>?)"""
             sem_args: list[Any] = [*boundary_args, *allowed, self._provider_name(), self.embedding_provider.dimensions, timestamp, timestamp]
             if scope_id and not discover_projects: sem_sql += " AND (m.scope_id=? OR m.scope_id IS NULL)"; sem_args.append(scope_id)
-            semantic = []
+            semantic: list[tuple[float, str]] = []
             for row in self.conn.execute(sem_sql, sem_args):
-                item = dict(row); vector = json.loads(item.pop("vector_json"))
+                vector = json.loads(row["vector_json"])
                 similarity = sum(a * b for a, b in zip(query_vector, vector))
                 # Weak similarities may rerank lexical hits. A provider may also
                 # opt into vector-only recall with an explicit calibrated threshold;
                 # this must remain available even when FTS returns an unrelated hit.
                 if similarity > 0.05 and (
-                    item["id"] in candidates
+                    row["id"] in candidates
                     or (vector_only_threshold is not None
                         and (not lexical or supplements_lexical)
                         and len(query_tokens) >= 2
                         and similarity >= vector_only_threshold)
                 ):
-                    semantic.append((similarity, item))
-            semantic.sort(key=lambda value: (-value[0], value[1]["id"]))
-            for rank, (similarity, row) in enumerate(semantic[:candidate_limit], 1):
-                candidates.setdefault(row["id"], row)
-                component = components.setdefault(row["id"], {"lexical_rrf": 0.0, "semantic_rrf": 0.0})
+                    semantic.append((similarity, row["id"]))
+            semantic.sort(key=lambda value: (-value[0], value[1]))
+            selected_semantic = semantic[:candidate_limit]
+            missing_ids = [memory_id for _, memory_id in selected_semantic if memory_id not in candidates]
+            if missing_ids:
+                missing_placeholders = ",".join("?" for _ in missing_ids)
+                candidates.update({row["id"]: dict(row) for row in self.conn.execute(
+                    f"SELECT * FROM memories WHERE id IN ({missing_placeholders})", missing_ids)})
+            for rank, (similarity, memory_id) in enumerate(selected_semantic, 1):
+                component = components.setdefault(memory_id, {"lexical_rrf": 0.0, "semantic_rrf": 0.0})
                 component["semantic_rrf"] = 1.0 / (60 + rank)
-                semantic_scores[row["id"]] = similarity
-        usage = {row["memory_id"]: dict(row) for row in self.conn.execute("SELECT * FROM memory_usage")}
+                semantic_scores[memory_id] = similarity
+        candidate_ids = list(candidates)
+        usage: dict[str, dict[str, Any]] = {}
+        sources: dict[str, list[dict[str, Any]]] = {memory_id: [] for memory_id in candidate_ids}
+        if candidate_ids:
+            candidate_placeholders = ",".join("?" for _ in candidate_ids)
+            usage = {row["memory_id"]: dict(row) for row in self.conn.execute(
+                f"SELECT * FROM memory_usage WHERE memory_id IN ({candidate_placeholders})", candidate_ids)}
+            for source in self.conn.execute(f"""SELECT s.memory_id,e.id,e.kind,e.source_uri,e.created_at
+              FROM memory_sources s JOIN events e ON e.id=s.event_id
+              WHERE s.memory_id IN ({candidate_placeholders}) ORDER BY s.memory_id,e.id""", candidate_ids):
+                item = dict(source)
+                sources[item.pop("memory_id")].append(item)
         current = datetime.now(timezone.utc)
         for memory_id, row in candidates.items():
             confirmed = row.get("last_confirmed_at") or row.get("updated_at")
@@ -1335,7 +1351,7 @@ class MemoryStore:
                               "query_coverage":query_coverage,
                               "semantic_similarity": semantic_scores.get(r["id"]), "embedding_provider": self._provider_name()}
             r["usage"] = usage.get(r["id"], {"retrieved_count":0,"used_count":0,"helpful_count":0,"incorrect_count":0})
-            r["sources"] = [dict(x) for x in self.conn.execute("SELECT e.id,e.kind,e.source_uri,e.created_at FROM memory_sources s JOIN events e ON e.id=s.event_id WHERE s.memory_id=?", (r["id"],))]
+            r["sources"] = sources[r["id"]]
         return rows
 
     def _aggregate_project_candidates(self, memories: list[dict[str, Any]], current_project_id: str) -> list[dict[str, Any]]:
