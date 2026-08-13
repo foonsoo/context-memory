@@ -1,0 +1,773 @@
+{
+  "fixture": {
+    "memories": 12,
+    "queries": 18,
+    "repeats": 5
+  },
+  "neural_model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+  "results": {
+    "fts": {
+      "categories": {
+        "lexical": {
+          "mrr_at_5": 1.0,
+          "queries": 2,
+          "recall_at_5": 1.0
+        },
+        "multilingual": {
+          "mrr_at_5": 0.0,
+          "queries": 2,
+          "recall_at_5": 0.0
+        },
+        "semantic": {
+          "mrr_at_5": 0.7833333333333333,
+          "queries": 10,
+          "recall_at_5": 0.9
+        }
+      },
+      "database_bytes": 274432,
+      "index_ms": 8.858,
+      "mrr_at_5": 0.7023809523809523,
+      "negative_query_result_rate": 0.25,
+      "outcomes": [
+        {
+          "category": "semantic",
+          "query": "recover the relational database from a protected copy",
+          "rank": 1,
+          "relevant": [
+            "postgres-backup"
+          ],
+          "returned": [
+            "postgres-backup",
+            "support-sla",
+            "ios-offline",
+            "warehouse-route",
+            "api-sandbox"
+          ]
+        },
+        {
+          "category": "semantic",
+          "query": "change login signing keys while users stay signed in",
+          "rank": 2,
+          "relevant": [
+            "oauth-rotation"
+          ],
+          "returned": [
+            "api-sandbox",
+            "oauth-rotation",
+            "ios-offline"
+          ]
+        },
+        {
+          "category": "lexical",
+          "query": "month-end invoice tax reconciliation",
+          "rank": 1,
+          "relevant": [
+            "invoice-tax"
+          ],
+          "returned": [
+            "invoice-tax"
+          ]
+        },
+        {
+          "category": "semantic",
+          "query": "work offline on iphone then synchronize",
+          "rank": null,
+          "relevant": [
+            "ios-offline"
+          ],
+          "returned": [
+            "memory-handoff"
+          ]
+        },
+        {
+          "category": "semantic",
+          "query": "continue coding in a future session using verified results",
+          "rank": 1,
+          "relevant": [
+            "memory-handoff"
+          ],
+          "returned": [
+            "memory-handoff",
+            "api-sandbox",
+            "fraud-velocity",
+            "warehouse-route",
+            "support-sla"
+          ]
+        },
+        {
+          "category": "lexical",
+          "query": "priority one ticket escalation sla",
+          "rank": 1,
+          "relevant": [
+            "support-sla"
+          ],
+          "returned": [
+            "support-sla"
+          ]
+        },
+        {
+          "category": "semantic",
+          "query": "close the books after correcting foreign money charges",
+          "rank": 1,
+          "relevant": [
+            "invoice-tax"
+          ],
+          "returned": [
+            "invoice-tax",
+            "ios-offline",
+            "support-sla"
+          ]
+        },
+        {
+          "category": "semantic",
+          "query": "choose the depot and courier that should ship a package",
+          "rank": 3,
+          "relevant": [
+            "warehouse-route"
+          ],
+          "returned": [
+            "support-sla",
+            "ios-offline",
+            "warehouse-route",
+            "api-sandbox",
+            "memory-handoff"
+          ]
+        },
+        {
+          "category": "semantic",
+          "query": "detect too many repeated card payments",
+          "rank": 1,
+          "relevant": [
+            "fraud-velocity"
+          ],
+          "returned": [
+            "fraud-velocity"
+          ]
+        },
+        {
+          "category": "semantic",
+          "query": "resend a phone notification after temporary failure",
+          "rank": 1,
+          "relevant": [
+            "push-delivery"
+          ],
+          "returned": [
+            "push-delivery",
+            "ios-offline",
+            "warehouse-route",
+            "api-sandbox",
+            "memory-handoff"
+          ]
+        },
+        {
+          "category": "semantic",
+          "query": "credentials for testing an integration in isolation",
+          "rank": 1,
+          "relevant": [
+            "api-sandbox"
+          ],
+          "returned": [
+            "api-sandbox",
+            "postgres-backup",
+            "oauth-rotation",
+            "warehouse-route"
+          ]
+        },
+        {
+          "category": "semantic",
+          "query": "make small image previews while preserving metadata",
+          "rank": 1,
+          "relevant": [
+            "image-rendition"
+          ],
+          "returned": [
+            "image-rendition",
+            "ios-offline"
+          ]
+        },
+        {
+          "category": "multilingual",
+          "query": "상품 검색 동의어와 패싯 별칭",
+          "rank": null,
+          "relevant": [
+            "search-synonyms"
+          ],
+          "returned": []
+        },
+        {
+          "category": "multilingual",
+          "query": "나중 코딩 세션에서 검증된 결과로 작업 이어가기",
+          "rank": null,
+          "relevant": [
+            "memory-handoff"
+          ],
+          "returned": []
+        },
+        {
+          "category": "negative",
+          "query": "unrelated astronomy telescope calibration",
+          "rank": null,
+          "relevant": [],
+          "returned": []
+        },
+        {
+          "category": "negative",
+          "query": "botanical garden irrigation schedule",
+          "rank": null,
+          "relevant": [],
+          "returned": []
+        },
+        {
+          "category": "negative",
+          "query": "compose a jazz melody for brass instruments",
+          "rank": null,
+          "relevant": [],
+          "returned": [
+            "warehouse-route",
+            "api-sandbox",
+            "memory-handoff",
+            "support-sla"
+          ]
+        },
+        {
+          "category": "negative",
+          "query": "marine biology coral spawning observations",
+          "rank": null,
+          "relevant": [],
+          "returned": []
+        }
+      ],
+      "provider": "fts-only",
+      "query_latency_ms": {
+        "median": 0.132,
+        "p95": 0.223
+      },
+      "recall_at_5": 0.7857142857142857
+    },
+    "local_hash": {
+      "categories": {
+        "lexical": {
+          "mrr_at_5": 1.0,
+          "queries": 2,
+          "recall_at_5": 1.0
+        },
+        "multilingual": {
+          "mrr_at_5": 0.0,
+          "queries": 2,
+          "recall_at_5": 0.0
+        },
+        "semantic": {
+          "mrr_at_5": 0.775,
+          "queries": 10,
+          "recall_at_5": 0.9
+        }
+      },
+      "database_bytes": 323584,
+      "index_ms": 8.121,
+      "mrr_at_5": 0.6964285714285714,
+      "negative_query_result_rate": 1.0,
+      "outcomes": [
+        {
+          "category": "semantic",
+          "query": "recover the relational database from a protected copy",
+          "rank": 1,
+          "relevant": [
+            "postgres-backup"
+          ],
+          "returned": [
+            "postgres-backup",
+            "ios-offline",
+            "support-sla",
+            "warehouse-route",
+            "api-sandbox"
+          ]
+        },
+        {
+          "category": "semantic",
+          "query": "change login signing keys while users stay signed in",
+          "rank": 1,
+          "relevant": [
+            "oauth-rotation"
+          ],
+          "returned": [
+            "oauth-rotation",
+            "api-sandbox",
+            "ios-offline"
+          ]
+        },
+        {
+          "category": "lexical",
+          "query": "month-end invoice tax reconciliation",
+          "rank": 1,
+          "relevant": [
+            "invoice-tax"
+          ],
+          "returned": [
+            "invoice-tax"
+          ]
+        },
+        {
+          "category": "semantic",
+          "query": "work offline on iphone then synchronize",
+          "rank": null,
+          "relevant": [
+            "ios-offline"
+          ],
+          "returned": [
+            "memory-handoff"
+          ]
+        },
+        {
+          "category": "semantic",
+          "query": "continue coding in a future session using verified results",
+          "rank": 1,
+          "relevant": [
+            "memory-handoff"
+          ],
+          "returned": [
+            "memory-handoff",
+            "api-sandbox",
+            "warehouse-route",
+            "fraud-velocity",
+            "support-sla"
+          ]
+        },
+        {
+          "category": "lexical",
+          "query": "priority one ticket escalation sla",
+          "rank": 1,
+          "relevant": [
+            "support-sla"
+          ],
+          "returned": [
+            "support-sla"
+          ]
+        },
+        {
+          "category": "semantic",
+          "query": "close the books after correcting foreign money charges",
+          "rank": 2,
+          "relevant": [
+            "invoice-tax"
+          ],
+          "returned": [
+            "ios-offline",
+            "invoice-tax",
+            "support-sla"
+          ]
+        },
+        {
+          "category": "semantic",
+          "query": "choose the depot and courier that should ship a package",
+          "rank": 4,
+          "relevant": [
+            "warehouse-route"
+          ],
+          "returned": [
+            "ios-offline",
+            "support-sla",
+            "memory-handoff",
+            "warehouse-route",
+            "api-sandbox"
+          ]
+        },
+        {
+          "category": "semantic",
+          "query": "detect too many repeated card payments",
+          "rank": 1,
+          "relevant": [
+            "fraud-velocity"
+          ],
+          "returned": [
+            "fraud-velocity"
+          ]
+        },
+        {
+          "category": "semantic",
+          "query": "resend a phone notification after temporary failure",
+          "rank": 1,
+          "relevant": [
+            "push-delivery"
+          ],
+          "returned": [
+            "push-delivery",
+            "api-sandbox",
+            "warehouse-route",
+            "ios-offline",
+            "support-sla"
+          ]
+        },
+        {
+          "category": "semantic",
+          "query": "credentials for testing an integration in isolation",
+          "rank": 1,
+          "relevant": [
+            "api-sandbox"
+          ],
+          "returned": [
+            "api-sandbox",
+            "oauth-rotation",
+            "postgres-backup",
+            "warehouse-route"
+          ]
+        },
+        {
+          "category": "semantic",
+          "query": "make small image previews while preserving metadata",
+          "rank": 1,
+          "relevant": [
+            "image-rendition"
+          ],
+          "returned": [
+            "image-rendition",
+            "ios-offline"
+          ]
+        },
+        {
+          "category": "multilingual",
+          "query": "상품 검색 동의어와 패싯 별칭",
+          "rank": null,
+          "relevant": [
+            "search-synonyms"
+          ],
+          "returned": [
+            "oauth-rotation",
+            "image-rendition"
+          ]
+        },
+        {
+          "category": "multilingual",
+          "query": "나중 코딩 세션에서 검증된 결과로 작업 이어가기",
+          "rank": null,
+          "relevant": [
+            "memory-handoff"
+          ],
+          "returned": []
+        },
+        {
+          "category": "negative",
+          "query": "unrelated astronomy telescope calibration",
+          "rank": null,
+          "relevant": [],
+          "returned": [
+            "api-sandbox",
+            "memory-handoff",
+            "oauth-rotation",
+            "search-synonyms",
+            "image-rendition"
+          ]
+        },
+        {
+          "category": "negative",
+          "query": "botanical garden irrigation schedule",
+          "rank": null,
+          "relevant": [],
+          "returned": [
+            "push-delivery",
+            "image-rendition",
+            "oauth-rotation",
+            "ios-offline",
+            "api-sandbox"
+          ]
+        },
+        {
+          "category": "negative",
+          "query": "compose a jazz melody for brass instruments",
+          "rank": null,
+          "relevant": [],
+          "returned": [
+            "warehouse-route",
+            "memory-handoff",
+            "api-sandbox",
+            "support-sla"
+          ]
+        },
+        {
+          "category": "negative",
+          "query": "marine biology coral spawning observations",
+          "rank": null,
+          "relevant": [],
+          "returned": [
+            "image-rendition",
+            "api-sandbox",
+            "invoice-tax",
+            "oauth-rotation",
+            "memory-handoff"
+          ]
+        }
+      ],
+      "provider": "local-hash-v1-256",
+      "query_latency_ms": {
+        "median": 0.466,
+        "p95": 0.564
+      },
+      "recall_at_5": 0.7857142857142857
+    },
+    "neural": {
+      "categories": {
+        "lexical": {
+          "mrr_at_5": 1.0,
+          "queries": 2,
+          "recall_at_5": 1.0
+        },
+        "multilingual": {
+          "mrr_at_5": 0.5,
+          "queries": 2,
+          "recall_at_5": 0.5
+        },
+        "semantic": {
+          "mrr_at_5": 0.85,
+          "queries": 10,
+          "recall_at_5": 1.0
+        }
+      },
+      "database_bytes": 380928,
+      "index_ms": 1016.675,
+      "mrr_at_5": 0.8214285714285714,
+      "negative_query_result_rate": 0.25,
+      "outcomes": [
+        {
+          "category": "semantic",
+          "query": "recover the relational database from a protected copy",
+          "rank": 1,
+          "relevant": [
+            "postgres-backup"
+          ],
+          "returned": [
+            "postgres-backup",
+            "memory-handoff",
+            "support-sla",
+            "ios-offline",
+            "api-sandbox"
+          ]
+        },
+        {
+          "category": "semantic",
+          "query": "change login signing keys while users stay signed in",
+          "rank": 2,
+          "relevant": [
+            "oauth-rotation"
+          ],
+          "returned": [
+            "api-sandbox",
+            "oauth-rotation",
+            "ios-offline",
+            "memory-handoff"
+          ]
+        },
+        {
+          "category": "lexical",
+          "query": "month-end invoice tax reconciliation",
+          "rank": 1,
+          "relevant": [
+            "invoice-tax"
+          ],
+          "returned": [
+            "invoice-tax",
+            "postgres-backup",
+            "support-sla",
+            "fraud-velocity"
+          ]
+        },
+        {
+          "category": "semantic",
+          "query": "work offline on iphone then synchronize",
+          "rank": 2,
+          "relevant": [
+            "ios-offline"
+          ],
+          "returned": [
+            "memory-handoff",
+            "ios-offline",
+            "push-delivery",
+            "oauth-rotation",
+            "warehouse-route"
+          ]
+        },
+        {
+          "category": "semantic",
+          "query": "continue coding in a future session using verified results",
+          "rank": 1,
+          "relevant": [
+            "memory-handoff"
+          ],
+          "returned": [
+            "memory-handoff",
+            "api-sandbox",
+            "fraud-velocity",
+            "warehouse-route",
+            "oauth-rotation"
+          ]
+        },
+        {
+          "category": "lexical",
+          "query": "priority one ticket escalation sla",
+          "rank": 1,
+          "relevant": [
+            "support-sla"
+          ],
+          "returned": [
+            "support-sla",
+            "fraud-velocity",
+            "warehouse-route",
+            "push-delivery",
+            "invoice-tax"
+          ]
+        },
+        {
+          "category": "semantic",
+          "query": "close the books after correcting foreign money charges",
+          "rank": 1,
+          "relevant": [
+            "invoice-tax"
+          ],
+          "returned": [
+            "invoice-tax",
+            "ios-offline",
+            "support-sla",
+            "fraud-velocity"
+          ]
+        },
+        {
+          "category": "semantic",
+          "query": "choose the depot and courier that should ship a package",
+          "rank": 2,
+          "relevant": [
+            "warehouse-route"
+          ],
+          "returned": [
+            "support-sla",
+            "warehouse-route",
+            "search-synonyms",
+            "api-sandbox",
+            "invoice-tax"
+          ]
+        },
+        {
+          "category": "semantic",
+          "query": "detect too many repeated card payments",
+          "rank": 1,
+          "relevant": [
+            "fraud-velocity"
+          ],
+          "returned": [
+            "fraud-velocity",
+            "invoice-tax",
+            "support-sla",
+            "ios-offline",
+            "push-delivery"
+          ]
+        },
+        {
+          "category": "semantic",
+          "query": "resend a phone notification after temporary failure",
+          "rank": 1,
+          "relevant": [
+            "push-delivery"
+          ],
+          "returned": [
+            "push-delivery",
+            "ios-offline",
+            "memory-handoff",
+            "warehouse-route",
+            "api-sandbox"
+          ]
+        },
+        {
+          "category": "semantic",
+          "query": "credentials for testing an integration in isolation",
+          "rank": 1,
+          "relevant": [
+            "api-sandbox"
+          ],
+          "returned": [
+            "api-sandbox",
+            "oauth-rotation",
+            "postgres-backup",
+            "warehouse-route",
+            "memory-handoff"
+          ]
+        },
+        {
+          "category": "semantic",
+          "query": "make small image previews while preserving metadata",
+          "rank": 1,
+          "relevant": [
+            "image-rendition"
+          ],
+          "returned": [
+            "image-rendition",
+            "ios-offline",
+            "memory-handoff",
+            "oauth-rotation",
+            "postgres-backup"
+          ]
+        },
+        {
+          "category": "multilingual",
+          "query": "상품 검색 동의어와 패싯 별칭",
+          "rank": null,
+          "relevant": [
+            "search-synonyms"
+          ],
+          "returned": []
+        },
+        {
+          "category": "multilingual",
+          "query": "나중 코딩 세션에서 검증된 결과로 작업 이어가기",
+          "rank": 1,
+          "relevant": [
+            "memory-handoff"
+          ],
+          "returned": [
+            "memory-handoff",
+            "oauth-rotation",
+            "invoice-tax",
+            "api-sandbox",
+            "ios-offline"
+          ]
+        },
+        {
+          "category": "negative",
+          "query": "unrelated astronomy telescope calibration",
+          "rank": null,
+          "relevant": [],
+          "returned": []
+        },
+        {
+          "category": "negative",
+          "query": "botanical garden irrigation schedule",
+          "rank": null,
+          "relevant": [],
+          "returned": []
+        },
+        {
+          "category": "negative",
+          "query": "compose a jazz melody for brass instruments",
+          "rank": null,
+          "relevant": [],
+          "returned": [
+            "warehouse-route",
+            "api-sandbox",
+            "memory-handoff",
+            "support-sla"
+          ]
+        },
+        {
+          "category": "negative",
+          "query": "marine biology coral spawning observations",
+          "rank": null,
+          "relevant": [],
+          "returned": []
+        }
+      ],
+      "provider": "sentence-transformers-39897b1e723b-384",
+      "query_latency_ms": {
+        "median": 74.371,
+        "p95": 78.53
+      },
+      "recall_at_5": 0.9285714285714286
+    }
+  },
+  "schema_version": 1
+}

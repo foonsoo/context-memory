@@ -12,6 +12,12 @@ class EmbeddingProvider(Protocol):
     @property
     def dimensions(self) -> int: ...
 
+    @property
+    def vector_only_threshold(self) -> float | None: ...
+
+    @property
+    def supplements_lexical_results(self) -> bool: ...
+
     def embed(self, texts: Sequence[str]) -> list[list[float]]: ...
 
 
@@ -41,6 +47,14 @@ class LocalHashEmbedding:
     def name(self) -> str:
         return f"local-hash-v1-{self.dimensions}"
 
+    @property
+    def vector_only_threshold(self) -> float:
+        return 0.20
+
+    @property
+    def supplements_lexical_results(self) -> bool:
+        return False
+
     def _features(self, text: str) -> list[str]:
         normalized = " ".join(text.casefold().split())
         words = re.findall(r"[\w-]+", normalized, flags=re.UNICODE)
@@ -60,3 +74,60 @@ class LocalHashEmbedding:
             norm = math.sqrt(sum(value * value for value in vector))
             result.append([value / norm for value in vector] if norm else vector)
         return result
+
+
+class SentenceTransformerEmbedding:
+    """Explicit opt-in adapter for a local sentence-transformers model.
+
+    Importing Context Memory never imports or downloads a neural model. Constructing
+    this adapter requires the optional dependency and either a local model path or an
+    explicitly chosen model identifier.
+    """
+
+    def __init__(self, model: str, *, device: str | None = None):
+        if not model.strip():
+            raise ValueError("model must be a local path or sentence-transformers model identifier")
+        try:
+            from sentence_transformers import SentenceTransformer
+        except ImportError as exc:
+            raise RuntimeError(
+                "neural embeddings require the optional 'neural' dependency; "
+                "install context-memory[neural]"
+            ) from exc
+        self.model_id = model.strip()
+        self._model = SentenceTransformer(self.model_id, device=device)
+        get_dimensions = getattr(
+            self._model,
+            "get_embedding_dimension",
+            self._model.get_sentence_embedding_dimension,
+        )
+        dimensions = get_dimensions()
+        if not dimensions:
+            raise RuntimeError("the sentence-transformers model did not report embedding dimensions")
+        self._dimensions = int(dimensions)
+
+    @property
+    def dimensions(self) -> int:
+        return self._dimensions
+
+    @property
+    def name(self) -> str:
+        digest = hashlib.sha256(self.model_id.encode("utf-8")).hexdigest()[:12]
+        return f"sentence-transformers-{digest}-{self.dimensions}"
+
+    @property
+    def vector_only_threshold(self) -> float:
+        return 0.20
+
+    @property
+    def supplements_lexical_results(self) -> bool:
+        return True
+
+    def embed(self, texts: Sequence[str]) -> list[list[float]]:
+        vectors = self._model.encode(
+            list(texts),
+            convert_to_numpy=False,
+            normalize_embeddings=True,
+            show_progress_bar=False,
+        )
+        return [[float(value) for value in vector] for vector in vectors]

@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from .embeddings import EmbeddingProvider, LocalHashEmbedding
+from .embeddings import EmbeddingProvider, LocalHashEmbedding, SentenceTransformerEmbedding
 from .contracts import PROMOTABLE_EVENT_KINDS
 
 TYPES = {"fact", "decision", "preference", "constraint", "procedure", "summary", "task", "other"}
@@ -48,9 +48,23 @@ class MemoryStore:
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA synchronous=FULL")
         self.migrate()
-        mode = os.environ.get("CONTEXT_MEMORY_EMBEDDINGS", "local-hash").strip().casefold()
+        configured_mode = os.environ.get("CONTEXT_MEMORY_EMBEDDINGS", "local-hash").strip()
+        mode = configured_mode.casefold()
         embeddings_enabled = mode not in {"0", "false", "off", "disabled", "none"}
-        self.embedding_provider = embedding_provider or (LocalHashEmbedding() if embeddings_enabled else None)
+        if embedding_provider:
+            self.embedding_provider = embedding_provider
+        elif mode in {"neural", "sentence-transformers"}:
+            model = os.environ.get("CONTEXT_MEMORY_EMBEDDING_MODEL", "").strip()
+            if not model:
+                raise ValueError(
+                    "CONTEXT_MEMORY_EMBEDDING_MODEL is required when "
+                    "CONTEXT_MEMORY_EMBEDDINGS=neural"
+                )
+            self.embedding_provider = SentenceTransformerEmbedding(
+                model, device=os.environ.get("CONTEXT_MEMORY_EMBEDDING_DEVICE") or None
+            )
+        else:
+            self.embedding_provider = LocalHashEmbedding() if embeddings_enabled else None
         if self.embedding_provider:
             with self.tx() as cx:
                 for memory in cx.execute("SELECT * FROM memories"):
@@ -907,6 +921,8 @@ class MemoryStore:
         semantic_scores: dict[str, float] = {}
         if self.embedding_provider:
             query_vector = self.embedding_provider.embed([query])[0]
+            vector_only_threshold = getattr(self.embedding_provider, "vector_only_threshold", None)
+            supplements_lexical = bool(getattr(self.embedding_provider, "supplements_lexical_results", False))
             sem_boundary = boundary
             sem_sql = f"""SELECT m.*, e.vector_json FROM memory_embeddings e JOIN memories m ON m.id=e.memory_id
               WHERE {sem_boundary} AND m.status IN ({placeholders}) AND e.provider=? AND e.dimensions=?
@@ -917,12 +933,15 @@ class MemoryStore:
             for row in self.conn.execute(sem_sql, sem_args):
                 item = dict(row); vector = json.loads(item.pop("vector_json"))
                 similarity = sum(a * b for a, b in zip(query_vector, vector))
-                # Feature hashing is a fuzzy projection, not a semantic model. Keep
-                # weak scores for reranking lexical hits, but require a multi-token
-                # query and stronger agreement before admitting a vector-only hit.
+                # Weak similarities may rerank lexical hits. A provider may also
+                # opt into vector-only recall with an explicit calibrated threshold;
+                # this must remain available even when FTS returns an unrelated hit.
                 if similarity > 0.05 and (
                     item["id"] in candidates
-                    or (not lexical and len(query_tokens) >= 2 and similarity >= 0.20)
+                    or (vector_only_threshold is not None
+                        and (not lexical or supplements_lexical)
+                        and len(query_tokens) >= 2
+                        and similarity >= vector_only_threshold)
                 ):
                     semantic.append((similarity, item))
             semantic.sort(key=lambda value: (-value[0], value[1]["id"]))

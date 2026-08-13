@@ -47,7 +47,7 @@ The requested context budget is not authoritative. Each project defaults to a ha
 
 Project-owned search aliases expand known domain vocabulary before FTS matching. Aliases are explicit data, not inferred facts. `graph_traverse` walks verified memory edges with a depth limit of five and filters out non-current nodes by default. Both aliases and edges are exportable projections; neither replaces source events.
 
-`EmbeddingProvider` remains a small optional interface, so a stronger local neural model can replace feature hashing later. Nothing downloads a model, sends content externally, or requires an API key in the default implementation.
+`EmbeddingProvider` remains a small optional interface. The sentence-transformers adapter is available only through the `neural` extra and explicit environment configuration; default startup never imports it or downloads a model. Providers declare a calibrated vector-only threshold so semantic candidates can complement an unrelated FTS hit rather than being silently blocked. Model acquisition may contact the configured model registry, while embedding execution remains local after the model is available.
 
 ## Lifecycle
 

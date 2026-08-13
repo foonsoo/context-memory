@@ -541,6 +541,25 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(repaired["embedded_memories"], 1)
         self.assertTrue(self.store.search_health(p["id"])["ok"])
 
+    def test_semantic_provider_can_add_candidate_when_fts_has_unrelated_hit(self):
+        class SemanticFixture:
+            dimensions = 2
+            name = "semantic-fixture"
+            vector_only_threshold = .8
+            supplements_lexical_results = True
+
+            def embed(self, texts):
+                return [[1.0, 0.0] if "iphone" in text.casefold() or "disconnected" in text.casefold()
+                        else [0.0, 1.0] for text in texts]
+
+        self.store.close()
+        self.store = MemoryStore(Path(self.temp.name) / "data" / "memory.db", SemanticFixture())
+        p = self.store.create_project("semantic-gate")
+        relevant = self.store.upsert_memory(p["id"], "Mobile sync", "Queue edits while disconnected", "fact", "active")
+        self.store.upsert_memory(p["id"], "Work log", "Track completed work", "fact", "active")
+        results = self.store.search(p["id"], "work offline on iphone", 5)
+        self.assertIn(relevant["id"], [item["id"] for item in results])
+
     def test_personal_feedback_and_confirmation_metadata_affect_projection(self):
         p = self.store.create_project("feedback")
         memory = self.store.upsert_memory(p["id"], "Preferred editor", "Use Neovim for editing", "preference", "active",

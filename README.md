@@ -268,6 +268,8 @@ context-memory --db ~/.local/share/context-memory/memory.db serve --transport st
 
 By default, search fuses FTS5 and local-similarity ranks and returns inspectable score components. `CONTEXT_MEMORY_EMBEDDINGS=local-hash` may still be set explicitly. The local hash projection is useful for spelling, morphology, and overlapping wording; it is not a neural semantic model and does not replace explicit aliases for unrelated synonyms. Agents may call `memory_feedback` with `retrieved`, `used`, `helpful`, or `incorrect` to personalize later ranking. `observed_at` and `last_confirmed_at` keep discovery time separate from confirmation freshness.
 
+An experimental local neural adapter is explicit opt-in and never downloads a model during a default install. Install `context-memory[neural]`, then set `CONTEXT_MEMORY_EMBEDDINGS=neural` and `CONTEXT_MEMORY_EMBEDDING_MODEL` to a local path or an intentionally selected sentence-transformers model identifier. `CONTEXT_MEMORY_EMBEDDING_DEVICE` is optional. Use `PYTHONPATH=src python3 benchmarks/run_embedding_evaluation.py --model MODEL` to compare FTS-only, local-hash, and neural projections on the same disposable fixture before choosing it for personal data.
+
 Feedback applies small bounded importance adjustments, and context assembly suppresses near-identical blocks. Memories default to project visibility; set `visibility=global` only for non-path-scoped user preferences or constraints that should be available to every project in the same local database.
 
 For controlled Codex startup measurements, `benchmarks/run_codex_token_experiment.py`

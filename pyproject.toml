@@ -23,6 +23,7 @@ classifiers = [
 
 [project.optional-dependencies]
 crypto = ["cryptography>=42"]
+neural = ["sentence-transformers>=3,<6"]
 
 [project.scripts]
 context-memory = "context_memory.cli:main"
