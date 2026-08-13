@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "contract_version": "decision-brief/v1",
+  "scenarios": [
+    {
+      "id": "changed-decision",
+      "question": "Which persistence engine should the desktop client use?",
+      "memories": [
+        {"key": "old", "title": "Original persistence choice", "content": "Use flat JSON files for desktop persistence", "type": "decision", "status": "superseded", "observed_at": "2026-01-01T00:00:00+00:00"},
+        {"key": "current", "title": "Current persistence choice", "content": "Use SQLite WAL for desktop persistence", "type": "decision", "status": "active", "observed_at": "2026-02-01T00:00:00+00:00"}
+      ],
+      "expected": {"current_decisions": ["current"], "history": ["old", "current"], "excluded_current": ["old"]}
+    },
+    {
+      "id": "conflicting-evidence",
+      "question": "When should the Atlas release ship?",
+      "memories": [
+        {"key": "decision", "title": "Atlas release decision", "content": "Ship the Atlas release on Tuesday", "type": "decision", "status": "active"},
+        {"key": "conflict", "title": "Atlas capacity conflict", "content": "Atlas release capacity is disputed by the operations forecast", "type": "fact", "status": "disputed"}
+      ],
+      "expected": {"current_decisions": ["decision"], "disputes": ["conflict"], "history": ["decision"]}
+    },
+    {
+      "id": "rejected-alternative",
+      "question": "Which Atlas queue should process billing jobs?",
+      "memories": [
+        {"key": "decision", "title": "Atlas billing queue", "content": "Use the durable Atlas queue for billing jobs", "type": "decision", "status": "active"},
+        {"key": "alternative", "title": "Atlas queue alternative", "content": "Reject the in-memory Atlas queue for billing jobs", "type": "decision", "status": "rejected", "tags": ["alternative"]}
+      ],
+      "expected": {"current_decisions": ["decision"], "alternatives": ["alternative"], "history": ["decision", "alternative"], "excluded_current": ["alternative"]}
+    },
+    {
+      "id": "outcome-feedback",
+      "question": "Did the Orion cache decision improve checkout latency?",
+      "memories": [
+        {"key": "decision", "title": "Orion cache decision", "content": "Enable the Orion cache for checkout reads", "type": "decision", "status": "active"},
+        {"key": "outcome", "title": "Orion cache outcome", "content": "The Orion cache reduced checkout p95 latency by 18 percent", "type": "fact", "status": "active", "tags": ["outcome"]}
+      ],
+      "expected": {"current_decisions": ["decision"], "outcomes": ["outcome"], "history": ["decision"]}
+    },
+    {
+      "id": "missing-rationale",
+      "question": "Why was the Vega export format selected?",
+      "memories": [
+        {"key": "decision", "title": "Vega export decision", "content": "Use Parquet for the Vega analytics export", "type": "decision", "status": "active"}
+      ],
+      "expected": {"current_decisions": ["decision"], "rationale": [], "history": ["decision"], "uncertainty_reasons": ["missing_rationale"]}
+    },
+    {
+      "id": "stale-external-source",
+      "question": "Which Nimbus API version is approved for integration?",
+      "memories": [
+        {"key": "decision", "title": "Nimbus API decision", "content": "Use Nimbus API version three for the integration", "type": "decision", "status": "active"},
+        {"key": "stale", "title": "Stale Nimbus documentation", "content": "The cited Nimbus compatibility page is stale and requires reinspection", "type": "fact", "status": "disputed", "source_uri": "https://example.invalid/nimbus-v2"}
+      ],
+      "expected": {"current_decisions": ["decision"], "disputes": ["stale"], "history": ["decision"]}
+    }
+  ]
+}

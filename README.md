@@ -422,7 +422,9 @@ context-memory context PROJECT_UUID "database migration" \
 
 The response places verified memory in `context`/`items` and unverified stream entries in `recent_events`. The event allowance is capped at 4,000 characters and consumes the same effective project context budget; unused event allowance remains available to memories. If an event body is truncated, retrieve the immutable full event with `get_source(event_id)`.
 
-`decision_context` is the decision-oriented read contract. It classifies retrieved memories into current decisions, rationale, constraints, alternatives, outcomes, chronological history, disputes, open questions, and uncertainty. Every evidence claim carries its memory ID and source event IDs; deterministic retrieval gaps are labeled separately and `recommendation` is always `null`. The response embeds the underlying compact `get_context` result so ranking, budgets, lifecycle filters, and cross-project discovery remain inspectable and backward compatible.
+`decision_context` is the decision-oriented read contract. It classifies retrieved memories into current decisions, rationale, constraints, alternatives, outcomes, chronological history, disputes, open questions, and uncertainty. Every evidence claim carries its memory ID and source event IDs; deterministic retrieval gaps, including a current decision with no retrieved rationale, are labeled separately and `recommendation` is always `null`. The response embeds the underlying compact `get_context` result so ranking, budgets, lifecycle filters, and cross-project discovery remain inspectable and backward compatible.
+
+Run `PYTHONPATH=src python3 benchmarks/run_decision_evaluation.py` to evaluate this contract against the frozen public Decision Brief scenarios. The report includes accuracy, stale leakage, citation and source recovery, history recall, payload size, and latency metrics.
 
 ## Test and smoke test
 

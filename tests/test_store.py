@@ -345,6 +345,7 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(brief["alternatives"][0]["citations"]["memory_id"], rejected["id"])
         self.assertEqual([item["citations"]["memory_id"] for item in brief["history"]], [old["id"], current["id"], rejected["id"]])
         self.assertIsNone(brief["recommendation"])
+        self.assertNotIn("missing_rationale", [item["reason"] for item in brief["uncertainty"]])
         self.assertEqual({item["memory_id"] for item in brief["retrieval"]["items"]},
                          {old["id"], current["id"], rejected["id"], brief["rationale"][0]["citations"]["memory_id"]})
 
@@ -357,6 +358,14 @@ class StoreTests(unittest.TestCase):
         reasons = {(item["citations"] or {}).get("memory_id"): item["reason"] for item in brief["uncertainty"]}
         self.assertIn(reasons[proposed["id"]], {"unreviewed_proposed_memory", "missing_source_event"})
         self.assertIn("missing_source_event", [item["reason"] for item in brief["uncertainty"]])
+
+    def test_decision_context_labels_missing_rationale(self):
+        p = self.store.create_project("decision-missing-rationale")
+        event = self.store.record_event(p["id"], "decision", "Choose the Vega format")
+        self.store.upsert_memory(p["id"], "Vega format", "Use Parquet for Vega exports", "decision", "active",
+                                 source_event_ids=[event["id"]])
+        brief = self.store.decision_context(p["id"], "Vega export format", 3000)
+        self.assertIn("missing_rationale", [item["reason"] for item in brief["uncertainty"]])
 
     def test_proposed_excluded_and_transitions_audited(self):
         p = self.store.create_project("demo")

@@ -1200,6 +1200,8 @@ class MemoryStore:
         sections["history"].sort(key=lambda item: (item["observed_at"] or "", item["citations"]["memory_id"]))
         if not sections["current_decisions"]:
             uncertain.append({"kind":"retrieval_gap", "reason":"no_current_decision_retrieved", "citations":None})
+        elif not sections["rationale"]:
+            uncertain.append({"kind":"evidence_gap", "reason":"missing_rationale", "citations":None})
         return {
             "contract_version": "decision-brief/v1", "question": question, **sections,
             "uncertainty": uncertain, "citation_index": citations,

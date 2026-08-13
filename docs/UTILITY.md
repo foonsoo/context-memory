@@ -54,6 +54,8 @@ Compare at least these modes:
 
 Report task accuracy, stale-fact rate, unsupported-claim rate, source-recovery rate, p50/p95 latency, tokens or characters injected, installation steps, external services, and estimated API cost. The key hypothesis is not that FTS5 beats graphs on every query. It is that ledger-first memory yields better provenance and change handling at materially lower operational cost, while graph-first systems win on genuine multi-hop queries.
 
+The P0 Decision Brief regression is runnable with `PYTHONPATH=src python3 benchmarks/run_decision_evaluation.py`. Its frozen schema-v1 fixture covers changed decisions, conflicting evidence, rejected alternatives, outcome feedback, missing rationale, and stale external sources. Each scenario uses an isolated disposable database and reports exact current-decision accuracy, stale-decision leakage, unsupported-claim rate, source recovery, useful-history recall, compact JSON character size, and p50/p95 latency. This deterministic suite is an exit-gate regression for `decision-brief/v1`, not evidence that the product improves human decisions.
+
 ### Local engineering baseline
 
 An initial synthetic run on 2026-08-10 inserted 1,000 events and 1,000 sourced active memories into a fresh database, then executed 200 repeated context queries. On the development Mac with Python's SQLite 3.51.0, the resulting database was 2,834,432 bytes; context retrieval measured 2.657 ms p50 and 2.849 ms p95. Insertion took 0.309 seconds. This is a smoke/performance baseline, not a cross-system benchmark or evidence of task-quality improvement. Hardware, filesystem, SQLite build, query selectivity, and data shape affect the result.
