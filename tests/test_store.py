@@ -894,6 +894,30 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(sum("FROM memory_usage" in statement for statement in selects), 1)
         self.assertEqual(sum("FROM memory_sources" in statement for statement in selects), 1)
 
+    def test_search_uses_strict_lexical_pass_when_it_fills_the_limit(self):
+        p = self.store.create_project("strict-lexical")
+        exact = self.store.upsert_memory(p["id"], "Checkout retry", "Prevent duplicate charges", "decision", "active")
+        self.store.upsert_memory(p["id"], "Checkout only", "Unrelated checkout note", "fact", "active")
+        matches = []
+        self.store.conn.set_trace_callback(
+            lambda statement: matches.append(statement) if "memories_fts MATCH" in statement else None)
+        try:
+            results = self.store.search(p["id"], "checkout duplicate", limit=1)
+        finally:
+            self.store.conn.set_trace_callback(None)
+        self.assertEqual(results[0]["id"], exact["id"])
+        self.assertEqual(results[0]["retrieval"]["lexical_strategy"], "strict")
+        self.assertEqual(len(matches), 1)
+
+    def test_search_falls_back_to_broad_lexical_query_and_keeps_aliases_grouped(self):
+        p = self.store.create_project("lexical-fallback")
+        self.store.set_search_aliases(p["id"], "db", ["database"])
+        exact = self.store.upsert_memory(p["id"], "Database choice", "Use sqlite persistence", "decision", "active")
+        partial = self.store.upsert_memory(p["id"], "Database backup", "Nightly archive", "procedure", "active")
+        results = self.store.search(p["id"], "db sqlite", limit=2)
+        self.assertEqual({item["id"] for item in results}, {exact["id"], partial["id"]})
+        self.assertTrue(all(item["retrieval"]["lexical_strategy"] == "broad_fallback" for item in results))
+
     def test_context_budget_is_capped_by_project_policy(self):
         p = self.store.create_project("bounded-context")
         self.store.upsert_memory(p["id"], "Budget", "bounded context " * 20, "constraint", "active")

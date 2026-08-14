@@ -1248,13 +1248,21 @@ class MemoryStore:
         if not query.strip(): return []
         query_tokens = list(dict.fromkeys(re.findall(r"[\w-]+", query.casefold(), flags=re.UNICODE)))
         if not query_tokens: return []
-        expanded=list(query_tokens)
+        token_alternatives: list[list[str]] = []
         for token in query_tokens:
+            alternatives = [token]
             row=self._row("SELECT aliases_json FROM search_aliases WHERE project_id=? AND term=?",(project_id,token))
             if row:
-                for alias in json.loads(row["aliases_json"]): expanded.extend(re.findall(r"[\w-]+",alias,flags=re.UNICODE))
-        tokens=list(dict.fromkeys(expanded))
-        match = " OR ".join('"' + t.replace('"', '""') + '"' for t in tokens)
+                for alias in json.loads(row["aliases_json"]):
+                    alternatives.extend(re.findall(r"[\w-]+",alias,flags=re.UNICODE))
+            token_alternatives.append(list(dict.fromkeys(alternatives)))
+        quote = lambda value: '"' + value.replace('"', '""') + '"'
+        strict_match = " AND ".join(
+            ("(" + " OR ".join(quote(value) for value in alternatives) + ")")
+            if len(alternatives) > 1 else quote(alternatives[0])
+            for alternatives in token_alternatives)
+        tokens = list(dict.fromkeys(value for alternatives in token_alternatives for value in alternatives))
+        broad_match = " OR ".join(quote(token) for token in tokens)
         allowed = statuses or ["active", "proposed", "disputed"]
         placeholders = ",".join("?" for _ in allowed)
         timestamp = now()
@@ -1263,15 +1271,25 @@ class MemoryStore:
         # make the actually relevant project impossible to retrieve.
         boundary = "1=1" if discover_projects else "(m.project_id=? OR m.visibility='global')"
         boundary_args: list[Any] = [] if discover_projects else [project_id]
-        sql = f"""SELECT m.*, bm25(memories_fts, 0, 5, 1, .5) AS fts_rank
+        lexical_sql = f"""SELECT m.*, bm25(memories_fts, 0, 5, 1, .5) AS fts_rank
           FROM memories_fts JOIN memories m ON m.id=memories_fts.memory_id
           WHERE memories_fts MATCH ? AND {boundary} AND m.status IN ({placeholders})
           AND (m.valid_from IS NULL OR m.valid_from<=?) AND (m.valid_until IS NULL OR m.valid_until>?)"""
-        args: list[Any] = [match, *boundary_args, *allowed, timestamp, timestamp]
-        if scope_id and not discover_projects: sql += " AND (m.scope_id=? OR m.scope_id IS NULL)"; args.append(scope_id)
+        lexical_args: list[Any] = [*boundary_args, *allowed, timestamp, timestamp]
+        if scope_id and not discover_projects:
+            lexical_sql += " AND (m.scope_id=? OR m.scope_id IS NULL)"; lexical_args.append(scope_id)
         candidate_limit = max(20, min(max(1, limit) * 4, 200))
-        sql += " ORDER BY bm25(memories_fts,0,5,1,.5) ASC LIMIT ?"; args.append(candidate_limit)
-        lexical = [dict(r) for r in self.conn.execute(sql, args)]
+        lexical_sql += " ORDER BY bm25(memories_fts,0,5,1,.5) ASC LIMIT ?"
+        strict = [dict(r) for r in self.conn.execute(
+            lexical_sql, [strict_match, *lexical_args, candidate_limit])]
+        strict_target = min(max(1, limit), candidate_limit)
+        lexical_strategy = "strict"
+        if len(strict) >= strict_target or strict_match == broad_match:
+            lexical = strict
+        else:
+            lexical = [dict(r) for r in self.conn.execute(
+                lexical_sql, [broad_match, *lexical_args, candidate_limit])]
+            lexical_strategy = "broad_fallback"
         candidates = {row["id"]: row for row in lexical}
         components: dict[str, dict[str, float]] = {
             row["id"]: {"lexical_rrf": 1.0 / (60 + rank), "semantic_rrf": 0.0}
@@ -1348,6 +1366,7 @@ class MemoryStore:
             query_coverage = sum(token in searchable_tokens for token in query_tokens) / len(query_tokens)
             r["retrieval"] = {"score": components[r["id"]]["total"], "components": components[r["id"]],
                               "lexical_rank": lexical_ranks.get(r["id"]),
+                              "lexical_strategy": lexical_strategy,
                               "query_coverage":query_coverage,
                               "semantic_similarity": semantic_scores.get(r["id"]), "embedding_provider": self._provider_name()}
             r["usage"] = usage.get(r["id"], {"retrieved_count":0,"used_count":0,"helpful_count":0,"incorrect_count":0})
