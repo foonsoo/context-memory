@@ -165,6 +165,7 @@ def _run_mode(fixture: dict[str, Any], repeats: int, directory: str, mode: str) 
             outcomes.append({
                 "id": scenario["id"], "current_decision_correct": current_ok,
                 "rank_at_5": rank,
+                "retrieval_gate": brief["retrieval"]["retrieval_gate"],
                 "stale_current_leaks": len(leaked), "section_checks": section_checks,
                 "discovery_ambiguous": brief["retrieval"]["project_discovery"]["ambiguous"],
                 "context_chars": rendered_chars,
@@ -198,7 +199,7 @@ def run(repeats: int = 5, fixture_path: str | Path = DEFAULT_FIXTURE) -> dict[st
     with tempfile.TemporaryDirectory() as directory:
         modes = {mode: _run_mode(fixture, repeats, directory, mode) for mode in ("fts-only", "local-hash")}
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "contract_version": fixture["contract_version"],
         "fixture": {"source": Path(fixture_path).name, "scenarios": len(fixture["scenarios"]), "repeats": repeats},
         "modes": modes,

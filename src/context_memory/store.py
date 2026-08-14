@@ -26,6 +26,8 @@ CHECKPOINT_REASONS = {"context_budget", "elapsed", "material_change", "completed
 DISCOVERY_MIN_CONFIDENCE = .45
 DISCOVERY_AUTO_SELECT_CONFIDENCE = .60
 DISCOVERY_MIN_MARGIN = .12
+NEGATIVE_VECTOR_ONLY_MIN_SIMILARITY = .30
+NEGATIVE_VECTOR_ONLY_MIN_SEPARATION = .03
 
 
 def now() -> str:
@@ -1468,6 +1470,41 @@ class MemoryStore:
             self._audit(cx, memory["project_id"], "memory_feedback", memory_id, signal, result)
         return result
 
+    @staticmethod
+    def _retrieval_gate(candidates: list[dict[str, Any]]) -> dict[str, Any]:
+        """Reject weak vector-only retrieval while leaving lexical recall unchanged."""
+        thresholds = {"vector_only_similarity":NEGATIVE_VECTOR_ONLY_MIN_SIMILARITY,
+                      "vector_only_separation":NEGATIVE_VECTOR_ONLY_MIN_SEPARATION}
+        if not candidates:
+            return {"status":"no_confident_match", "reason":"no_candidates", "components":{
+                "lexical_rank":None, "query_coverage":0.0, "semantic_similarity":None,
+                "lexical_vector_agreement":False, "top_score":None, "runner_up_score":None,
+                "score_margin":None, "semantic_separation":None}, "thresholds":thresholds}
+        top = candidates[0]["retrieval"]
+        runner = candidates[1]["retrieval"] if len(candidates) > 1 else None
+        top_score = float(top["score"]); runner_score = float(runner["score"]) if runner else None
+        similarity = top.get("semantic_similarity")
+        runner_similarity = runner.get("semantic_similarity") if runner else None
+        semantic_separation = (float(similarity) - float(runner_similarity)
+                               if similarity is not None and runner_similarity is not None
+                               else float(similarity or 0.0))
+        components = {"lexical_rank":top.get("lexical_rank"), "query_coverage":top.get("query_coverage", 0.0),
+                      "semantic_similarity":similarity,
+                      "lexical_vector_agreement":bool(top.get("lexical_rank") is not None and similarity is not None),
+                      "top_score":top_score, "runner_up_score":runner_score,
+                      "score_margin":top_score - runner_score if runner_score is not None else top_score,
+                      "semantic_separation":semantic_separation}
+        if top.get("lexical_rank") is not None:
+            return {"status":"accepted", "reason":"lexical_match", "components":components, "thresholds":thresholds}
+        if similarity is None or similarity < NEGATIVE_VECTOR_ONLY_MIN_SIMILARITY:
+            return {"status":"no_confident_match", "reason":"weak_vector_only_similarity",
+                    "components":components, "thresholds":thresholds}
+        if runner is not None and semantic_separation < NEGATIVE_VECTOR_ONLY_MIN_SEPARATION:
+            return {"status":"no_confident_match", "reason":"weak_vector_only_separation",
+                    "components":components, "thresholds":thresholds}
+        return {"status":"accepted", "reason":"strong_vector_only_match", "components":components,
+                "thresholds":thresholds}
+
     def get_context(self, project_id: str, query: str, char_budget: int = 6000, statuses: list[str] | None = None,
                     scope_id: str | None = None, event_cursor: int | None = None, event_kinds: list[str] | None = None,
                     event_limit: int = 20, event_char_budget: int = 2000, discover_projects: bool = True,
@@ -1500,11 +1537,15 @@ class MemoryStore:
         memory_budget = budget - event_used
         selected_texts: list[str] = []
         candidates = self.search(project_id, query, policy["max_context_items"] * 3, statuses or ["active", "disputed"], scope_id)
+        retrieval_gate = self._retrieval_gate(candidates)
+        if retrieval_gate["status"] == "no_confident_match": candidates = []
         local_matches = [m for m in candidates if m["project_id"] == project_id]
         discovery_used = bool(discover_projects and not local_matches)
         discovery_candidates: list[dict[str, Any]] = []
         if discovery_used:
             discovery_candidates = self.search(project_id, query, policy["max_context_items"] * 3, statuses or ["active", "disputed"], None, True)
+            discovery_gate = self._retrieval_gate(discovery_candidates)
+            if discovery_gate["status"] == "no_confident_match": discovery_candidates = []
             seen = {m["id"] for m in candidates}
             candidates.extend(m for m in discovery_candidates if m["id"] not in seen)
         project_candidates = self._aggregate_project_candidates(discovery_candidates, project_id)
@@ -1537,6 +1578,7 @@ class MemoryStore:
                 "max_items": policy["max_context_items"], "memory_budget":memory_budget,"event_budget":reserved,
                 "used": used + event_used, "memory_used":used,"event_used":event_used,
                 "items": selected, "recent_events":recent_events,
+                "retrieval_gate":retrieval_gate,
                 "project_discovery":{"enabled":discover_projects,"used":discovery_used,"ambiguous":discovery_ambiguous,
                                      "project_ids":list(dict.fromkeys(i["project_id"] for i in selected if i["project_id"] != project_id)),
                                      "selected_project_id":selected_project_id,"confidence":discovery_confidence,

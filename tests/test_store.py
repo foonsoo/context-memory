@@ -918,6 +918,39 @@ class StoreTests(unittest.TestCase):
         self.assertEqual({item["id"] for item in results}, {exact["id"], partial["id"]})
         self.assertTrue(all(item["retrieval"]["lexical_strategy"] == "broad_fallback" for item in results))
 
+    def test_context_rejects_weak_vector_only_result_and_reports_gate_evidence(self):
+        p = self.store.create_project("negative-result-gate")
+        self.store.upsert_memory(p["id"], "Unrelated local note", "The local project tracks garden irrigation", "fact", "active")
+        result = self.store.get_context(p["id"], "Which Falcon deployment window is approved?", 2000,
+                                        discover_projects=False, response_format="compact")
+        self.assertEqual(result["items"], [])
+        gate = result["retrieval_gate"]
+        self.assertEqual(gate["status"], "no_confident_match")
+        self.assertEqual(gate["reason"], "weak_vector_only_similarity")
+        self.assertIsNone(gate["components"]["lexical_rank"])
+        self.assertEqual(gate["components"]["query_coverage"], 0.0)
+        self.assertLess(gate["components"]["semantic_similarity"], gate["thresholds"]["vector_only_similarity"])
+
+    def test_context_accepts_lexical_match_and_reports_agreement_components(self):
+        p = self.store.create_project("positive-result-gate")
+        expected = self.store.upsert_memory(p["id"], "Falcon deployment", "Approve the Falcon west window", "decision", "active")
+        result = self.store.get_context(p["id"], "Falcon approved window", 2000,
+                                        discover_projects=False, response_format="compact")
+        self.assertEqual(result["items"][0]["memory_id"], expected["id"])
+        self.assertEqual(result["retrieval_gate"]["status"], "accepted")
+        self.assertEqual(result["retrieval_gate"]["reason"], "lexical_match")
+        self.assertIsNotNone(result["retrieval_gate"]["components"]["lexical_rank"])
+
+    def test_vector_only_gate_requires_top_result_separation(self):
+        def candidate(score, similarity):
+            return {"retrieval":{"score":score, "lexical_rank":None, "query_coverage":0.0,
+                                 "semantic_similarity":similarity}}
+        rejected = self.store._retrieval_gate([candidate(.018, .55), candidate(.017, .53)])
+        self.assertEqual(rejected["reason"], "weak_vector_only_separation")
+        accepted = self.store._retrieval_gate([candidate(.018, .55), candidate(.017, .40)])
+        self.assertEqual(accepted["status"], "accepted")
+        self.assertEqual(accepted["reason"], "strong_vector_only_match")
+
     def test_context_budget_is_capped_by_project_policy(self):
         p = self.store.create_project("bounded-context")
         self.store.upsert_memory(p["id"], "Budget", "bounded context " * 20, "constraint", "active")
