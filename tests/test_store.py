@@ -918,6 +918,47 @@ class StoreTests(unittest.TestCase):
         self.assertEqual({item["id"] for item in results}, {exact["id"], partial["id"]})
         self.assertTrue(all(item["retrieval"]["lexical_strategy"] == "broad_fallback" for item in results))
 
+    def test_local_hash_reranks_only_the_bounded_lexical_candidates(self):
+        p = self.store.create_project("bounded-local-hash")
+        expected = self.store.upsert_memory(
+            p["id"], "Checkout retry", "Prevent duplicate charges", "decision", "active")
+        for index in range(30):
+            self.store.upsert_memory(
+                p["id"], f"Unrelated note {index}", f"garden archive material {index}", "fact", "active")
+
+        embedding_selects = []
+        self.store.conn.set_trace_callback(
+            lambda statement: embedding_selects.append(statement)
+            if "FROM memory_embeddings" in statement else None)
+        try:
+            result = self.store.search(p["id"], "checkout duplicate", limit=1)[0]
+        finally:
+            self.store.conn.set_trace_callback(None)
+
+        self.assertEqual(result["id"], expected["id"])
+        scan = result["retrieval"]["semantic_scan"]
+        self.assertEqual(scan["mode"], "lexical_rerank")
+        self.assertEqual(scan["evaluated"], 1)
+        self.assertEqual(scan["candidate_limit"], 1)
+        self.assertFalse(scan["truncated"])
+        self.assertEqual(len(embedding_selects), 1)
+        self.assertIn("m.id IN", embedding_selects[0])
+
+    def test_local_hash_vector_fallback_exposes_candidate_and_time_limits(self):
+        p = self.store.create_project("bounded-vector-fallback")
+        expected = self.store.upsert_memory(
+            p["id"], "검색 성능", "개인화된 기억을 빠르게 검색합니다", "decision", "active")
+
+        result = self.store.search(p["id"], "개인화된기억 빠르게검색합니다", limit=1)[0]
+
+        self.assertEqual(result["id"], expected["id"])
+        scan = result["retrieval"]["semantic_scan"]
+        self.assertEqual(scan["mode"], "vector_fallback")
+        self.assertEqual(scan["candidate_limit"], 1000)
+        self.assertEqual(scan["time_limit_ms"], 25)
+        self.assertEqual(scan["evaluated"], 1)
+        self.assertFalse(scan["truncated"])
+
     def test_context_rejects_weak_vector_only_result_and_reports_gate_evidence(self):
         p = self.store.create_project("negative-result-gate")
         self.store.upsert_memory(p["id"], "Unrelated local note", "The local project tracks garden irrigation", "fact", "active")

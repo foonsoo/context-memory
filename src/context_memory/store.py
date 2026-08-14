@@ -7,6 +7,7 @@ import re
 import sqlite3
 import stat
 import subprocess
+import time
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -28,6 +29,8 @@ DISCOVERY_AUTO_SELECT_CONFIDENCE = .60
 DISCOVERY_MIN_MARGIN = .12
 NEGATIVE_VECTOR_ONLY_MIN_SIMILARITY = .30
 NEGATIVE_VECTOR_ONLY_MIN_SEPARATION = .03
+LOCAL_HASH_FALLBACK_CANDIDATE_LIMIT = 1000
+LOCAL_HASH_FALLBACK_TIME_LIMIT_MS = 25
 
 
 def now() -> str:
@@ -1298,6 +1301,8 @@ class MemoryStore:
             for rank, row in enumerate(lexical, 1)
         }
         semantic_scores: dict[str, float] = {}
+        semantic_scan = {"mode":"disabled", "candidate_limit":0, "time_limit_ms":0,
+                         "evaluated":0, "truncated":False}
         if self.embedding_provider:
             query_vector = self.embedding_provider.embed([query])[0]
             vector_only_threshold = getattr(self.embedding_provider, "vector_only_threshold", None)
@@ -1308,8 +1313,29 @@ class MemoryStore:
               AND (m.valid_from IS NULL OR m.valid_from<=?) AND (m.valid_until IS NULL OR m.valid_until>?)"""
             sem_args: list[Any] = [*boundary_args, *allowed, self._provider_name(), self.embedding_provider.dimensions, timestamp, timestamp]
             if scope_id and not discover_projects: sem_sql += " AND (m.scope_id=? OR m.scope_id IS NULL)"; sem_args.append(scope_id)
+            if lexical and not supplements_lexical:
+                lexical_ids = sorted(candidates)
+                sem_sql += " AND m.id IN (" + ",".join("?" for _ in lexical_ids) + ")"
+                sem_args.extend(lexical_ids)
+                semantic_scan = {"mode":"lexical_rerank", "candidate_limit":len(lexical_ids),
+                                 "time_limit_ms":0, "evaluated":0, "truncated":False}
+                scan_deadline = None
+            else:
+                sem_sql += " ORDER BY m.id LIMIT ?"
+                sem_args.append(LOCAL_HASH_FALLBACK_CANDIDATE_LIMIT + 1)
+                semantic_scan = {"mode":"vector_fallback", "candidate_limit":LOCAL_HASH_FALLBACK_CANDIDATE_LIMIT,
+                                 "time_limit_ms":LOCAL_HASH_FALLBACK_TIME_LIMIT_MS,
+                                 "evaluated":0, "truncated":False}
+                scan_deadline = time.perf_counter() + LOCAL_HASH_FALLBACK_TIME_LIMIT_MS / 1000
             semantic: list[tuple[float, str]] = []
             for row in self.conn.execute(sem_sql, sem_args):
+                if semantic_scan["evaluated"] >= semantic_scan["candidate_limit"]:
+                    semantic_scan["truncated"] = True
+                    break
+                if scan_deadline is not None and time.perf_counter() >= scan_deadline:
+                    semantic_scan["truncated"] = True
+                    break
+                semantic_scan["evaluated"] += 1
                 vector = json.loads(row["vector_json"])
                 similarity = sum(a * b for a, b in zip(query_vector, vector))
                 # Weak similarities may rerank lexical hits. A provider may also
@@ -1369,6 +1395,7 @@ class MemoryStore:
             r["retrieval"] = {"score": components[r["id"]]["total"], "components": components[r["id"]],
                               "lexical_rank": lexical_ranks.get(r["id"]),
                               "lexical_strategy": lexical_strategy,
+                              "semantic_scan":semantic_scan,
                               "query_coverage":query_coverage,
                               "semantic_similarity": semantic_scores.get(r["id"]), "embedding_provider": self._provider_name()}
             r["usage"] = usage.get(r["id"], {"retrieved_count":0,"used_count":0,"helpful_count":0,"incorrect_count":0})
