@@ -9,12 +9,14 @@ from benchmarks.run_embedding_evaluation import load_fixture, run
 class EmbeddingEvaluationTests(unittest.TestCase):
     def test_dependency_free_baselines_are_reproducible(self):
         result = run(repeats=1)
-        self.assertEqual(result["schema_version"], 2)
+        self.assertEqual(result["schema_version"], 3)
         self.assertEqual(result["fixture"]["source"], "built-in-synthetic")
         self.assertEqual(set(result["results"]), {"fts", "local_hash"})
         self.assertGreaterEqual(result["results"]["local_hash"]["recall_at_5"], result["results"]["fts"]["recall_at_5"])
         self.assertLessEqual(result["results"]["fts"]["negative_query_result_rate"], 0.25)
         self.assertEqual(result["results"]["local_hash"]["negative_queries"]["count"], 4)
+        self.assertGreater(result["results"]["local_hash"]["recall_at_5"], result["results"]["fts"]["recall_at_5"])
+        self.assertEqual(result["results"]["local_hash"]["categories"]["korean-spacing"]["recall_at_5"], 1.0)
 
     def test_external_judgment_fixture_is_validated_and_not_copied_to_metadata(self):
         fixture = {"schema_version": 1,

@@ -29,6 +29,7 @@ MEMORIES = [
     ("push-delivery", "Notification delivery", "Retry failed mobile push messages with exponential backoff."),
     ("api-sandbox", "Developer portal", "Issue isolated API keys for testing integrations in a sandbox."),
     ("image-rendition", "Asset processing", "Generate thumbnail renditions and retain image metadata."),
+    ("korean-memory-search", "기억 검색", "개인화된 기억을 빠르게 검색합니다."),
 ]
 
 QUERIES = [
@@ -46,6 +47,11 @@ QUERIES = [
     ("make small image previews while preserving metadata", {"image-rendition"}, "semantic"),
     ("상품 검색 동의어와 패싯 별칭", {"search-synonyms"}, "multilingual"),
     ("나중 코딩 세션에서 검증된 결과로 작업 이어가기", {"memory-handoff"}, "multilingual"),
+    ("postgres restoring encryptd backups", {"postgres-backup"}, "partial-wording"),
+    ("retried faild notificationn deliveryy", {"push-delivery"}, "typographical"),
+    ("priorityy-one suppport tickett slas", {"support-sla"}, "abbreviation-variation"),
+    ("개인화 기억검색", {"korean-memory-search"}, "korean-spacing"),
+    ("개인화된 기억으로 검색해줘", {"korean-memory-search"}, "korean-particle"),
     ("unrelated astronomy telescope calibration", set(), "negative"),
     ("botanical garden irrigation schedule", set(), "negative"),
     ("compose a jazz melody for brass instruments", set(), "negative"),
@@ -133,7 +139,9 @@ def evaluate(name: str, provider: Any, root: Path, repeats: int,
             query_started = time.perf_counter()
             runs = store.search(project["id"], query, 5, statuses=["active"])
             latencies.append((time.perf_counter() - query_started) * 1000)
-        returned = [row["id"] for row in runs]
+        gate = store._retrieval_gate(runs)
+        accepted = runs if gate["status"] == "accepted" else []
+        returned = [row["id"] for row in accepted]
         relevant = {ids[key] for key in relevant_keys}
         rank = next((index for index, memory_id in enumerate(returned, 1) if memory_id in relevant), None)
         if relevant:
@@ -149,6 +157,7 @@ def evaluate(name: str, provider: Any, root: Path, repeats: int,
             "returned": [next(key for key, memory_id in ids.items() if memory_id == value) for value in returned],
             "top_semantic_similarity": next((row["retrieval"]["semantic_similarity"] for row in runs
                                                if row["retrieval"]["semantic_similarity"] is not None), None),
+            "retrieval_gate": {"status": gate["status"], "reason": gate["reason"]},
         })
     store.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     provider_name = store._provider_name()
@@ -197,7 +206,7 @@ def run(model: str | None = None, repeats: int = 5, fixture: str | Path | None =
             for result in results.values():
                 result.pop("outcomes", None)
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "fixture": {"source": "external" if fixture else "built-in-synthetic",
                     "memories": len(memories), "queries": len(queries), "repeats": repeats},
         "neural_model": model,

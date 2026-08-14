@@ -34,7 +34,7 @@ class LocalHashEmbedding:
     morphological, and partial-phrase recall while keeping personal data on-device.
     """
 
-    def __init__(self, dimensions: int = 256):
+    def __init__(self, dimensions: int = 1024):
         if dimensions < 32:
             raise ValueError("dimensions must be at least 32")
         self._dimensions = dimensions
@@ -45,7 +45,7 @@ class LocalHashEmbedding:
 
     @property
     def name(self) -> str:
-        return f"local-hash-v1-{self.dimensions}"
+        return f"local-hash-v2-{self.dimensions}"
 
     @property
     def vector_only_threshold(self) -> float:
@@ -60,7 +60,16 @@ class LocalHashEmbedding:
         words = re.findall(r"[\w-]+", normalized, flags=re.UNICODE)
         compact = re.sub(r"\s+", "", normalized)
         grams = [compact[i:i + 3] for i in range(max(0, len(compact) - 2))]
-        return [f"w:{word}" for word in words] + [f"c3:{gram}" for gram in grams]
+        # Hangul syllable bigrams recover spacing and particle changes that lose
+        # whole-word overlap. Restricting the shorter feature to Hangul avoids
+        # the common ASCII bigrams that raised negative-query similarities.
+        hangul_bigrams = [
+            compact[i:i + 2] for i in range(max(0, len(compact) - 1))
+            if re.fullmatch(r"[가-힣]{2}", compact[i:i + 2])
+        ]
+        return ([f"w:{word}" for word in words]
+                + [f"c3:{gram}" for gram in grams]
+                + [f"k2:{gram}" for gram in hangul_bigrams])
 
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
         result: list[list[float]] = []
