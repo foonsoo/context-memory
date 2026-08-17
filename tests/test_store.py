@@ -367,6 +367,33 @@ class StoreTests(unittest.TestCase):
         brief = self.store.decision_context(p["id"], "Vega export format", 3000)
         self.assertIn("missing_rationale", [item["reason"] for item in brief["uncertainty"]])
 
+    def test_decision_context_reranks_only_bounded_candidates_with_exposed_components(self):
+        p = self.store.create_project("decision-rerank")
+        handoff = self.store.upsert_memory(
+            p["id"], "Cache latency handoff summary", "Cache latency cache latency next step", "summary", "active",
+            tags=["handoff", "summary"],
+        )
+        event = self.store.record_event(p["id"], "decision", "Choose the cache after measuring latency")
+        decision = self.store.upsert_memory(
+            p["id"], "Cache choice", "Choose the cache for lower latency", "decision", "active",
+            source_event_ids=[event["id"]],
+        )
+
+        search_ids = [item["id"] for item in self.store.search(p["id"], "cache latency")]
+        brief = self.store.decision_context(p["id"], "cache latency decision", 5000, discover_projects=False)
+
+        self.assertEqual(brief["retrieval"]["decision_rerank"], {
+            "mode":"bounded_post_retrieval", "candidate_count":2, "general_search_unchanged":True,
+        })
+        self.assertEqual(brief["retrieval"]["items"][0]["memory_id"], decision["id"])
+        rerank = brief["retrieval"]["items"][0]["decision_rerank"]
+        self.assertEqual(rerank["roles"], ["decision"])
+        self.assertAlmostEqual(rerank["score"], sum(
+            value for name, value in rerank["components"].items() if name != "total"))
+        handoff_item = next(item for item in brief["retrieval"]["items"] if item["memory_id"] == handoff["id"])
+        self.assertLess(handoff_item["decision_rerank"]["components"]["repetitive_handoff_penalty"], 0)
+        self.assertEqual(search_ids, [item["id"] for item in self.store.search(p["id"], "cache latency")])
+
     def test_research_provenance_records_cited_chain_and_source_versions(self):
         p = self.store.create_project("research-chain")
         investigation = self.store.create_investigation(

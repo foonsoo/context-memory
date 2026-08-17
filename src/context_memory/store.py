@@ -1626,6 +1626,11 @@ class MemoryStore:
             statuses=["active", "disputed", "proposed", "superseded", "rejected", "expired"],
             scope_id=scope_id, discover_projects=discover_projects, response_format="compact",
         )
+        context["items"] = self._rerank_decision_candidates(question, context["items"])
+        context["decision_rerank"] = {
+            "mode":"bounded_post_retrieval", "candidate_count":len(context["items"]),
+            "general_search_unchanged":True,
+        }
         sections: dict[str, list[dict[str, Any]]] = {
             "current_decisions": [], "rationale": [], "constraints": [], "alternatives": [],
             "outcomes": [], "history": [], "disputes": [], "open_questions": [],
@@ -1674,6 +1679,58 @@ class MemoryStore:
             "retrieval": context,
             "recommendation": None,
         }
+
+    @staticmethod
+    def _rerank_decision_candidates(question: str, memories: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Rerank only a Decision Brief's already bounded retrieval results."""
+        question_tokens = set(re.findall(r"[\w-]+", question.casefold(), flags=re.UNICODE))
+        intent_terms = {
+            "decision":{"choose","choice","decision","decide","selected","선택","결정"},
+            "rationale":{"why","reason","rationale","because","근거","이유"},
+            "constraint":{"constraint","requirement","limit","must","제약","요구사항"},
+            "alternative":{"alternative","option","instead","rejected","대안","후보"},
+            "outcome":{"outcome","result","impact","effect","measured","결과","효과","성과"},
+        }
+        requested_roles = {role for role, terms in intent_terms.items() if question_tokens & terms}
+        current = datetime.now(timezone.utc)
+        ranked: list[dict[str, Any]] = []
+        for base_rank, memory in enumerate(memories, 1):
+            tags = {tag.casefold().replace("_", "-") for tag in memory.get("tags", [])}
+            roles: set[str] = set()
+            if memory["type"] == "decision" and memory["status"] == "active": roles.add("decision")
+            if memory["type"] == "constraint": roles.add("constraint")
+            if memory["status"] == "rejected" or "alternative" in tags: roles.add("alternative")
+            if tags & {"rationale","reason"}: roles.add("rationale")
+            if tags & {"outcome","observed-outcome"}: roles.add("outcome")
+            components = {
+                "base_reciprocal_rank":1.0 / (60 + base_rank),
+                "question_intent":.006 if requested_roles & roles else 0.0,
+                "memory_type_status":.005 if "decision" in roles else (
+                    .003 if memory["status"] in {"active","disputed"} else 0.0),
+                "direct_provenance":.004 if memory.get("source_event_ids") else 0.0,
+                "decision_role":.004 if roles else 0.0,
+                "unsupported_penalty":-.006 if not memory.get("source_event_ids") else 0.0,
+                "stale_proposed_penalty":0.0,
+                "repetitive_handoff_penalty":0.0,
+            }
+            if memory["status"] == "proposed":
+                confirmed = memory.get("last_confirmed_at") or memory.get("observed_at")
+                try:
+                    stale = not confirmed or (current - datetime.fromisoformat(confirmed)).total_seconds() > 180 * 86400
+                except ValueError:
+                    stale = True
+                if stale: components["stale_proposed_penalty"] = -.005
+            handoff_markers = {"handoff","checkpoint","summary","next-step"}
+            if (memory["type"] in {"task","summary"}
+                    and (tags & handoff_markers or any(marker in memory["title"].casefold() for marker in handoff_markers))):
+                components["repetitive_handoff_penalty"] = -.004
+            components["total"] = sum(value for name, value in components.items() if name != "total")
+            item = dict(memory)
+            item["decision_rerank"] = {"score":components["total"], "components":components,
+                                       "roles":sorted(roles), "base_rank":base_rank}
+            ranked.append(item)
+        return sorted(ranked, key=lambda item: (-item["decision_rerank"]["score"],
+                                                item["decision_rerank"]["base_rank"], item["memory_id"]))
 
     def _decision_outcome_comparisons(self, retrieved_memory_ids: list[str]) -> list[dict[str, Any]]:
         if not retrieved_memory_ids: return []
