@@ -31,6 +31,7 @@ NEGATIVE_VECTOR_ONLY_MIN_SIMILARITY = .30
 NEGATIVE_VECTOR_ONLY_MIN_SEPARATION = .03
 LOCAL_HASH_FALLBACK_CANDIDATE_LIMIT = 1000
 LOCAL_HASH_FALLBACK_TIME_LIMIT_MS = 25
+DISCOVERY_PROJECT_CANDIDATE_LIMIT = 12
 
 
 def now() -> str:
@@ -196,6 +197,34 @@ class MemoryStore:
           WHERE source.project_id=? AND candidate.project_id<>? AND source.kind='name'
           ORDER BY candidate.project_id""", (project_id, project_id))
         return list(dict.fromkeys(row["project_id"] for row in rows))
+
+    def _discovery_project_candidates(self, project_id: str, query_tokens: list[str],
+                                      lexical: list[dict[str, Any]]) -> list[str]:
+        """Bound discovery to projects supported by lexical or identity evidence."""
+        ordered: list[str] = []
+
+        def add(candidate_id: str) -> None:
+            if candidate_id != project_id and candidate_id not in ordered:
+                ordered.append(candidate_id)
+
+        for memory in lexical:
+            if memory["visibility"] == "project": add(memory["project_id"])
+        for candidate_id in self._related_project_ids(project_id): add(candidate_id)
+        # Registry identity matching is the fallback when memory FTS supplied no
+        # project evidence. Avoid an alias join on the common lexical path.
+        if not lexical and query_tokens and len(ordered) < DISCOVERY_PROJECT_CANDIDATE_LIMIT:
+            clauses = []
+            args: list[Any] = []
+            for token in query_tokens:
+                pattern = f"%{token}%"
+                clauses.append("(lower(p.slug) LIKE ? OR lower(p.name) LIKE ? OR lower(COALESCE(p.description,'')) LIKE ? OR lower(a.normalized) LIKE ?)")
+                args.extend([pattern] * 4)
+            rows = self.conn.execute(f"""SELECT DISTINCT p.id FROM projects p
+              LEFT JOIN project_aliases a ON a.project_id=p.id
+              WHERE p.id<>? AND ({' OR '.join(clauses)}) ORDER BY p.id LIMIT ?""",
+              [project_id, *args, DISCOVERY_PROJECT_CANDIDATE_LIMIT + 1])
+            for row in rows: add(row["id"])
+        return ordered[:DISCOVERY_PROJECT_CANDIDATE_LIMIT]
 
     def create_scope(self, project_id: str, name: str, path: str | None = None) -> dict[str, Any]:
         item = {"id": uid(), "project_id": project_id, "name": name, "path": path, "created_at": now()}
@@ -1307,11 +1336,19 @@ class MemoryStore:
             query_vector = self.embedding_provider.embed([query])[0]
             vector_only_threshold = getattr(self.embedding_provider, "vector_only_threshold", None)
             supplements_lexical = bool(getattr(self.embedding_provider, "supplements_lexical_results", False))
+            discovery_project_ids: list[str] | None = None
             sem_boundary = boundary
+            if discover_projects:
+                discovery_project_ids = self._discovery_project_candidates(project_id, query_tokens, lexical)
+                if discovery_project_ids:
+                    sem_boundary = "(m.project_id IN (" + ",".join("?" for _ in discovery_project_ids) + ") OR m.visibility='global')"
+                else:
+                    sem_boundary = "m.visibility='global'"
             sem_sql = f"""SELECT m.id, e.vector_json FROM memory_embeddings e JOIN memories m ON m.id=e.memory_id
               WHERE {sem_boundary} AND m.status IN ({placeholders}) AND e.provider=? AND e.dimensions=?
               AND (m.valid_from IS NULL OR m.valid_from<=?) AND (m.valid_until IS NULL OR m.valid_until>?)"""
-            sem_args: list[Any] = [*boundary_args, *allowed, self._provider_name(), self.embedding_provider.dimensions, timestamp, timestamp]
+            sem_boundary_args = discovery_project_ids or [] if discover_projects else boundary_args
+            sem_args: list[Any] = [*sem_boundary_args, *allowed, self._provider_name(), self.embedding_provider.dimensions, timestamp, timestamp]
             if scope_id and not discover_projects: sem_sql += " AND (m.scope_id=? OR m.scope_id IS NULL)"; sem_args.append(scope_id)
             if lexical and not supplements_lexical:
                 lexical_ids = sorted(candidates)
@@ -1327,6 +1364,10 @@ class MemoryStore:
                                  "time_limit_ms":LOCAL_HASH_FALLBACK_TIME_LIMIT_MS,
                                  "evaluated":0, "truncated":False}
                 scan_deadline = time.perf_counter() + LOCAL_HASH_FALLBACK_TIME_LIMIT_MS / 1000
+            if discover_projects:
+                semantic_scan.update({"project_candidate_limit":DISCOVERY_PROJECT_CANDIDATE_LIMIT,
+                                      "project_candidate_count":len(discovery_project_ids or []),
+                                      "project_candidate_ids":discovery_project_ids or []})
             semantic: list[tuple[float, str]] = []
             for row in self.conn.execute(sem_sql, sem_args):
                 if semantic_scan["evaluated"] >= semantic_scan["candidate_limit"]:

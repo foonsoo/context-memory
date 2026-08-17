@@ -1028,6 +1028,46 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(scan["evaluated"], 1)
         self.assertFalse(scan["truncated"])
 
+    def test_cross_project_vector_fallback_scans_only_identity_candidates(self):
+        hinted = self.store.create_project("empty-hint")
+        target = self.store.create_project("context-memory")
+        unrelated = self.store.create_project("asset-manager")
+        expected = self.store.upsert_memory(
+            target["id"], "검색 성능", "개인화된 기억을 빠르게 검색합니다", "decision", "active")
+        self.store.upsert_memory(
+            unrelated["id"], "검색 성능", "개인화된 기억을 빠르게 검색합니다", "decision", "active")
+
+        results = self.store.search(
+            hinted["id"], "context-memory 개인화된기억 빠르게검색합니다", limit=1,
+            discover_projects=True)
+
+        self.assertEqual(results[0]["id"], expected["id"])
+        scan = results[0]["retrieval"]["semantic_scan"]
+        self.assertEqual(scan["mode"], "vector_fallback")
+        self.assertEqual(scan["project_candidate_limit"], 12)
+        self.assertEqual(scan["project_candidate_ids"], [target["id"]])
+        self.assertEqual(scan["evaluated"], 1)
+
+    def test_cross_project_vector_fallback_skips_unplausible_projects(self):
+        hinted = self.store.create_project("empty-hint")
+        unrelated = self.store.create_project("asset-manager")
+        self.store.upsert_memory(
+            unrelated["id"], "검색 성능", "개인화된 기억을 빠르게 검색합니다", "decision", "active")
+        embedding_selects = []
+        self.store.conn.set_trace_callback(
+            lambda statement: embedding_selects.append(statement)
+            if "FROM memory_embeddings" in statement else None)
+        try:
+            results = self.store.search(
+                hinted["id"], "unknown-project 개인화된기억 빠르게검색합니다", limit=1,
+                discover_projects=True)
+        finally:
+            self.store.conn.set_trace_callback(None)
+
+        self.assertEqual(results, [])
+        self.assertEqual(len(embedding_selects), 1)
+        self.assertIn("m.visibility='global'", embedding_selects[0])
+
     def test_context_rejects_weak_vector_only_result_and_reports_gate_evidence(self):
         p = self.store.create_project("negative-result-gate")
         self.store.upsert_memory(p["id"], "Unrelated local note", "The local project tracks garden irrigation", "fact", "active")

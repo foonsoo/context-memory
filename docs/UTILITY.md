@@ -64,6 +64,8 @@ Cross-project confidence can be checked separately with `PYTHONPATH=src python3 
 
 On 2026-08-11, a 12-domain run with 100 distractor memories per domain (1,204 memories total) passed all calibrated selections and ambiguity safety checks. Across 200 repeated discovery queries, retrieval measured 0.233 ms p50 and 0.249 ms p95 on the development Mac. These results supported retaining the existing confidence thresholds; they are environment-specific engineering evidence, not a general latency guarantee.
 
+On 2026-08-17, after bounding discovery local-hash to at most 12 projects selected by lexical, shared-alias, or identity evidence, the same 1,204-memory/200-repeat calibration retained 1.0 scenario accuracy and ambiguity safety. It measured 1.279 ms p50 and 1.303 ms p95 versus 1.258 ms p50 and 1.278 ms p95 at the immediately preceding commit on the same machine; the small common-path difference is not treated as a latency improvement. Dedicated regressions verify that identity-only fallback evaluates only the plausible project's embeddings and evaluates no project-scoped embeddings when no project is plausible.
+
 ### MCP competitor run (2026-08-10)
 
 The reproducible runner used 1,000 synthetic policy records and 200 exact-query repetitions. Every product ran as an MCP stdio subprocess without API keys. The final run used CPython 3.14.6, SQLite 3.53.4, Node 25.6.1, and npm 11.9.0 on arm64 macOS 26.3.1. Results and full environment metadata are stored in `benchmarks/results/local-2026-08-10.json`.
