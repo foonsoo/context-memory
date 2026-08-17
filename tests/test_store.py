@@ -394,6 +394,48 @@ class StoreTests(unittest.TestCase):
         self.assertLess(handoff_item["decision_rerank"]["components"]["repetitive_handoff_penalty"], 0)
         self.assertEqual(search_ids, [item["id"] for item in self.store.search(p["id"], "cache latency")])
 
+    def test_decision_context_expands_one_hop_from_current_decision_within_budget(self):
+        p = self.store.create_project("decision-expansion")
+        decision_event = self.store.record_event(p["id"], "decision", "Choose SQLite storage")
+        decision = self.store.upsert_memory(p["id"], "Storage choice", "Choose SQLite storage", "decision", "active",
+                                            source_event_ids=[decision_event["id"]])
+        rationale_event = self.store.record_event(p["id"], "fact", "Transactions avoid partial writes")
+        rationale = self.store.upsert_memory(p["id"], "Transaction rationale", "Transactions avoid partial writes",
+                                             "fact", "active", source_event_ids=[rationale_event["id"]],
+                                             tags=["rationale"])
+        unrelated = self.store.upsert_memory(p["id"], "Unrelated", "Unrelated evidence", "fact", "active")
+        self.store.create_relation(p["id"], rationale["id"], decision["id"], "supports")
+        brief = self.store.decision_context(p["id"], "SQLite storage decision", 5000, discover_projects=False)
+
+        expanded = next(item for item in brief["retrieval"]["items"] if item["memory_id"] == rationale["id"])
+        self.assertEqual(expanded["decision_expansion"]["depth"], 1)
+        self.assertEqual(expanded["decision_expansion"]["paths"][0]["relation"], "supports")
+        self.assertEqual(expanded["decision_expansion"]["paths"][0]["direction"], "incoming")
+        self.assertNotIn(unrelated["id"], {item["memory_id"] for item in brief["retrieval"]["items"]})
+        self.assertEqual(brief["retrieval"]["decision_expansion"]["added"], 1)
+        self.assertLessEqual(brief["retrieval"]["used"], brief["retrieval"]["budget"])
+
+    def test_decision_context_expands_shared_investigation_and_respects_tiny_budget(self):
+        p = self.store.create_project("investigation-expansion")
+        investigation = self.store.create_investigation(p["id"], "Which queue?", "Retries", "Choose queue", initiator="user")
+        recorded = self.store.record_source_analysis(investigation["id"], {
+            "source_type":"benchmark", "stable_source_id":"queue-test", "source_version":"1",
+            "access_reason":"Measure retries", "analysis_method":"benchmark",
+        }, [
+            {"key":"evidence", "role":"evidence", "content":"Duplicate deliveries were safely absorbed", "memory_status":"active"},
+            {"key":"decision", "role":"decision", "content":"Choose the durable queue",
+             "evidence_claim_keys":["evidence"], "memory_status":"active"},
+        ])
+        decision_id = recorded["claims"][1]["memory_id"]
+        evidence_id = recorded["claims"][0]["memory_id"]
+        brief = self.store.decision_context(p["id"], "durable queue decision", 5000, discover_projects=False)
+        expanded = next(item for item in brief["retrieval"]["items"] if item["memory_id"] == evidence_id)
+        self.assertEqual(expanded["decision_expansion"]["paths"][0]["kind"], "investigation_relation")
+        self.assertIn(decision_id, brief["retrieval"]["decision_expansion"]["seed_memory_ids"])
+
+        tiny = self.store.decision_context(p["id"], "durable queue decision", 400, discover_projects=False)
+        self.assertLessEqual(tiny["retrieval"]["used"], tiny["retrieval"]["budget"])
+
     def test_research_provenance_records_cited_chain_and_source_versions(self):
         p = self.store.create_project("research-chain")
         investigation = self.store.create_investigation(

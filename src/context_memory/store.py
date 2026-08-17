@@ -1631,6 +1631,7 @@ class MemoryStore:
             "mode":"bounded_post_retrieval", "candidate_count":len(context["items"]),
             "general_search_unchanged":True,
         }
+        self._expand_decision_seeds(project_id, context, scope_id)
         sections: dict[str, list[dict[str, Any]]] = {
             "current_decisions": [], "rationale": [], "constraints": [], "alternatives": [],
             "outcomes": [], "history": [], "disputes": [], "open_questions": [],
@@ -1731,6 +1732,108 @@ class MemoryStore:
             ranked.append(item)
         return sorted(ranked, key=lambda item: (-item["decision_rerank"]["score"],
                                                 item["decision_rerank"]["base_rank"], item["memory_id"]))
+
+    def _expand_decision_seeds(self, project_id: str, context: dict[str, Any],
+                               scope_id: str | None) -> None:
+        """Add a bounded one-hop evidence expansion without escaping context budgets."""
+        seed_limit = 3
+        candidate_limit = 50
+        seeds = [item for item in context["items"]
+                 if item["type"] == "decision" and item["status"] == "active"][:seed_limit]
+        seed_ids = [item["memory_id"] for item in seeds]
+        diagnostics = {
+            "mode":"one_hop", "seed_limit":seed_limit, "candidate_limit":candidate_limit,
+            "seed_memory_ids":seed_ids, "considered":0, "added":0,
+            "item_limit":context["max_items"], "depth":1, "truncated":False,
+        }
+        context["decision_expansion"] = diagnostics
+        if not seed_ids:
+            diagnostics["reason"] = "no_current_decision_seeds"
+            return
+        placeholders = ",".join("?" for _ in seed_ids)
+        candidates: dict[str, dict[str, Any]] = {}
+
+        def add_candidate(memory_id: str, priority: int, path: dict[str, Any]) -> None:
+            if memory_id in seed_ids: return
+            candidate = candidates.setdefault(memory_id, {"priority":priority, "paths":[]})
+            candidate["priority"] = min(candidate["priority"], priority)
+            if path not in candidate["paths"]: candidate["paths"].append(path)
+
+        relation_priority = {"supports":0, "depends_on":1, "supersedes":2}
+        for edge in self.conn.execute(f"""SELECT * FROM edges WHERE project_id=?
+          AND relation IN ('supports','depends_on','supersedes')
+          AND (from_memory_id IN ({placeholders}) OR to_memory_id IN ({placeholders}))
+          ORDER BY relation,created_at,id LIMIT ?""", (project_id, *seed_ids, *seed_ids, candidate_limit + 1)):
+            seed_id = edge["from_memory_id"] if edge["from_memory_id"] in seed_ids else edge["to_memory_id"]
+            other_id = edge["to_memory_id"] if seed_id == edge["from_memory_id"] else edge["from_memory_id"]
+            add_candidate(other_id, relation_priority[edge["relation"]], {
+                "kind":"memory_relation", "relation":edge["relation"], "seed_memory_id":seed_id,
+                "direction":"outgoing" if seed_id == edge["from_memory_id"] else "incoming",
+            })
+        for row in self.conn.execute(f"""SELECT DISTINCT sc.memory_id seed_memory_id,oc.memory_id,
+          i.id investigation_id,l.relation
+          FROM investigation_claims sc
+          JOIN investigations i ON i.id=sc.investigation_id
+          JOIN investigation_claims oc ON oc.investigation_id=sc.investigation_id AND oc.memory_id<>sc.memory_id
+          LEFT JOIN investigation_claim_links l ON
+            (l.from_claim_id=sc.id AND l.to_claim_id=oc.id) OR (l.to_claim_id=sc.id AND l.from_claim_id=oc.id)
+          WHERE i.project_id=? AND sc.memory_id IN ({placeholders})
+          ORDER BY i.id,oc.created_at,oc.id LIMIT ?""", (project_id, *seed_ids, candidate_limit + 1)):
+            add_candidate(row["memory_id"], 3 if row["relation"] else 4, {
+                "kind":"investigation_relation" if row["relation"] else "shared_investigation",
+                "relation":row["relation"], "seed_memory_id":row["seed_memory_id"],
+                "investigation_id":row["investigation_id"],
+            })
+        ordered = sorted(candidates.items(), key=lambda item: (item[1]["priority"], item[0]))
+        if len(ordered) > candidate_limit:
+            diagnostics["truncated"] = True
+            ordered = ordered[:candidate_limit]
+        diagnostics["considered"] = len(ordered)
+        existing_ids = {item["memory_id"] for item in context["items"]}
+        existing_by_id = {item["memory_id"]:item for item in context["items"]}
+        for memory_id, expansion in ordered:
+            if memory_id in existing_by_id:
+                existing_by_id[memory_id]["decision_expansion"] = {
+                    "depth":1, "already_retrieved":True, "paths":expansion["paths"],
+                }
+        remaining_ids = [memory_id for memory_id, _ in ordered if memory_id not in existing_ids]
+        rows: dict[str, dict[str, Any]] = {}
+        sources: dict[str, list[str]] = {memory_id: [] for memory_id in remaining_ids}
+        if remaining_ids:
+            remaining_placeholders = ",".join("?" for _ in remaining_ids)
+            scope_clause = "" if scope_id is None else " AND (scope_id=? OR scope_id IS NULL)"
+            timestamp = now()
+            params: list[Any] = [*remaining_ids, timestamp, timestamp]
+            if scope_id is not None: params.append(scope_id)
+            rows = {row["id"]:dict(row) for row in self.conn.execute(
+                f"""SELECT * FROM memories WHERE id IN ({remaining_placeholders})
+                AND (valid_from IS NULL OR valid_from<=?) AND (valid_until IS NULL OR valid_until>?)
+                {scope_clause}""", params)}
+            for source in self.conn.execute(f"""SELECT s.memory_id,s.event_id FROM memory_sources s
+              WHERE s.memory_id IN ({remaining_placeholders}) ORDER BY s.memory_id,s.event_id""", remaining_ids):
+                sources[source["memory_id"]].append(source["event_id"])
+        path_by_id = dict(ordered)
+        for memory_id in remaining_ids:
+            row = rows.get(memory_id)
+            if not row: continue
+            block = f"[{row['status']}/{row['type']}] {row['title']}\n{row['content']}\nsource_events: {', '.join(sources[memory_id]) or 'none'}"
+            if len(context["items"]) >= context["max_items"] or context["memory_used"] + len(block) + 2 > context["memory_budget"]:
+                diagnostics["truncated"] = True
+                continue
+            context["items"].append({
+                "memory_id":row["id"], "project_id":row["project_id"], "visibility":row["visibility"],
+                "confidence":row["confidence"], "importance":row["importance"], "status":row["status"],
+                "type":row["type"], "title":row["title"], "content":row["content"],
+                "source_event_ids":sources[memory_id], "tags":json.loads(row["tags_json"]),
+                "observed_at":row["observed_at"], "valid_from":row["valid_from"], "valid_until":row["valid_until"],
+                "last_confirmed_at":row["last_confirmed_at"], "truncated":False,
+                "decision_expansion":{"depth":1, "paths":path_by_id[memory_id]["paths"]},
+            })
+            context["memory_used"] += len(block) + 2
+            context["used"] += len(block) + 2
+            diagnostics["added"] += 1
+        if diagnostics["truncated"]:
+            context["has_more"] = context["truncated"] = True
 
     def _decision_outcome_comparisons(self, retrieved_memory_ids: list[str]) -> list[dict[str, Any]]:
         if not retrieved_memory_ids: return []
