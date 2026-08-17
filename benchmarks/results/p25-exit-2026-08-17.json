@@ -1,0 +1,77 @@
+{
+  "baseline_commit": "aa4d49c",
+  "current_commit": "2d9902e",
+  "decision_brief": {
+    "baseline_local_hash": {
+      "context_chars_max": 3550,
+      "negative_query_false_result_rate": 0.5,
+      "p95_ms": 3.118
+    },
+    "current_fts_only": {
+      "context_chars_max": 4970,
+      "current_decision_accuracy": 1.0,
+      "duplicate_rate": 0.0,
+      "mrr_at_5": 1.0,
+      "negative_query_false_result_rate": 0.0,
+      "p50_ms": 0.233,
+      "p95_ms": 0.467,
+      "recall_at_5": 1.0,
+      "source_recovery_rate": 1.0,
+      "stale_decision_leakage": 0.0,
+      "unsupported_claim_rate": 0.0,
+      "useful_history_recall": 1.0
+    },
+    "current_local_hash": {
+      "context_chars_max": 4999,
+      "current_decision_accuracy": 1.0,
+      "duplicate_rate": 0.0,
+      "mrr_at_5": 1.0,
+      "negative_query_false_result_rate": 0.0,
+      "p50_ms": 0.468,
+      "p95_ms": 0.695,
+      "recall_at_5": 1.0,
+      "source_recovery_rate": 1.0,
+      "stale_decision_leakage": 0.0,
+      "unsupported_claim_rate": 0.0,
+      "useful_history_recall": 1.0
+    },
+    "local_hash_p95_reduction_fraction": 0.7771
+  },
+  "discovery": {
+    "accuracy": 1.0,
+    "ambiguity_safe": true,
+    "memories": 1204,
+    "p50_ms": 1.307,
+    "p95_ms": 1.327,
+    "repeats": 200
+  },
+  "embedding_fixture": {
+    "fts": {
+      "mrr_at_5": 0.5701754385964912,
+      "negative_query_result_rate": 0.25,
+      "p95_ms": 0.31,
+      "recall_at_5": 0.631578947368421
+    },
+    "local_hash": {
+      "mrr_at_5": 0.7894736842105263,
+      "negative_query_result_rate": 0.25,
+      "p95_ms": 1.176,
+      "recall_at_5": 0.8421052631578947
+    }
+  },
+  "exit_gate": {
+    "context_budget_chars": 6000,
+    "passed": true,
+    "reason": "Default local-hash materially reduced Decision Brief p95 latency and negative false results while preserving perfect frozen accuracy, history, source recovery, deterministic safety metrics, and conservative discovery isolation."
+  },
+  "schema_version": 1,
+  "verification": {
+    "compileall": "passed",
+    "installed_wheel_e2e": "passed",
+    "official_mcp_sdk_2_0_e2e": "passed",
+    "unit_tests": {
+      "passed": 123,
+      "skipped": 1
+    }
+  }
+}
