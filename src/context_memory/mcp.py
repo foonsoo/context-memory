@@ -60,6 +60,7 @@ TOOLS = [
     {"name":"wiki_revision_transition","description":"Publish or reject a proposed Wiki revision, or explicitly mark a published revision stale.","inputSchema":obj({"revision_id":{"type":"string"},"status":{"type":"string","enum":["published","stale","rejected"]},"reason":{"type":"string"}},["revision_id","status"]),"annotations":{"readOnlyHint":False}},
     {"name":"wiki_page_get","description":"Read a Wiki page, separate manual notes, immutable revision history, and exact citations.","inputSchema":obj({"page_id":{"type":"string"}},["page_id"]),"annotations":{"readOnlyHint":True}},
     {"name":"wiki_revision_render","description":"Render one stored Wiki revision as portable Markdown with citations and separate manual notes.","inputSchema":obj({"revision_id":{"type":"string"}},["revision_id"]),"annotations":{"readOnlyHint":True}},
+    {"name":"wiki_revision_lint","description":"Deterministically report citation, source, lifecycle, staleness, dispute, and omitted-current-memory findings without changing state.","inputSchema":obj({"revision_id":{"type":"string"}},["revision_id"]),"annotations":{"readOnlyHint":True}},
     {"name":"policy_get","description":"Read bounded context, retention, and checkpoint trigger policy for a project.","inputSchema":obj({"project_id":{"type":"string"}},["project_id"]),"annotations":{"readOnlyHint":True}},
     {"name":"policy_set","description":"Set project operational bounds, checkpoint triggers, message expiry, and scheduled-maintenance interval.","inputSchema":obj({"project_id":{"type":"string"},"max_context_chars":{"type":"integer","minimum":1000,"maximum":20000},"max_context_items":{"type":"integer","minimum":1,"maximum":50},"audit_keep_entries":{"type":"integer","minimum":100,"maximum":100000},"terminal_memory_days":{"type":"integer","minimum":1,"maximum":3650},"checkpoint_soft_usage":{"type":"number","minimum":0,"maximum":1},"checkpoint_hard_usage":{"type":"number","minimum":0,"maximum":1},"checkpoint_elapsed_seconds":{"type":"integer","minimum":60,"maximum":86400},"checkpoint_event_count":{"type":"integer","minimum":1,"maximum":10000},"checkpoint_max_age_seconds":{"type":"integer","minimum":60,"maximum":604800},"checkpoint_cooldown_seconds":{"type":"integer","minimum":0,"maximum":86400},"checkpoint_hysteresis":{"type":"number","minimum":0,"maximum":0.5},"maintenance_interval_seconds":{"type":"integer","minimum":0,"maximum":2592000},"message_ttl_seconds":{"type":"integer","minimum":0,"maximum":2592000}},["project_id"]),"annotations":{"readOnlyHint":False}},
     {"name":"search_health","description":"Check that every authoritative memory has exactly one FTS projection and report missing, duplicate, or orphan rows.","inputSchema":obj({"project_id":{"type":"string"}},["project_id"]),"annotations":{"readOnlyHint":True}},
@@ -76,7 +77,7 @@ CORE_TOOL_NAMES = {"context_bootstrap","project_resolve","session_start","sessio
                    "memory_upsert","memory_transition","memory_search","memory_feedback","get_context","decision_context","get_source",
                    "checkpoint_create","checkpoint_evaluate","review_queue","review_action","investigation_create",
                    "investigation_record_source","investigation_get","investigation_complete","wiki_page_create",
-                   "wiki_note_set","wiki_revision_generate","wiki_revision_transition","wiki_page_get","wiki_revision_render"}
+                   "wiki_note_set","wiki_revision_generate","wiki_revision_transition","wiki_page_get","wiki_revision_render","wiki_revision_lint"}
 
 
 def validate_json(value: Any, schema: dict[str, Any], path: str = "arguments") -> None:
@@ -175,6 +176,7 @@ class MCPServer:
             "wiki_page_create":self.store.create_wiki_page,"wiki_note_set":self.store.set_wiki_notes,
             "wiki_revision_generate":self.store.generate_wiki_revision,"wiki_revision_transition":self.store.transition_wiki_revision,
             "wiki_page_get":self.store.get_wiki_page,"wiki_revision_render":self.store.render_wiki_revision,
+            "wiki_revision_lint":self.store.lint_wiki_revision,
             "review_queue":self.store.review_queue,"memory_correct":self.store.propose_correction,"review_action":self.store.review_candidate,
             "policy_get":self.store.get_policy,"policy_set":self.store.set_policy,"search_health":self.store.search_health,
             "maintenance_status":self.store.maintenance_status,"maintenance_run":self.store.maintain,"backup_create":self.store.backup_to,

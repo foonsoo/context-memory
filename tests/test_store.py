@@ -579,6 +579,33 @@ class StoreTests(unittest.TestCase):
         with self.assertRaises(sqlite3.IntegrityError):
             self.store.conn.execute("UPDATE wiki_revisions SET sections_json='{}' WHERE id=?", (second["id"],))
 
+    def test_wiki_revision_lint_reports_lifecycle_and_omission_findings(self):
+        p = self.store.create_project("wiki-lint")
+        event = self.store.record_event(p["id"], "decision", "Use SQLite for storage")
+        cited = self.store.upsert_memory(p["id"], "Storage", "Use SQLite", "decision", "active",
+                                         source_event_ids=[event["id"]])
+        omitted_event = self.store.record_event(p["id"], "fact", "SQLite storage requires backups")
+        omitted = self.store.upsert_memory(p["id"], "SQLite backups", "SQLite storage requires backups", "fact", "active",
+                                           source_event_ids=[omitted_event["id"]])
+        page = self.store.create_wiki_page(p["id"], "sqlite storage", "Storage")
+        revision = self.store.generate_wiki_revision(page["id"], "SQLite storage")
+        initial = self.store.lint_wiki_revision(revision["id"])
+        self.assertTrue(initial["deterministic"])
+        self.assertFalse(initial["state_changed"])
+        omitted_findings = [item for item in initial["findings"] if item["code"] == "omitted_current_memory"]
+        self.assertIn(omitted["id"], {item["memory_id"] for item in omitted_findings})
+
+        self.store.transition_wiki_revision(revision["id"], "published")
+        self.store.transition(cited["id"], "disputed")
+        linted = self.store.lint_wiki_revision(revision["id"])
+        codes = {item["code"] for item in linted["findings"]}
+        self.assertIn("unresolved_dispute", codes)
+        self.assertIn("stale_revision", codes)
+        self.assertEqual(linted["status"], "fail")
+
+        self.store.transition(omitted["id"], "superseded")
+        self.assertEqual(self.store.lint_wiki_revision(revision["id"])["status"], "fail")
+
     def test_topic_wiki_export_import_round_trip(self):
         p = self.store.create_project("wiki-export")
         event = self.store.record_event(p["id"], "decision", "Choose option A")

@@ -695,6 +695,80 @@ class MemoryStore:
             "SELECT * FROM wiki_revision_citations WHERE revision_id=? ORDER BY section_name,ordinal,memory_id,event_id", (revision_id,))]
         return self._wiki_revision_result(row,citations)
 
+    def lint_wiki_revision(self, revision_id: str) -> dict[str, Any]:
+        """Deterministically surface evidence and lifecycle gaps in a Wiki revision."""
+        revision = self.get_wiki_revision(revision_id)
+        page = self._row("SELECT * FROM wiki_pages WHERE id=?", (revision["page_id"],))
+        if not page: raise KeyError("wiki page not found")
+        findings: list[dict[str, Any]] = []
+
+        def add(code: str, severity: str, message: str, **details: Any) -> None:
+            findings.append({"code":code,"severity":severity,"message":message,**details})
+
+        citation_keys = {(item["section"],item["ordinal"],item["memory_id"],item["event_id"])
+                         for item in revision["citations"]}
+        cited_memories = {item["memory_id"] for item in revision["citations"]}
+        for section, entries in revision["sections"].items():
+            for ordinal, entry in enumerate(entries):
+                embedded = []
+                if isinstance(entry, dict):
+                    embedded.extend(entry.get(key) for key in ("citations","decision_citation","outcome_citation")
+                                    if entry.get(key))
+                if not embedded:
+                    add("missing_citation", "error", "Wiki claim has no memory citation.",
+                        section=section, ordinal=ordinal)
+                    continue
+                for citation in embedded:
+                    memory_id = citation.get("memory_id")
+                    event_ids = citation.get("source_event_ids") or []
+                    if not memory_id or not event_ids:
+                        add("missing_citation", "error", "Wiki citation is incomplete.",
+                            section=section, ordinal=ordinal, memory_id=memory_id)
+                        continue
+                    for event_id in event_ids:
+                        if (section,ordinal,memory_id,event_id) not in citation_keys:
+                            add("missing_citation", "error", "Embedded citation is absent from the immutable citation index.",
+                                section=section, ordinal=ordinal, memory_id=memory_id, event_id=event_id)
+
+        for memory_id in sorted(cited_memories):
+            memory = self._row("SELECT * FROM memories WHERE id=?", (memory_id,))
+            if not memory:
+                add("missing_source", "error", "Cited memory no longer exists.", memory_id=memory_id)
+                continue
+            exact_sources = self.conn.execute("""SELECT count(*) FROM wiki_revision_citations c
+              JOIN memory_sources s ON s.memory_id=c.memory_id AND s.event_id=c.event_id
+              JOIN events e ON e.id=s.event_id AND e.project_id=?
+              WHERE c.revision_id=? AND c.memory_id=?""",
+              (page["project_id"],revision_id,memory_id)).fetchone()[0]
+            indexed = self.conn.execute("SELECT count(*) FROM wiki_revision_citations WHERE revision_id=? AND memory_id=?",
+                                        (revision_id,memory_id)).fetchone()[0]
+            if exact_sources != indexed:
+                add("missing_source", "error", "A citation is not backed by an exact memory source event.",
+                    memory_id=memory_id, indexed_citations=indexed, exact_sources=exact_sources)
+            if memory["status"] in {"superseded","expired","rejected"}:
+                add("terminal_memory", "error", "Revision cites a terminal memory.",
+                    memory_id=memory_id, memory_status=memory["status"])
+            elif memory["status"] == "disputed":
+                add("unresolved_dispute", "warning", "Revision cites a disputed memory.",
+                    memory_id=memory_id, memory_status=memory["status"])
+
+        if revision["status"] == "stale":
+            add("stale_revision", "error", "Wiki revision is marked stale.", reason=revision["stale_reason"])
+
+        query = " ".join(part for part in (page["topic"], revision["question"]) if part).strip()
+        relevant = self.search(page["project_id"], query, limit=20, statuses=["active"], scope_id=page["scope_id"])
+        for memory in relevant:
+            if memory["id"] not in cited_memories:
+                add("omitted_current_memory", "warning", "Relevant active memory is omitted from the revision.",
+                    memory_id=memory["id"], memory_type=memory["type"], title=memory["title"])
+
+        findings.sort(key=lambda item: (item["code"],item.get("section", ""),item.get("ordinal", -1),
+                                        item.get("memory_id", ""),item.get("event_id", "")))
+        return {"contract_version":"topic-wiki-lint/v1","revision_id":revision_id,
+                "page_id":revision["page_id"],"status":"fail" if any(x["severity"] == "error" for x in findings)
+                else "warn" if findings else "pass", "finding_count":len(findings),"findings":findings,
+                "deterministic":True,"state_changed":False}
+
     def get_wiki_page(self, page_id: str) -> dict[str, Any]:
         page = self._row("SELECT * FROM wiki_pages WHERE id=?", (page_id,))
         if not page: raise KeyError("wiki page not found")
