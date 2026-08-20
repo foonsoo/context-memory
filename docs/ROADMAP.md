@@ -20,7 +20,7 @@ External clients may read Confluence or another source with the user's existing 
 
 ### Current implementation priority
 
-P0 Decision Brief/evaluation, P1 Research-to-Decision provenance, P2 topic Wiki revisions, P2.5 non-neural retrieval quality/latency, P3 Decision Wiki lint/review, P4 source revalidation, and the P5 navigation/export contracts are implemented. A separate review UI is deferred because the active runtime has not yet produced real Wiki review usage. The next evidence-led step is a backed-up runtime upgrade through the Wiki migrations followed by observation of concrete review friction. Neural embedding remains an optional evaluated adapter and is not part of the active implementation path because its measured latency cost did not justify making it the default.
+P0 Decision Brief/evaluation, P1 Research-to-Decision provenance, P2 topic Wiki revisions, P2.5 non-neural retrieval quality/latency, P3 Decision Wiki lint/review, P4 source revalidation, and the P5 navigation/export contracts are implemented. The active runtime was backed up and upgraded through Wiki migrations 13–16 on 2026-08-20. A separate review UI remains deferred until real Wiki revision review reveals repeated, recorded friction. The next evidence-led step is therefore to use the deployed Wiki review workflow and observe concrete review friction. Neural embedding remains an optional evaluated adapter and is not part of the active implementation path because its measured latency cost did not justify making it the default.
 
 ### P0 — Decision Brief contract and evaluation
 
@@ -123,7 +123,7 @@ FTS5 remains the primary scalable candidate index. Local-hash is not an FTS repl
 
 **Exit gate:** a user can discover current topic pages, follow provenance-backed relationships, and export a useful human-readable Wiki without creating a second source of truth.
 
-**Exit result — contract passed, adoption evidence pending 2026-08-20.** Navigation, backlinks, and linked Markdown export satisfy the read-only product contract in regression coverage. The [review-surface evaluation](P5_REVIEW_EVALUATION.md) records why a separate UI is deferred and defines the evidence required to reconsider it. No runtime migration or deployment was performed as part of this evaluation.
+**Exit result — contract passed, adoption evidence pending 2026-08-20.** Navigation, backlinks, and linked Markdown export satisfy the read-only product contract in regression coverage. The [review-surface evaluation](P5_REVIEW_EVALUATION.md) records why a separate UI is deferred and defines the evidence required to reconsider it. After that evaluation, the active database was backed up with SQLite's Online Backup API, upgraded from migrations 1–12 through 13–16, and verified with `doctor` and `PRAGMA integrity_check`; real review-usage evidence is still pending.
 
 ## Existing work: overlap and disposition
 

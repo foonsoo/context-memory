@@ -22,4 +22,6 @@ These tests establish functional coverage, not real-usage sufficiency. Absence o
 
 Reconsider a separate UI only after the current runtime is backed up, upgraded through migrations 13–16, and used for real Wiki revision review. Record concrete friction such as repeated inability to locate the next item, understand a lint finding, compare a replacement revision, or execute the intended explicit action. Prefer improving the versioned queue contract when the problem is client-neutral; build a separate UI only when interaction evidence shows that a tool response cannot address the problem cleanly.
 
-The runtime upgrade is an operational change and is not performed by this evaluation.
+## Deployment follow-up on 2026-08-20
+
+The active database was backed up with SQLite's Online Backup API and then upgraded from migrations 1–12 through 13–16. Post-upgrade `doctor` and `PRAGMA integrity_check` both passed, and the investigation, Wiki, and source-reinspection tables are present. The deployment gate is therefore complete; the remaining gate is real usage that reveals repeated, recorded review friction.
