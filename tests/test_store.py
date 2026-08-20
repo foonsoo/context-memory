@@ -658,6 +658,29 @@ class StoreTests(unittest.TestCase):
         self.assertGreaterEqual(findings[0]["age_days"], findings[0]["threshold_days"])
         self.assertNotIn("stale_revision", {item["code"] for item in self.store.lint_wiki_revision(revision["id"])["findings"]})
 
+    def test_review_queue_includes_latest_wiki_revision_lint_and_explicit_routes(self):
+        p = self.store.create_project("wiki-review-queue")
+        event = self.store.record_event(p["id"], "decision", "Use SQLite storage")
+        self.store.upsert_memory(p["id"], "Storage", "Use SQLite storage", "decision", "active",
+                                 source_event_ids=[event["id"]])
+        page = self.store.create_wiki_page(p["id"], "SQLite storage", "Storage")
+        first = self.store.generate_wiki_revision(page["id"], "SQLite storage")
+        second = self.store.generate_wiki_revision(page["id"], "SQLite storage")
+
+        queued = [item for item in self.store.review_queue(p["id"])
+                  if item["review_kind"] == "wiki_revision"]
+        self.assertEqual([item["id"] for item in queued], [second["id"]])
+        self.assertNotEqual(queued[0]["id"], first["id"])
+        self.assertEqual(queued[0]["lint"]["contract_version"], "topic-wiki-lint/v1")
+        self.assertEqual(queued[0]["available_actions"], [
+            {"action":"approve", "tool":"wiki_revision_transition", "arguments":{"status":"published"}},
+            {"action":"reject", "tool":"wiki_revision_transition", "arguments":{"status":"rejected"}},
+        ])
+
+        self.store.transition_wiki_revision(second["id"], "published")
+        self.assertEqual([item for item in self.store.review_queue(p["id"])
+                          if item["review_kind"] == "wiki_revision"], [])
+
     def test_topic_wiki_export_import_round_trip(self):
         p = self.store.create_project("wiki-export")
         event = self.store.record_event(p["id"], "decision", "Choose option A")
@@ -958,6 +981,9 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(candidate["status"], "proposed")
         self.assertEqual(candidate["type"], "decision")
         self.assertEqual(candidate["id"], self.store.review_queue(p["id"])[0]["id"])
+        self.assertEqual(self.store.review_queue(p["id"])[0]["review_kind"], "memory_candidate")
+        self.assertEqual(self.store.review_queue(p["id"])[0]["available_actions"],
+                         ["approve", "reject", "supersede", "dispute"])
         self.assertTrue(ended["review"]["conflicts"])
         self.assertEqual(self.store._row("SELECT event_id FROM memory_sources WHERE memory_id=?", (candidate["id"],))["event_id"], event["id"])
 

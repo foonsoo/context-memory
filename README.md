@@ -391,7 +391,7 @@ Project hooks require a trusted project and explicit review in Codex. Use `/hook
 | `search_alias_set`, `search_alias_list` | Manage deterministic project vocabulary for paraphrase expansion |
 | `relation_create`, `graph_traverse` | Link verified memories and traverse active/disputed relations up to five hops |
 | `memory_search` | Local FTS5/BM25 ranking plus confidence and importance |
-| `review_queue`, `review_action` | Inspect and resolve proposed memories and conflict flags |
+| `review_queue`, `review_action` | Inspect typed proposed-memory and latest Wiki-revision reviews with lint; resolve memories through explicit approve/reject/supersede/dispute actions |
 | `memory_correct` | Create a sourced correction candidate without overwriting history |
 | `get_context` | Strict shared-budget local/global selection, registry fallback, and optional recent events |
 | `decision_context` | Versioned, cited Decision Brief over the existing retrieval path; never generates a recommendation or changes memory state |
@@ -446,7 +446,7 @@ Tests cover WAL persistence and permissions, append-only enforcement, FTS and al
 
 CI also installs the built wheel beside the pinned official MCP Python SDK and runs `tests/official_sdk_e2e.py`. That black-box check exercises initialization, paginated tool discovery, structured tool calls, protocol validation errors, and two concurrent SDK clients sharing one database; the production package itself retains zero runtime dependencies.
 
-Candidate approval remains explicit through MCP review actions; session extraction never promotes memories automatically.
+Candidate approval remains explicit through MCP review actions; session extraction never promotes memories automatically. `review_queue` also includes the latest non-rejected revision for each Wiki page when it is proposed or has lint findings. These typed Wiki entries reuse deterministic lint and route proposed revision approval/rejection through `wiki_revision_transition`; they do not introduce a second review state or autonomous mutation path.
 
 ## Design and limits
 

@@ -324,12 +324,37 @@ class MemoryStore:
         return {"created": created, "conflicts": conflicts}
 
     def review_queue(self, project_id: str) -> list[dict[str, Any]]:
+        if not self._row("SELECT id FROM projects WHERE id=?", (project_id,)):
+            raise KeyError("project not found")
         rows = []
         for row in self.conn.execute("SELECT * FROM memories WHERE project_id=? AND status='proposed' ORDER BY created_at,id", (project_id,)):
             item = dict(row)
+            item["review_kind"] = "memory_candidate"
             item["conflicts"] = [dict(x) for x in self.conn.execute("SELECT * FROM review_conflicts WHERE candidate_memory_id=? ORDER BY similarity DESC", (item["id"],))]
             item["sources"] = [dict(x) for x in self.conn.execute("SELECT e.id,e.kind,e.source_uri,e.created_at FROM memory_sources s JOIN events e ON e.id=s.event_id WHERE s.memory_id=?", (item["id"],))]
+            item["available_actions"] = ["approve", "reject"] + (["supersede", "dispute"] if item["conflicts"] else [])
             rows.append(item)
+        revisions = self.conn.execute("""SELECT r.id FROM wiki_revisions r JOIN wiki_pages p ON p.id=r.page_id
+          WHERE p.project_id=? AND r.status<>'rejected' AND r.revision_no=(
+            SELECT max(latest.revision_no) FROM wiki_revisions latest
+            WHERE latest.page_id=r.page_id AND latest.status<>'rejected')
+          ORDER BY p.created_at,p.id,r.revision_no,r.id""", (project_id,))
+        for revision_row in revisions:
+            lint = self.lint_wiki_revision(revision_row["id"])
+            revision = self.get_wiki_revision(revision_row["id"])
+            if revision["status"] != "proposed" and not lint["findings"]:
+                continue
+            page = self._row("SELECT title,topic FROM wiki_pages WHERE id=?", (revision["page_id"],))
+            actions = []
+            if revision["status"] == "proposed":
+                actions = [
+                    {"action":"approve", "tool":"wiki_revision_transition", "arguments":{"status":"published"}},
+                    {"action":"reject", "tool":"wiki_revision_transition", "arguments":{"status":"rejected"}},
+                ]
+            rows.append({"review_kind":"wiki_revision", "id":revision["id"],
+                         "page_id":revision["page_id"], "page_title":page["title"], "topic":page["topic"],
+                         "revision_no":revision["revision_no"], "status":revision["status"],
+                         "lint":lint, "available_actions":actions})
         return rows
 
     def propose_correction(self, project_id: str, memory_id: str, content: str, title: str | None = None) -> dict[str, Any]:
