@@ -90,7 +90,8 @@ class MCPTests(unittest.TestCase):
         self.assertEqual(brief["current_decisions"][0]["citations"]["memory_id"], memory["id"])
 
     def test_research_provenance_tools_are_core_and_enforce_inference_review(self):
-        self.assertTrue({"investigation_create","investigation_record_source","investigation_get","investigation_complete"} <= CORE_TOOL_NAMES)
+        self.assertTrue({"investigation_create","investigation_record_source","investigation_get","investigation_complete",
+                         "source_reinspection_request"} <= CORE_TOOL_NAMES)
         p = self.store.create_project("mcp-investigation")
         investigation = self.server.call("investigation_create", {
             "project_id":p["id"],"question":"Which API?","reason":"Compatibility matters",
@@ -106,6 +107,10 @@ class MCPTests(unittest.TestCase):
         self.assertEqual(inference["memory_status"], "proposed")
         self.assertEqual(self.server.call("investigation_get", {"investigation_id":investigation["id"]})["source_analyses"][0]["id"],
                          recorded["source_analysis_id"])
+        requested = self.server.call("source_reinspection_request", {
+            "source_analysis_id":recorded["source_analysis_id"],"reason":"unavailable","details":"Client received 404"})
+        self.assertEqual(requested["reason"], "unavailable")
+        self.assertFalse(requested["execution"]["core_fetch_performed"])
 
     def test_topic_wiki_tools_are_core(self):
         expected = {"wiki_page_create","wiki_note_set","wiki_revision_generate","wiki_revision_transition",

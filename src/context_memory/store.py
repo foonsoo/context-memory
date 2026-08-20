@@ -22,6 +22,7 @@ STATUSES = {"proposed", "active", "superseded", "disputed", "expired", "rejected
 RELATIONS = {"supersedes", "disputes", "supports", "depends_on", "related_to"}
 INVESTIGATION_ROLES = {"evidence", "inference", "action", "decision", "rationale", "outcome"}
 OUTCOME_EFFECTS = {"confirms", "weakens", "disputes", "supersedes"}
+SOURCE_REINSPECTION_REASONS = {"old", "unavailable", "newer_version_known"}
 CHECKPOINT_MODES = {"interim", "final"}
 CHECKPOINT_REASONS = {"context_budget", "elapsed", "material_change", "completed", "manual"}
 DISCOVERY_MIN_CONFIDENCE = .45
@@ -579,6 +580,9 @@ class MemoryStore:
         analyses = []
         for row in self.conn.execute("SELECT * FROM source_analyses WHERE investigation_id=?" + condition + " ORDER BY created_at,id", args):
             analysis = dict(row); analysis["claims"] = []
+            analysis["reinspection_requests"] = [dict(item) for item in self.conn.execute(
+                "SELECT * FROM source_reinspection_requests WHERE source_analysis_id=? ORDER BY requested_at,id",
+                (analysis["id"],))]
             for claim in self.conn.execute("SELECT * FROM investigation_claims WHERE source_analysis_id=? ORDER BY ordinal", (analysis["id"],)):
                 item = dict(claim)
                 item["evidence"] = [dict(link) for link in self.conn.execute(
@@ -588,6 +592,39 @@ class MemoryStore:
             analyses.append(analysis)
         return {"contract_version":"research-provenance/v1","investigation":result,"source_analyses":analyses,
                 "idempotent":source_analysis_id is not None}
+
+    def request_source_reinspection(self, source_analysis_id: str, reason: str, details: str | None = None,
+                                    known_source_version: str | None = None,
+                                    idempotency_key: str | None = None) -> dict[str, Any]:
+        """Record a client-owned request to reinspect one external source version."""
+        request = {"source_analysis_id":source_analysis_id,"reason":reason,"details":details,
+                   "known_source_version":known_source_version}
+        if hit := self._idem("request_source_reinspection", idempotency_key, request): return hit
+        source = self._row("""SELECT s.*,i.project_id FROM source_analyses s
+          JOIN investigations i ON i.id=s.investigation_id WHERE s.id=?""", (source_analysis_id,))
+        if not source: raise KeyError("source analysis not found")
+        if reason not in SOURCE_REINSPECTION_REASONS:
+            raise ValueError("reason must be old, unavailable, or newer_version_known")
+        normalized_details = details.strip() if isinstance(details, str) and details.strip() else None
+        normalized_version = (known_source_version.strip()
+                              if isinstance(known_source_version, str) and known_source_version.strip() else None)
+        if reason == "newer_version_known" and not normalized_version:
+            raise ValueError("known_source_version is required when a newer version is known")
+        if reason != "newer_version_known" and known_source_version is not None:
+            raise ValueError("known_source_version is only valid when a newer version is known")
+        item = {"id":uid(),"source_analysis_id":source_analysis_id,"reason":reason,
+                "details":normalized_details,"known_source_version":normalized_version,"requested_at":now()}
+        response = {"contract_version":"source-reinspection/v1",**item,
+                    "source":{"source_type":source["source_type"],"stable_source_id":source["stable_source_id"],
+                              "canonical_uri":source["canonical_uri"],"inspected_source_version":source["source_version"]},
+                    "execution":{"owner":"client","core_fetch_performed":False,"state":"requested"}}
+        with self.tx() as cx:
+            cx.execute("""INSERT INTO source_reinspection_requests
+              (id,source_analysis_id,reason,details,known_source_version,requested_at)
+              VALUES(:id,:source_analysis_id,:reason,:details,:known_source_version,:requested_at)""", item)
+            self._audit(cx, source["project_id"], "source_reinspection_request", item["id"], "requested", response)
+            self._save_idem(cx, "request_source_reinspection", idempotency_key, request, response)
+        return response
 
     def complete_investigation(self, investigation_id: str) -> dict[str, Any]:
         investigation = self._row("SELECT * FROM investigations WHERE id=?", (investigation_id,))
@@ -2310,6 +2347,7 @@ class MemoryStore:
             ("memory_source", "SELECT ms.* FROM memory_sources ms JOIN memories m ON m.id=ms.memory_id WHERE m.project_id=? ORDER BY ms.created_at,ms.memory_id,ms.event_id"),
             ("investigation", "SELECT * FROM investigations WHERE project_id=? ORDER BY started_at,id"),
             ("source_analysis", "SELECT s.* FROM source_analyses s JOIN investigations i ON i.id=s.investigation_id WHERE i.project_id=? ORDER BY s.created_at,s.id"),
+            ("source_reinspection_request", "SELECT r.* FROM source_reinspection_requests r JOIN source_analyses s ON s.id=r.source_analysis_id JOIN investigations i ON i.id=s.investigation_id WHERE i.project_id=? ORDER BY r.requested_at,r.id"),
             ("investigation_claim", "SELECT c.* FROM investigation_claims c JOIN investigations i ON i.id=c.investigation_id WHERE i.project_id=? ORDER BY c.created_at,c.source_analysis_id,c.ordinal"),
             ("investigation_claim_link", "SELECT l.* FROM investigation_claim_links l JOIN investigation_claims c ON c.id=l.from_claim_id JOIN investigations i ON i.id=c.investigation_id WHERE i.project_id=? ORDER BY l.created_at,l.from_claim_id,l.to_claim_id"),
             ("wiki_page", "SELECT * FROM wiki_pages WHERE project_id=? ORDER BY created_at,id"),
@@ -2333,7 +2371,7 @@ class MemoryStore:
         """Restore one exported project. Existing project IDs are never overwritten."""
         if not records or records[0].get("record_type") != "project":
             raise ValueError("export must begin with a project record")
-        allowed = {"project", "scope", "session", "event", "memory", "memory_source", "investigation", "source_analysis", "investigation_claim", "investigation_claim_link", "wiki_page", "wiki_revision", "wiki_revision_citation", "memory_usage", "review_conflict", "edge", "search_alias", "project_alias", "event_receipt", "policy", "audit_checkpoint", "audit"}
+        allowed = {"project", "scope", "session", "event", "memory", "memory_source", "investigation", "source_analysis", "source_reinspection_request", "investigation_claim", "investigation_claim_link", "wiki_page", "wiki_revision", "wiki_revision_citation", "memory_usage", "review_conflict", "edge", "search_alias", "project_alias", "event_receipt", "policy", "audit_checkpoint", "audit"}
         if any(record.get("record_type") not in allowed or not isinstance(record.get("data"), dict) for record in records):
             raise ValueError("invalid export record")
         project = records[0]["data"]
@@ -2348,6 +2386,7 @@ class MemoryStore:
             "memory_source": ("memory_sources", ["memory_id","event_id","note","created_at"]),
             "investigation": ("investigations", ["id","project_id","scope_id","question","reason","decision_to_inform","constraints_json","initiator","status","started_at","completed_at"]),
             "source_analysis": ("source_analyses", ["id","investigation_id","source_type","stable_source_id","canonical_uri","source_version","source_updated_at","retrieved_at","section_anchor","access_reason","analysis_method","content_fingerprint","identity_key","created_at"]),
+            "source_reinspection_request": ("source_reinspection_requests", ["id","source_analysis_id","reason","details","known_source_version","requested_at"]),
             "investigation_claim": ("investigation_claims", ["id","investigation_id","source_analysis_id","claim_key","ordinal","role","event_id","memory_id","created_at","expected_outcome","outcome_effect"]),
             "investigation_claim_link": ("investigation_claim_links", ["from_claim_id","to_claim_id","relation","created_at"]),
             "wiki_page": ("wiki_pages", ["id","project_id","scope_id","topic","title","manual_notes","created_at","updated_at"]),

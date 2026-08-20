@@ -107,7 +107,7 @@ FTS5 remains the primary scalable candidate index. Local-hash is not an FTS repl
 
 ### P4 — Source revalidation and client adapters
 
-1. Let a client request reinspection when a cited external source is old, unavailable, or known to have a newer version.
+1. **Request source reinspection — completed.** A client can append an idempotent reinspection request for one recorded source analysis when it is old, unavailable, or known to have a newer version. The request preserves the stable source identity, inspected version, optional known version, and reason while explicitly assigning retrieval to the client; the core performs no external fetch.
 2. Add thin client examples for Confluence-like pages only after the generic source-analysis contract is stable.
 3. Keep authorization, page retrieval, and vendor-specific APIs outside the core server. Add direct adapters only when a stable non-interactive client API exists and real use demonstrates repeated manual friction.
 

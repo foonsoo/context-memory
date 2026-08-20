@@ -471,6 +471,41 @@ class StoreTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "completed"):
             self.store.record_source_analysis(investigation["id"], {**source,"source_version":"v5"}, claims)
 
+    def test_source_reinspection_request_is_explicit_append_only_and_idempotent(self):
+        project = self.store.create_project("source-reinspection")
+        investigation = self.store.create_investigation(
+            project["id"], "Is the policy current?", "The decision cites it", "Keep or revise guidance")
+        recorded = self.store.record_source_analysis(investigation["id"], {
+            "source_type":"documentation", "stable_source_id":"policy", "canonical_uri":"https://example.invalid/policy",
+            "source_version":"v1", "access_reason":"Verify policy", "analysis_method":"client extraction",
+        }, [{"key":"policy","role":"evidence","content":"The current limit is ten"}])
+        analysis_id = recorded["source_analysis_id"]
+
+        requested = self.store.request_source_reinspection(
+            analysis_id, "newer_version_known", "Client observed a release notice", "v2", "same-request")
+        repeated = self.store.request_source_reinspection(
+            analysis_id, "newer_version_known", "Client observed a release notice", "v2", "same-request")
+        self.assertEqual(requested, repeated)
+        self.assertEqual(requested["execution"], {"owner":"client","core_fetch_performed":False,"state":"requested"})
+        self.assertEqual(requested["source"]["inspected_source_version"], "v1")
+        chain = self.store.get_investigation(investigation["id"])["source_analyses"][0]
+        self.assertEqual(chain["reinspection_requests"][0]["known_source_version"], "v2")
+        with self.assertRaisesRegex(ValueError, "required"):
+            self.store.request_source_reinspection(analysis_id, "newer_version_known")
+        with self.assertRaisesRegex(ValueError, "only valid"):
+            self.store.request_source_reinspection(analysis_id, "old", known_source_version="v2")
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.store.conn.execute("UPDATE source_reinspection_requests SET reason='old' WHERE id=?", (requested["id"],))
+        records = self.store.export_project(project["id"])
+        self.assertIn("source_reinspection_request", {item["record_type"] for item in records})
+        restored = MemoryStore(Path(self.temp.name) / "source-reinspection-import.db")
+        try:
+            restored.import_project(records)
+            restored_request = restored.get_investigation(investigation["id"])["source_analyses"][0]["reinspection_requests"][0]
+            self.assertEqual(restored_request["id"], requested["id"])
+        finally:
+            restored.close()
+
     def test_research_provenance_rolls_back_invalid_claim_batch(self):
         p = self.store.create_project("research-rollback")
         investigation = self.store.create_investigation(p["id"], "Question", "Reason", "Decision", initiator="user")
