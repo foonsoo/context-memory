@@ -745,6 +745,40 @@ class StoreTests(unittest.TestCase):
         finally:
             other.close()
 
+    def test_wiki_browse_indexes_pages_and_exposes_reverse_citation_backlinks(self):
+        p = self.store.create_project("wiki-navigation")
+        shared_event = self.store.record_event(p["id"], "constraint", "Shared deployment requires an audit trail")
+        shared = self.store.upsert_memory(p["id"], "Shared deployment constraint",
+                                          "Shared deployment requires an audit trail", "constraint", "active",
+                                          source_event_ids=[shared_event["id"]])
+        decision_event = self.store.record_event(p["id"], "decision", "Shared deployment uses staged rollout")
+        self.store.upsert_memory(p["id"], "Shared deployment rollout", "Shared deployment uses staged rollout",
+                                 "decision", "active", source_event_ids=[decision_event["id"]])
+        pages = [self.store.create_wiki_page(p["id"], topic, title) for topic,title in
+                 (("deployment approvals","Approvals"),("deployment rollout","Rollout"),("operations","Operations"))]
+        for page in pages[:2]:
+            revision = self.store.generate_wiki_revision(page["id"], "shared deployment")
+            self.store.transition_wiki_revision(revision["id"], "published")
+
+        first = self.store.browse_wiki(p["id"], limit=2)
+        self.assertEqual([item["topic"] for item in first["topic_index"]],
+                         ["deployment approvals","deployment rollout"])
+        self.assertTrue(first["has_more"]); self.assertEqual(first["next_offset"], 2)
+        second = self.store.browse_wiki(p["id"], limit=2, offset=first["next_offset"])
+        self.assertEqual([item["topic"] for item in second["pages"]], ["operations"])
+        self.assertFalse(second["has_more"])
+
+        statements = []
+        self.store.conn.set_trace_callback(statements.append)
+        selected = self.store.browse_wiki(p["id"], page_id=pages[0]["id"])["selected"]
+        self.store.conn.set_trace_callback(None)
+        shared_links = next(item for item in selected["backlinks"] if item["memory_id"] == shared["id"])
+        self.assertEqual([item["page_id"] for item in shared_links["pages"]], [pages[1]["id"]])
+        self.assertFalse(shared_links["has_more"])
+        self.assertFalse(self.store.browse_wiki(p["id"])["search_index_duplicated"])
+        read_statements = [item for item in statements if item.lstrip().upper().startswith(("SELECT", "WITH"))]
+        self.assertLessEqual(len(read_statements), 9)
+
     def test_research_provenance_export_import_round_trip(self):
         p = self.store.create_project("research-export")
         investigation = self.store.create_investigation(p["id"], "Question", "Reason", "Decision", initiator="user")

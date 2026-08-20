@@ -60,6 +60,7 @@ TOOLS = [
     {"name":"wiki_revision_generate","description":"Create an immutable proposed Wiki revision from the cited Decision Brief projection.","inputSchema":obj({"page_id":{"type":"string"},"question":{"type":"string"},"char_budget":{"type":"integer","minimum":0,"maximum":100000},"generation_metadata":{"type":"object"},"idempotency_key":{"type":"string"}},["page_id","question"]),"annotations":{"readOnlyHint":False}},
     {"name":"wiki_revision_transition","description":"Publish or reject a proposed Wiki revision, or explicitly mark a published revision stale.","inputSchema":obj({"revision_id":{"type":"string"},"status":{"type":"string","enum":["published","stale","rejected"]},"reason":{"type":"string"}},["revision_id","status"]),"annotations":{"readOnlyHint":False}},
     {"name":"wiki_page_get","description":"Read a Wiki page, separate manual notes, immutable revision history, and exact citations.","inputSchema":obj({"page_id":{"type":"string"}},["page_id"]),"annotations":{"readOnlyHint":True}},
+    {"name":"wiki_browse","description":"Browse a deterministic, paginated topic/page index and optional reverse citation backlinks for one Wiki page. This reads authoritative Wiki metadata and does not create a second search index.","inputSchema":obj({"project_id":{"type":"string"},"page_id":{"type":"string"},"scope_id":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":100},"offset":{"type":"integer","minimum":0}},["project_id"]),"annotations":{"readOnlyHint":True}},
     {"name":"wiki_revision_render","description":"Render one stored Wiki revision as portable Markdown with citations and separate manual notes.","inputSchema":obj({"revision_id":{"type":"string"}},["revision_id"]),"annotations":{"readOnlyHint":True}},
     {"name":"wiki_revision_lint","description":"Deterministically report citation, source, lifecycle, staleness, dispute, and omitted-current-memory findings without changing state.","inputSchema":obj({"revision_id":{"type":"string"}},["revision_id"]),"annotations":{"readOnlyHint":True}},
     {"name":"policy_get","description":"Read bounded context, retention, and checkpoint trigger policy for a project.","inputSchema":obj({"project_id":{"type":"string"}},["project_id"]),"annotations":{"readOnlyHint":True}},
@@ -79,7 +80,7 @@ CORE_TOOL_NAMES = {"context_bootstrap","project_resolve","session_start","sessio
                    "checkpoint_create","checkpoint_evaluate","review_queue","review_action","investigation_create",
                    "investigation_record_source","investigation_get","investigation_complete","wiki_page_create",
                    "source_reinspection_request",
-                   "wiki_note_set","wiki_revision_generate","wiki_revision_transition","wiki_page_get","wiki_revision_render","wiki_revision_lint"}
+                   "wiki_note_set","wiki_revision_generate","wiki_revision_transition","wiki_page_get","wiki_browse","wiki_revision_render","wiki_revision_lint"}
 
 
 def validate_json(value: Any, schema: dict[str, Any], path: str = "arguments") -> None:
@@ -179,6 +180,7 @@ class MCPServer:
             "wiki_page_create":self.store.create_wiki_page,"wiki_note_set":self.store.set_wiki_notes,
             "wiki_revision_generate":self.store.generate_wiki_revision,"wiki_revision_transition":self.store.transition_wiki_revision,
             "wiki_page_get":self.store.get_wiki_page,"wiki_revision_render":self.store.render_wiki_revision,
+            "wiki_browse":self.store.browse_wiki,
             "wiki_revision_lint":self.store.lint_wiki_revision,
             "review_queue":self.store.review_queue,"memory_correct":self.store.propose_correction,"review_action":self.store.review_candidate,
             "policy_get":self.store.get_policy,"policy_set":self.store.set_policy,"search_health":self.store.search_health,

@@ -901,6 +901,113 @@ class MemoryStore:
             "SELECT id FROM wiki_revisions WHERE page_id=? ORDER BY revision_no", (page_id,))]
         return page
 
+    def browse_wiki(self, project_id: str, page_id: str | None = None, scope_id: str | None = None,
+                    limit: int = 50, offset: int = 0) -> dict[str, Any]:
+        """Browse the authoritative Wiki page index and reverse citation links without a second search stack."""
+        if not self._row("SELECT id FROM projects WHERE id=?", (project_id,)): raise KeyError("project not found")
+        if scope_id and not self._row("SELECT id FROM scopes WHERE id=? AND project_id=?", (scope_id,project_id)):
+            raise ValueError("scope must belong to project")
+        if not 1 <= limit <= 100: raise ValueError("limit must be 1..100")
+        if offset < 0: raise ValueError("offset must be non-negative")
+        where = "project_id=?" + (" AND scope_id=?" if scope_id else "")
+        params: list[Any] = [project_id] + ([scope_id] if scope_id else [])
+        rows = list(self.conn.execute(
+            f"SELECT * FROM wiki_pages WHERE {where} ORDER BY topic COLLATE NOCASE,title COLLATE NOCASE,id LIMIT ? OFFSET ?",
+            (*params,limit + 1,offset)))
+        has_more = len(rows) > limit; rows = rows[:limit]
+
+        def current_revision(page: dict[str, Any]) -> dict[str, Any] | None:
+            row = self._row("""SELECT * FROM wiki_revisions WHERE page_id=? AND status<>'rejected'
+              ORDER BY CASE status WHEN 'published' THEN 0 WHEN 'proposed' THEN 1 ELSE 2 END,
+              revision_no DESC LIMIT 1""", (page["id"],))
+            return row
+
+        page_ids = [row["id"] for row in rows]
+        current_by_page: dict[str, dict[str, Any]] = {}
+        counts_by_page: dict[str, dict[str, int]] = {}
+        citations_by_revision: dict[str, int] = {}
+        if page_ids:
+            placeholders = ",".join("?" for _ in page_ids)
+            for row in self.conn.execute(f"""SELECT * FROM (
+                SELECT r.*,row_number() OVER (PARTITION BY r.page_id ORDER BY
+                  CASE r.status WHEN 'published' THEN 0 WHEN 'proposed' THEN 1 ELSE 2 END,
+                  r.revision_no DESC) AS rank
+                FROM wiki_revisions r WHERE r.page_id IN ({placeholders}) AND r.status<>'rejected')
+              WHERE rank=1""", page_ids):
+                current_by_page[row["page_id"]] = dict(row)
+            for row in self.conn.execute(f"""SELECT page_id,status,count(*) AS count FROM wiki_revisions
+              WHERE page_id IN ({placeholders}) GROUP BY page_id,status""", page_ids):
+                counts_by_page.setdefault(row["page_id"], {})[row["status"]] = row["count"]
+            revision_ids = [row["id"] for row in current_by_page.values()]
+            if revision_ids:
+                revision_placeholders = ",".join("?" for _ in revision_ids)
+                for row in self.conn.execute(f"""SELECT revision_id,count(DISTINCT memory_id) AS count
+                  FROM wiki_revision_citations WHERE revision_id IN ({revision_placeholders})
+                  GROUP BY revision_id""", revision_ids):
+                    citations_by_revision[row["revision_id"]] = row["count"]
+
+        pages = []
+        for raw in rows:
+            page = dict(raw); current = current_by_page.get(page["id"])
+            counts = counts_by_page.get(page["id"], {})
+            citation_count = citations_by_revision.get(current["id"], 0) if current else 0
+            pages.append({"id":page["id"],"topic":page["topic"],"title":page["title"],
+                          "scope_id":page["scope_id"],"updated_at":page["updated_at"],
+                          "current_revision":({"id":current["id"],"revision_no":current["revision_no"],
+                                               "status":current["status"],"created_at":current["created_at"]}
+                                              if current else None),
+                          "revision_counts":{status:counts.get(status,0) for status in
+                                             ("proposed","published","stale","rejected")},
+                          "cited_memory_count":citation_count})
+
+        selected = None
+        if page_id:
+            selected_page = self._row("SELECT * FROM wiki_pages WHERE id=? AND project_id=?", (page_id,project_id))
+            if not selected_page: raise KeyError("wiki page not found in project")
+            if scope_id and selected_page["scope_id"] != scope_id: raise ValueError("wiki page is outside requested scope")
+            selected_revision = current_revision(selected_page)
+            backlinks = []
+            if selected_revision:
+                cited = list(self.conn.execute("""SELECT DISTINCT c.memory_id,m.title,m.status
+                  FROM wiki_revision_citations c JOIN memories m ON m.id=c.memory_id
+                  WHERE c.revision_id=? ORDER BY m.title COLLATE NOCASE,c.memory_id""", (selected_revision["id"],)))
+                links_by_memory: dict[str, list[dict[str, Any]]] = {memory["memory_id"]:[] for memory in cited}
+                if cited:
+                    cited_ids = [memory["memory_id"] for memory in cited]
+                    cited_placeholders = ",".join("?" for _ in cited_ids)
+                    for row in self.conn.execute(f"""WITH current AS (
+                        SELECT r.*,row_number() OVER (PARTITION BY r.page_id ORDER BY
+                          CASE r.status WHEN 'published' THEN 0 WHEN 'proposed' THEN 1 ELSE 2 END,
+                          r.revision_no DESC) AS rank
+                        FROM wiki_revisions r JOIN wiki_pages p ON p.id=r.page_id
+                        WHERE p.project_id=? AND (? IS NULL OR p.scope_id=?) AND r.status<>'rejected'),
+                      links AS (
+                        SELECT DISTINCT c.memory_id,p.id AS page_id,p.topic,p.title,current.id AS revision_id,
+                          current.revision_no,current.status
+                        FROM current JOIN wiki_pages p ON p.id=current.page_id
+                        JOIN wiki_revision_citations c ON c.revision_id=current.id
+                        WHERE current.rank=1 AND c.memory_id IN ({cited_placeholders}) AND p.id<>?),
+                      ranked AS (
+                        SELECT links.*,row_number() OVER (PARTITION BY memory_id ORDER BY
+                          topic COLLATE NOCASE,title COLLATE NOCASE,page_id) AS backlink_rank FROM links)
+                      SELECT * FROM ranked WHERE backlink_rank<=101 ORDER BY memory_id,backlink_rank""",
+                      (project_id,scope_id,scope_id,*cited_ids,page_id)):
+                        item = dict(row); item.pop("backlink_rank"); item.pop("memory_id")
+                        links_by_memory[row["memory_id"]].append(item)
+                for memory in cited:
+                    linked = links_by_memory[memory["memory_id"]]
+                    backlinks.append({"memory_id":memory["memory_id"],"memory_title":memory["title"],
+                                      "memory_status":memory["status"],"pages":linked[:100],
+                                      "has_more":len(linked) > 100})
+            selected = {"page_id":page_id,
+                        "current_revision_id":selected_revision["id"] if selected_revision else None,
+                        "backlinks":backlinks}
+        return {"contract_version":"topic-wiki-navigation/v1","project_id":project_id,"scope_id":scope_id,
+                "pages":pages,"topic_index":[{"topic":item["topic"],"page_id":item["id"],"title":item["title"]}
+                                               for item in pages],
+                "page_count":len(pages),"offset":offset,"next_offset":offset + len(pages) if has_more else None,
+                "has_more":has_more,"selected":selected,"search_index_duplicated":False,"state_changed":False}
+
     def render_wiki_revision(self, revision_id: str) -> dict[str, Any]:
         revision = self.get_wiki_revision(revision_id)
         page = self._row("SELECT * FROM wiki_pages WHERE id=?", (revision["page_id"],))
