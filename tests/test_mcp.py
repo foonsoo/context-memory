@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from context_memory.mcp import CORE_TOOL_NAMES, MCPServer, TOOLS, TOOL_BY_NAME
+from context_memory.mcp import CORE_TOOL_NAMES, MCPServer, TOOLS, TOOL_BY_NAME, validate_json
 from context_memory.contracts import PROMOTABLE_EVENT_KINDS
 from context_memory.store import MemoryStore
 
@@ -116,6 +116,44 @@ class MCPTests(unittest.TestCase):
         expected = {"wiki_page_create","wiki_note_set","wiki_revision_generate","wiki_revision_transition",
                     "wiki_page_get","wiki_revision_render","wiki_revision_lint"}
         self.assertTrue(expected <= CORE_TOOL_NAMES)
+
+    def test_confluence_like_source_examples_match_generic_tool_schemas(self):
+        example_path = Path(__file__).parents[1] / "examples" / "confluence-like-source-workflow.json"
+        workflow = json.loads(example_path.read_text(encoding="utf-8"))
+        self.assertEqual(workflow["contract_version"], "client-source-workflow/v1")
+        self.assertEqual({item["name"] for item in workflow["examples"]}, {
+            "record_initial_page_analysis", "request_and_record_newer_page_version"})
+        self.assertEqual(workflow["boundary"], {
+            "authorization_owner":"client", "page_retrieval_owner":"client",
+            "core_stores_full_page":False, "core_stores_credentials":False})
+        call_names = []
+        for example in workflow["examples"]:
+            for call in example["mcp_calls"]:
+                call_names.append(call["name"])
+                self.assertIn(call["name"], CORE_TOOL_NAMES)
+                validate_json(call["arguments"], TOOL_BY_NAME[call["name"]]["inputSchema"])
+        self.assertEqual(call_names, ["investigation_create", "investigation_record_source",
+                                      "source_reinspection_request", "investigation_record_source"])
+        serialized = json.dumps(workflow).casefold()
+        for forbidden in ("access_token", "authorization_header", "cookie", "page_body", "page_content"):
+            self.assertNotIn(forbidden, serialized)
+        project = self.store.create_project("source-client-example")
+        scope = self.store.create_scope(project["id"], "example")
+        values = {"$PROJECT_ID":project["id"], "$SCOPE_ID":scope["id"]}
+        for example in workflow["examples"]:
+            for call in example["mcp_calls"]:
+                arguments = json.loads(json.dumps(call["arguments"])
+                                       .replace("$PROJECT_ID", values["$PROJECT_ID"])
+                                       .replace("$SCOPE_ID", values["$SCOPE_ID"])
+                                       .replace("$investigation_id", values.get("$investigation_id", "$investigation_id"))
+                                       .replace("$source_analysis_id", values.get("$source_analysis_id", "$source_analysis_id")))
+                result = self.server.call(call["name"], arguments)
+                if call["name"] == "investigation_create": values["$investigation_id"] = result["id"]
+                if call["name"] == "investigation_record_source" and "$source_analysis_id" not in values:
+                    values["$source_analysis_id"] = result["source_analysis_id"]
+        chain = self.store.get_investigation(values["$investigation_id"])
+        self.assertEqual([item["source_version"] for item in chain["source_analyses"]], ["42", "43"])
+        self.assertEqual(chain["source_analyses"][0]["reinspection_requests"][0]["known_source_version"], "43")
 
     def test_external_http_requires_token(self):
         with self.assertRaisesRegex(ValueError, "refusing external bind"): self.server.serve_http("0.0.0.0", 0)

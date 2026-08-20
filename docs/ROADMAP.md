@@ -20,7 +20,7 @@ External clients may read Confluence or another source with the user's existing 
 
 ### Current implementation priority
 
-P0 Decision Brief/evaluation, P1 Research-to-Decision provenance, P2 topic Wiki revisions, and P2.5 non-neural retrieval quality/latency are implemented. The active work is **P3 Decision Wiki lint and review**. Neural embedding remains an optional evaluated adapter and is not part of the active implementation path because its measured latency cost did not justify making it the default.
+P0 Decision Brief/evaluation, P1 Research-to-Decision provenance, P2 topic Wiki revisions, P2.5 non-neural retrieval quality/latency, P3 Decision Wiki lint/review, and P4 source revalidation are implemented. The next evidence-led product track is **P5 Human navigation and export**, gated on real Decision Wiki revision usage. Neural embedding remains an optional evaluated adapter and is not part of the active implementation path because its measured latency cost did not justify making it the default.
 
 ### P0 — Decision Brief contract and evaluation
 
@@ -108,10 +108,12 @@ FTS5 remains the primary scalable candidate index. Local-hash is not an FTS repl
 ### P4 — Source revalidation and client adapters
 
 1. **Request source reinspection — completed.** A client can append an idempotent reinspection request for one recorded source analysis when it is old, unavailable, or known to have a newer version. The request preserves the stable source identity, inspected version, optional known version, and reason while explicitly assigning retrieval to the client; the core performs no external fetch.
-2. Add thin client examples for Confluence-like pages only after the generic source-analysis contract is stable.
-3. Keep authorization, page retrieval, and vendor-specific APIs outside the core server. Add direct adapters only when a stable non-interactive client API exists and real use demonstrates repeated manual friction.
+2. **Add thin Confluence-like client examples — completed.** Versioned, schema-checked examples cover an authorized initial page analysis and a reinspection that records a newer page version without rewriting the earlier analysis. They use only generic source-analysis tools and retain no full page or credentials.
+3. **Keep vendor access outside the core — completed.** The examples explicitly assign authorization and retrieval to the client. Direct adapters remain deferred until a stable non-interactive API and repeated real-world friction justify one.
 
 **Exit gate:** a client can refresh relevant evidence without granting the core persistent access to an external knowledge system.
+
+**Exit result — passed 2026-08-20.** The portable workflow records a reinspection request, returns the stable source route without a core fetch, and appends a newer analyzed version through the same generic provenance contract. Every illustrated MCP call is validated against the shipped schemas; the examples contain neither credentials nor full page bodies.
 
 ### P5 — Human navigation and export
 

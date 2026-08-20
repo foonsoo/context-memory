@@ -1,0 +1,119 @@
+{
+  "contract_version": "client-source-workflow/v1",
+  "boundary": {
+    "authorization_owner": "client",
+    "page_retrieval_owner": "client",
+    "core_stores_full_page": false,
+    "core_stores_credentials": false
+  },
+  "examples": [
+    {
+      "name": "record_initial_page_analysis",
+      "client_steps": [
+        "Read the page with the user's existing authorized connector or browser session.",
+        "Extract only claims that materially inform the named decision; do not copy the full page."
+      ],
+      "mcp_calls": [
+        {
+          "name": "investigation_create",
+          "arguments": {
+            "project_id": "$PROJECT_ID",
+            "scope_id": "$SCOPE_ID",
+            "question": "Which deployment approval policy should govern releases?",
+            "reason": "The current release decision cites a Confluence-like policy page.",
+            "decision_to_inform": "Choose the release approval policy.",
+            "constraints": ["Use the caller's existing page access", "Do not store the full page"],
+            "initiator": "client-example",
+            "idempotency_key": "source-example-investigation-v1"
+          },
+          "capture": {"investigation_id": "$.id"}
+        },
+        {
+          "name": "investigation_record_source",
+          "arguments": {
+            "investigation_id": "$investigation_id",
+            "source": {
+              "source_type": "confluence-like-page",
+              "stable_source_id": "space:ENG/page:release-policy",
+              "canonical_uri": "https://knowledge.example.invalid/spaces/ENG/pages/release-policy",
+              "source_version": "42",
+              "source_updated_at": "2026-08-19T07:30:00Z",
+              "retrieved_at": "2026-08-20T09:00:00Z",
+              "section_anchor": "approval-thresholds",
+              "access_reason": "Verify the approval threshold used by the release decision.",
+              "analysis_method": "authorized client read plus decision-relevant claim extraction"
+            },
+            "claims": [
+              {
+                "key": "approval-threshold",
+                "role": "evidence",
+                "title": "Production approval threshold",
+                "content": "Production releases require two approvers.",
+                "memory_status": "active",
+                "confidence": 1.0
+              },
+              {
+                "key": "release-policy-choice",
+                "role": "decision",
+                "title": "Apply two-approver policy",
+                "content": "Use the two-approver policy for production releases.",
+                "evidence_claim_keys": ["approval-threshold"],
+                "memory_status": "proposed"
+              }
+            ],
+            "idempotency_key": "source-example-analysis-42"
+          },
+          "capture": {"source_analysis_id": "$.source_analysis_id"}
+        }
+      ]
+    },
+    {
+      "name": "request_and_record_newer_page_version",
+      "client_steps": [
+        "When age, unavailability, or a version signal warrants it, record the reinspection request before fetching.",
+        "Use the returned canonical URI with the client's authorized connector or browser.",
+        "If the source changed, record a new source analysis under the original investigation; never rewrite version 42."
+      ],
+      "mcp_calls": [
+        {
+          "name": "source_reinspection_request",
+          "arguments": {
+            "source_analysis_id": "$source_analysis_id",
+            "reason": "newer_version_known",
+            "known_source_version": "43",
+            "details": "The client observed page version 43 in an authorized page listing.",
+            "idempotency_key": "source-example-reinspection-43"
+          }
+        },
+        {
+          "name": "investigation_record_source",
+          "arguments": {
+            "investigation_id": "$investigation_id",
+            "source": {
+              "source_type": "confluence-like-page",
+              "stable_source_id": "space:ENG/page:release-policy",
+              "canonical_uri": "https://knowledge.example.invalid/spaces/ENG/pages/release-policy",
+              "source_version": "43",
+              "source_updated_at": "2026-08-20T10:00:00Z",
+              "retrieved_at": "2026-08-20T10:05:00Z",
+              "section_anchor": "approval-thresholds",
+              "access_reason": "Reinspect the version cited by the release decision.",
+              "analysis_method": "authorized client read plus changed-claim extraction"
+            },
+            "claims": [
+              {
+                "key": "approval-threshold-v43",
+                "role": "evidence",
+                "title": "Updated production approval threshold",
+                "content": "Production releases now require three approvers.",
+                "memory_status": "active",
+                "confidence": 1.0
+              }
+            ],
+            "idempotency_key": "source-example-analysis-43"
+          }
+        }
+      ]
+    }
+  ]
+}
