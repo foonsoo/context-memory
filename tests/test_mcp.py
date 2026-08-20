@@ -114,7 +114,7 @@ class MCPTests(unittest.TestCase):
 
     def test_topic_wiki_tools_are_core(self):
         expected = {"wiki_page_create","wiki_note_set","wiki_revision_generate","wiki_revision_transition",
-                    "wiki_page_get","wiki_browse","wiki_revision_render","wiki_revision_lint"}
+                    "wiki_page_get","wiki_browse","wiki_revision_render","wiki_markdown_export","wiki_revision_lint"}
         self.assertTrue(expected <= CORE_TOOL_NAMES)
 
     def test_confluence_like_source_examples_match_generic_tool_schemas(self):

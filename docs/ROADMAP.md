@@ -118,7 +118,7 @@ FTS5 remains the primary scalable candidate index. Local-hash is not an FTS repl
 ### P5 — Human navigation and export
 
 1. **Add bounded Wiki browsing and backlinks — completed.** A read-only, paginated page/topic index exposes each page's current revision and lifecycle counts. Selecting a page returns reverse citation backlinks from its cited memories to other current pages. Navigation reads authoritative Wiki tables and does not duplicate the existing text-search stack.
-2. Add richer Markdown export for a browsable set of pages, including stable page metadata and navigation links, without making Markdown writable authority.
+2. **Add richer Markdown export — completed.** A bounded browse window renders a deterministic index and stable page-ID paths with page/revision metadata, adjacent-page navigation, and related-page links derived from shared citations. SQLite remains the sole writable authority.
 3. Evaluate whether the existing explicit review queue is sufficient in real usage before adding a separate review UI.
 
 **Exit gate:** a user can discover current topic pages, follow provenance-backed relationships, and export a useful human-readable Wiki without creating a second source of truth.

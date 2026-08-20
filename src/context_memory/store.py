@@ -1031,6 +1031,59 @@ class MemoryStore:
         lines.extend(["## Manual notes","",page["manual_notes"] or "_None._",""])
         return {"contract_version":"topic-wiki-markdown/v1","revision_id":revision_id,"markdown":"\n".join(lines)}
 
+    def export_wiki_markdown(self, project_id: str, scope_id: str | None = None,
+                             limit: int = 50, offset: int = 0) -> dict[str, Any]:
+        """Render a bounded, deterministic Wiki snapshot without making Markdown authoritative."""
+        navigation = self.browse_wiki(project_id, scope_id=scope_id, limit=limit, offset=offset)
+        pages = [page for page in navigation["pages"] if page["current_revision"]]
+        paths = {page["id"]:f"pages/{page['id']}.md" for page in pages}
+        revision_ids = [page["current_revision"]["id"] for page in pages]
+        related: dict[str, set[str]] = {page["id"]:set() for page in pages}
+        if revision_ids:
+            placeholders = ",".join("?" for _ in revision_ids)
+            rows = list(self.conn.execute(f"""SELECT DISTINCT a.page_id AS from_page,b.page_id AS to_page
+              FROM wiki_revision_citations ca JOIN wiki_revisions a ON a.id=ca.revision_id
+              JOIN wiki_revision_citations cb ON cb.memory_id=ca.memory_id
+              JOIN wiki_revisions b ON b.id=cb.revision_id
+              WHERE a.id IN ({placeholders}) AND b.id IN ({placeholders}) AND a.page_id<>b.page_id
+              ORDER BY from_page,to_page""", (*revision_ids,*revision_ids)))
+            for row in rows: related[row["from_page"]].add(row["to_page"])
+
+        documents = []
+        for index,page in enumerate(pages):
+            current = page["current_revision"]
+            body = self.render_wiki_revision(current["id"])["markdown"].splitlines()
+            metadata = ["---",f"page_id: {page['id']}",f"revision_id: {current['id']}",
+                        f"revision_no: {current['revision_no']}",f"status: {current['status']}",
+                        f"topic: {json.dumps(page['topic'], ensure_ascii=False)}","---",""]
+            links = ["[Wiki index](../index.md)"]
+            if index: links.append(f"[Previous](../{paths[pages[index - 1]['id']]})")
+            if index + 1 < len(pages): links.append(f"[Next](../{paths[pages[index + 1]['id']]})")
+            lines = metadata + body + ["","## Navigation",""," · ".join(links)]
+            related_ids = sorted(related[page["id"]], key=lambda item: paths[item])
+            if related_ids:
+                lines.extend(["","### Related pages",""])
+                by_id = {item["id"]:item for item in pages}
+                lines.extend(f"- [{by_id[item]['title']}](../{paths[item]})" for item in related_ids)
+            lines.append("")
+            documents.append({"path":paths[page["id"]],"page_id":page["id"],
+                              "revision_id":current["id"],"markdown":"\n".join(lines)})
+
+        index_lines = ["# Decision Wiki","",f"Project: `{project_id}`",""]
+        if scope_id: index_lines.extend([f"Scope: `{scope_id}`",""])
+        index_lines.extend(["## Pages",""])
+        if documents:
+            by_id = {item["id"]:item for item in pages}
+            index_lines.extend(f"- [{by_id[doc['page_id']]['title']}]({doc['path']}) — {by_id[doc['page_id']]['topic']}"
+                               for doc in documents)
+        else: index_lines.append("_No renderable current revisions in this export window._")
+        index_lines.append("")
+        return {"contract_version":"topic-wiki-export/v1","project_id":project_id,"scope_id":scope_id,
+                "offset":offset,"next_offset":navigation["next_offset"],"has_more":navigation["has_more"],
+                "page_count":len(documents),"index":{"path":"index.md","markdown":"\n".join(index_lines)},
+                "documents":documents,"authoritative_source":"sqlite","markdown_writable_authority":False,
+                "state_changed":False}
+
     def _stale_wiki_revisions_for_memory(self, cx: sqlite3.Connection, memory_id: str, reason: str) -> list[str]:
         rows = list(cx.execute("""SELECT DISTINCT r.id,p.project_id FROM wiki_revisions r
           JOIN wiki_pages p ON p.id=r.page_id JOIN wiki_revision_citations c ON c.revision_id=r.id

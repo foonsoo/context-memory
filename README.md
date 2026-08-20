@@ -396,7 +396,7 @@ Project hooks require a trusted project and explicit review in Codex. Use `/hook
 | `get_context` | Strict shared-budget local/global selection, registry fallback, and optional recent events |
 | `decision_context` | Versioned, cited Decision Brief over the existing retrieval path; never generates a recommendation or changes memory state |
 | `wiki_page_create`, `wiki_note_set`, `wiki_page_get` | Topic page identity and separately managed manual notes |
-| `wiki_revision_generate`, `wiki_revision_transition`, `wiki_revision_render`, `wiki_revision_lint` | Immutable cited revisions, explicit publication lifecycle, deterministic staleness/lint, and portable Markdown |
+| `wiki_revision_generate`, `wiki_revision_transition`, `wiki_revision_render`, `wiki_markdown_export`, `wiki_revision_lint` | Immutable cited revisions, explicit publication lifecycle, deterministic staleness/lint, and portable linked Markdown |
 | `get_source` | Retrieve original event evidence |
 | `get_audit` | Inspect append-only entity history |
 
@@ -441,6 +441,8 @@ See the [authorized source client workflow](docs/SOURCE_CLIENT_WORKFLOW.md) and 
 `wiki_page_create` creates a stable topic page, while `wiki_note_set` manages human-authored notes outside generated content. `wiki_revision_generate` snapshots the standard Decision Brief sections and exact memory/event citation pairs into an immutable `proposed` revision. Reviewers explicitly publish or reject it with `wiki_revision_transition`; publishing a replacement makes the prior published revision stale. A published revision also becomes stale when a cited memory is materially changed, superseded, disputed, expired, or rejected. `wiki_revision_lint` deterministically reports missing citations and sources, terminal or disputed citations, stale revisions, relevant current memories omitted from the revision, recommendation-like claims that lack explicit support or are mislabeled as evidence instead of inference, and cited source versions not reinspected for 30 days. Source age is only a reinspection prompt: it never claims that the external source changed, establishes freshness, or marks a revision stale. The response explicitly labels deterministic-rule execution, absence of model assistance, and absence of state changes; repeated calls over unchanged state are identical and read-only. `wiki_revision_render` produces Markdown from SQLite on demand, leaving SQLite as the only writable authority.
 
 `wiki_browse` provides the first P5 human-navigation surface: a deterministic paginated topic/page index with current revision summaries. When given a page ID, it also returns reverse citation backlinks showing which other current Wiki pages cite each of the selected page's memories. It reads the authoritative Wiki tables and deliberately does not introduce a second text-search index.
+
+`wiki_markdown_export` renders a bounded browse window as an `index.md` plus stable `pages/<page-id>.md` documents. Each page records stable page/revision metadata and links back to the index, adjacent pages, and related pages that share cited memories. The export is deterministic and read-only; SQLite remains the sole writable authority.
 
 ## Test and smoke test
 

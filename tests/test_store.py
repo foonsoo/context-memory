@@ -779,6 +779,37 @@ class StoreTests(unittest.TestCase):
         read_statements = [item for item in statements if item.lstrip().upper().startswith(("SELECT", "WITH"))]
         self.assertLessEqual(len(read_statements), 9)
 
+    def test_wiki_markdown_export_has_stable_metadata_and_navigation(self):
+        p = self.store.create_project("wiki-markdown-export")
+        event = self.store.record_event(p["id"], "constraint", "Deployments require approval")
+        self.store.upsert_memory(p["id"], "Approval", "Deployments require approval", "constraint", "active",
+                                 source_event_ids=[event["id"]])
+        pages = [self.store.create_wiki_page(p["id"], topic, title) for topic,title in
+                 (("approval flow","Approvals"),("rollout flow","Rollout"),("unused","No revision"))]
+        revisions = []
+        for page in pages[:2]:
+            revision = self.store.generate_wiki_revision(page["id"], "deployment approval")
+            revisions.append(self.store.transition_wiki_revision(revision["id"], "published"))
+
+        exported = self.store.export_wiki_markdown(p["id"])
+        self.assertEqual(exported["contract_version"], "topic-wiki-export/v1")
+        self.assertEqual(exported["page_count"], 2)
+        self.assertEqual(exported, self.store.export_wiki_markdown(p["id"]))
+        self.assertFalse(exported["markdown_writable_authority"])
+        self.assertEqual(exported["authoritative_source"], "sqlite")
+        first,second = exported["documents"]
+        self.assertEqual(first["path"], f"pages/{pages[0]['id']}.md")
+        self.assertIn(f"page_id: {pages[0]['id']}", first["markdown"])
+        self.assertIn(f"revision_id: {revisions[0]['id']}", first["markdown"])
+        self.assertIn("[Wiki index](../index.md)", first["markdown"])
+        self.assertIn(f"[Next](../pages/{pages[1]['id']}.md)", first["markdown"])
+        self.assertIn(f"[Previous](../pages/{pages[0]['id']}.md)", second["markdown"])
+        self.assertIn(f"[Rollout](../pages/{pages[1]['id']}.md)", first["markdown"])
+        self.assertIn(f"[Approvals](pages/{pages[0]['id']}.md)", exported["index"]["markdown"])
+
+        bounded = self.store.export_wiki_markdown(p["id"], limit=1)
+        self.assertTrue(bounded["has_more"]); self.assertEqual(bounded["next_offset"], 1)
+
     def test_research_provenance_export_import_round_trip(self):
         p = self.store.create_project("research-export")
         investigation = self.store.create_investigation(p["id"], "Question", "Reason", "Decision", initiator="user")
