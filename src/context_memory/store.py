@@ -705,6 +705,27 @@ class MemoryStore:
         def add(code: str, severity: str, message: str, **details: Any) -> None:
             findings.append({"code":code,"severity":severity,"message":message,**details})
 
+        def recommendation_signal(claim: str) -> str | None:
+            patterns = (
+                ("recommend", r"\b(?:recommend|recommended|advisable)\b"),
+                ("should", r"\b(?:should|ought\s+to|best\s+to)\b"),
+                ("korean_recommend", r"(?:권장|추천|하는\s*것이\s*좋|해야\s*(?:한다|합니다|함))"),
+            )
+            folded = claim.casefold()
+            return next((name for name, pattern in patterns if re.search(pattern, folded)), None)
+
+        def claim_provenance(memory_id: str) -> tuple[str, bool]:
+            claim = self._row("SELECT id,role FROM investigation_claims WHERE memory_id=?", (memory_id,))
+            if claim:
+                supported = bool(self._row("SELECT 1 AS found FROM investigation_claim_links WHERE to_claim_id=? LIMIT 1",
+                                           (claim["id"],)))
+                return claim["role"], supported
+            memory = self._row("SELECT type FROM memories WHERE id=?", (memory_id,))
+            role = "decision" if memory and memory["type"] == "decision" else "evidence"
+            supported = bool(self._row("""SELECT 1 AS found FROM edges WHERE to_memory_id=?
+              AND relation IN ('supports','depends_on') LIMIT 1""", (memory_id,)))
+            return role, supported
+
         citation_keys = {(item["section"],item["ordinal"],item["memory_id"],item["event_id"])
                          for item in revision["citations"]}
         cited_memories = {item["memory_id"] for item in revision["citations"]}
@@ -729,6 +750,19 @@ class MemoryStore:
                         if (section,ordinal,memory_id,event_id) not in citation_keys:
                             add("missing_citation", "error", "Embedded citation is absent from the immutable citation index.",
                                 section=section, ordinal=ordinal, memory_id=memory_id, event_id=event_id)
+                    signal = recommendation_signal(str(entry.get("claim") or entry.get("observed_outcome") or ""))
+                    if signal and memory_id:
+                        role, supported = claim_provenance(memory_id)
+                        if role == "evidence":
+                            add("recommendation_mislabeled_as_evidence", "error",
+                                "Recommendation-like language must be labeled as inference, not evidence.",
+                                section=section, ordinal=ordinal, memory_id=memory_id, detected_signal=signal,
+                                current_label=role, required_label="inference")
+                        if not supported and role not in {"decision", "action"}:
+                            add("unsupported_recommendation", "error",
+                                "Recommendation-like claim has no explicit supporting claim or memory relation.",
+                                section=section, ordinal=ordinal, memory_id=memory_id, detected_signal=signal,
+                                claim_role=role, required_label="inference")
 
         for memory_id in sorted(cited_memories):
             memory = self._row("SELECT * FROM memories WHERE id=?", (memory_id,))

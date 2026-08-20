@@ -96,7 +96,7 @@ FTS5 remains the primary scalable candidate index. Local-hash is not an FTS repl
 ### P3 — Decision Wiki lint and review
 
 1. **Detect evidence and lifecycle gaps — completed.** Deterministically report missing citations, missing sources, citations to terminal memories, unresolved disputes, stale page revisions, and relevant current memories omitted from a revision. The read-only lint contract exposes stable finding codes and never changes memory or Wiki state.
-2. Detect unsupported recommendations and require them to be labeled as inference rather than evidence.
+2. **Detect unsupported recommendations — completed.** Conservative English/Korean recommendation signals are checked against explicit investigation-claim and verified memory relations. Unsupported recommendation-like claims and recommendations labeled as evidence instead of inference receive stable error findings; lint remains deterministic and read-only.
 3. Report source-version age as a reinspection prompt, not as proof that an external page changed. The core must not claim freshness it cannot verify.
 4. Integrate lint findings into the existing review queue and explicit approve/reject/supersede/dispute workflow instead of creating an unrelated review system.
 5. Make lint deterministic where possible. Optional model-assisted checks must be separately labeled and must not change active state autonomously.

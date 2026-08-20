@@ -606,6 +606,32 @@ class StoreTests(unittest.TestCase):
         self.store.transition(omitted["id"], "superseded")
         self.assertEqual(self.store.lint_wiki_revision(revision["id"])["status"], "fail")
 
+    def test_wiki_revision_lint_requires_unsupported_recommendations_to_be_inferences(self):
+        p = self.store.create_project("wiki-recommendation-lint")
+        decision_event = self.store.record_event(p["id"], "decision", "Keep the current deployment")
+        support = self.store.upsert_memory(p["id"], "Deployment", "Keep the current deployment", "decision", "active",
+                                           source_event_ids=[decision_event["id"]])
+        recommendation_event = self.store.record_event(p["id"], "fact", "We should migrate immediately")
+        recommendation = self.store.upsert_memory(
+            p["id"], "Migration advice", "We should migrate immediately", "fact", "active",
+            source_event_ids=[recommendation_event["id"]], tags=["rationale"])
+        page = self.store.create_wiki_page(p["id"], "deployment migrate", "Deployment")
+        revision = self.store.generate_wiki_revision(page["id"], "deployment migrate")
+
+        linted = self.store.lint_wiki_revision(revision["id"])
+        recommendation_findings = [item for item in linted["findings"]
+                                   if item.get("memory_id") == recommendation["id"]]
+        self.assertEqual({item["code"] for item in recommendation_findings},
+                         {"recommendation_mislabeled_as_evidence", "unsupported_recommendation"})
+        self.assertTrue(all(item["required_label"] == "inference" for item in recommendation_findings))
+        self.assertTrue(linted["deterministic"])
+        self.assertFalse(linted["state_changed"])
+
+        self.store.create_relation(p["id"], support["id"], recommendation["id"], "supports")
+        supported_codes = {item["code"] for item in self.store.lint_wiki_revision(revision["id"])["findings"]
+                           if item.get("memory_id") == recommendation["id"]}
+        self.assertEqual(supported_codes, {"recommendation_mislabeled_as_evidence"})
+
     def test_topic_wiki_export_import_round_trip(self):
         p = self.store.create_project("wiki-export")
         event = self.store.record_event(p["id"], "decision", "Choose option A")
