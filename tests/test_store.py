@@ -651,6 +651,30 @@ class StoreTests(unittest.TestCase):
         self.assertFalse(first["autonomous_state_changes"])
         self.assertEqual(self.store.conn.execute("SELECT count(*) FROM audit_log").fetchone()[0], audit_count)
 
+    def test_wiki_revision_lint_does_not_flag_workflow_tasks_as_omitted_claims(self):
+        p = self.store.create_project("wiki-task-lint")
+        decision_event = self.store.record_event(p["id"], "decision", "Use the deployed Wiki review workflow")
+        self.store.upsert_memory(p["id"], "Review workflow", "Use the deployed Wiki review workflow",
+                                 "decision", "active", source_event_ids=[decision_event["id"]])
+        task_event = self.store.record_event(p["id"], "task", "Next: observe review friction")
+        task = self.store.upsert_memory(p["id"], "Review handoff", "Next: observe review friction",
+                                        "task", "active", source_event_ids=[task_event["id"]],
+                                        tags=["handoff", "checkpoint"])
+        page = self.store.create_wiki_page(p["id"], "wiki review workflow", "Wiki review")
+        revision = self.store.generate_wiki_revision(page["id"], "Wiki review workflow")
+        omitted = [item["memory_id"] for item in self.store.lint_wiki_revision(revision["id"])["findings"]
+                   if item["code"] == "omitted_current_memory"]
+        self.assertNotIn(task["id"], omitted)
+
+    def test_wiki_revision_generation_failure_exposes_retrieval_diagnostics(self):
+        p = self.store.create_project("wiki-generation-diagnostics")
+        event = self.store.record_event(p["id"], "task", "Observe deployed review friction")
+        self.store.upsert_memory(p["id"], "Review task", "Observe deployed review friction", "task", "active",
+                                 source_event_ids=[event["id"]])
+        page = self.store.create_wiki_page(p["id"], "review friction", "Review friction")
+        with self.assertRaisesRegex(ValueError, r"retrieval_gate=accepted; retrieved_items=1; .*hint="):
+            self.store.generate_wiki_revision(page["id"], "Observe deployed review friction")
+
     def test_wiki_revision_lint_requires_unsupported_recommendations_to_be_inferences(self):
         p = self.store.create_project("wiki-recommendation-lint")
         decision_event = self.store.record_event(p["id"], "decision", "Keep the current deployment")

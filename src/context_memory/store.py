@@ -695,7 +695,16 @@ class MemoryStore:
                 for citation in citation_groups:
                     for event_id in citation.get("source_event_ids", []):
                         cited_entries.append((section_name,ordinal,citation["memory_id"],event_id))
-        if not cited_entries: raise ValueError("wiki revision requires at least one cited memory event")
+        if not cited_entries:
+            section_counts = {name:len(entries) for name,entries in sections.items()}
+            gate = brief["retrieval"].get("retrieval_gate", {})
+            raise ValueError(
+                "wiki revision requires at least one cited memory event; "
+                f"retrieval_gate={gate.get('status', 'unknown')}; "
+                f"retrieved_items={len(brief['retrieval'].get('items', []))}; "
+                f"section_counts={canonical(section_counts)}; "
+                "hint=use a decision-, rationale-, constraint-, alternative-, outcome-, or open-question-focused query"
+            )
         metadata = {"contract_version":"topic-wiki/v1","generator":"decision_context",
                     "decision_brief_contract":brief["contract_version"],"retrieval_used":brief["retrieval"]["used"],
                     "caller":generation_metadata or {}}
@@ -881,6 +890,11 @@ class MemoryStore:
         query = " ".join(part for part in (page["topic"], revision["question"]) if part).strip()
         relevant = self.search(page["project_id"], query, limit=20, statuses=["active"], scope_id=page["scope_id"])
         for memory in relevant:
+            # Tasks are workflow state, not claims in the standard Decision Wiki page shape. In particular,
+            # accumulated checkpoint/handoff tasks otherwise dominate omission lint despite being intentionally
+            # absent from generated sections.
+            if memory["type"] == "task":
+                continue
             if memory["id"] not in cited_memories:
                 add("omitted_current_memory", "warning", "Relevant active memory is omitted from the revision.",
                     memory_id=memory["id"], memory_type=memory["type"], title=memory["title"])
