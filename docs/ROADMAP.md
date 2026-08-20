@@ -99,9 +99,11 @@ FTS5 remains the primary scalable candidate index. Local-hash is not an FTS repl
 2. **Detect unsupported recommendations — completed.** Conservative English/Korean recommendation signals are checked against explicit investigation-claim and verified memory relations. Unsupported recommendation-like claims and recommendations labeled as evidence instead of inference receive stable error findings; lint remains deterministic and read-only.
 3. **Report source-version age conservatively — completed.** After 30 days, cited investigation source versions receive a deterministic reinspection prompt with their observed age and version metadata. The finding explicitly records that no external change was verified and does not mark the revision stale or claim freshness.
 4. **Integrate lint with explicit review — completed.** The existing `review_queue` returns typed memory candidates and the latest non-rejected revision for each Wiki page when it is proposed or has lint findings. Memory candidates expose approve/reject and conflict-dependent supersede/dispute actions; proposed Wiki revisions expose approve/reject routes through the existing revision transition. No lint-specific state or autonomous action path is introduced.
-5. Make lint deterministic where possible. Optional model-assisted checks must be separately labeled and must not change active state autonomously.
+5. **Keep lint deterministic and read-only — completed.** The v1 contract identifies `check_mode=deterministic_rules`, `model_assisted=false`, and both observed and autonomous state-change flags as false. Repeated lint over unchanged authoritative state returns an identical result and creates no audit mutation. Any future model-assisted checks require a separately labeled contract and cannot change active state autonomously.
 
 **Exit gate:** known stale, contradicted, or unsupported Wiki claims are surfaced before a Decision Brief presents them as current guidance.
+
+**Exit result — passed 2026-08-20.** Deterministic regression scenarios surface terminal and disputed citations, stale revisions, omitted current evidence, unsupported recommendations, and aged-source reinspection prompts in the same explicit review queue used for memory and revision decisions. Repeated lint results are identical over unchanged state, read-only execution creates no audit entry, and no model-assisted or autonomous mutation path exists.
 
 ### P4 — Source revalidation and client adapters
 

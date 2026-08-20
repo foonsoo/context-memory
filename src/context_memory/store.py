@@ -853,7 +853,8 @@ class MemoryStore:
         return {"contract_version":"topic-wiki-lint/v1","revision_id":revision_id,
                 "page_id":revision["page_id"],"status":"fail" if any(x["severity"] == "error" for x in findings)
                 else "warn" if findings else "pass", "finding_count":len(findings),"findings":findings,
-                "deterministic":True,"state_changed":False}
+                "check_mode":"deterministic_rules", "deterministic":True, "model_assisted":False,
+                "state_changed":False, "autonomous_state_changes":False}
 
     def get_wiki_page(self, page_id: str) -> dict[str, Any]:
         page = self._row("SELECT * FROM wiki_pages WHERE id=?", (page_id,))

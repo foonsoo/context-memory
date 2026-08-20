@@ -604,7 +604,17 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(linted["status"], "fail")
 
         self.store.transition(omitted["id"], "superseded")
-        self.assertEqual(self.store.lint_wiki_revision(revision["id"])["status"], "fail")
+        audit_count = self.store.conn.execute("SELECT count(*) FROM audit_log").fetchone()[0]
+        first = self.store.lint_wiki_revision(revision["id"])
+        second = self.store.lint_wiki_revision(revision["id"])
+        self.assertEqual(first, second)
+        self.assertEqual(first["status"], "fail")
+        self.assertEqual(first["check_mode"], "deterministic_rules")
+        self.assertTrue(first["deterministic"])
+        self.assertFalse(first["model_assisted"])
+        self.assertFalse(first["state_changed"])
+        self.assertFalse(first["autonomous_state_changes"])
+        self.assertEqual(self.store.conn.execute("SELECT count(*) FROM audit_log").fetchone()[0], audit_count)
 
     def test_wiki_revision_lint_requires_unsupported_recommendations_to_be_inferences(self):
         p = self.store.create_project("wiki-recommendation-lint")
