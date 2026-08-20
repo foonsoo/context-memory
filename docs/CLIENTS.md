@@ -8,6 +8,8 @@ All clients on one OS account should launch the same installed executable and th
 
 Run `context-memory init --launcher installed --clients claude-code,codex,cursor,vscode,craft --register` to register supported clients. Claude Code, Codex, and VS Code use their official CLIs. Cursor's global `~/.cursor/mcp.json` is merged atomically and backed up. Craft Agents is intentionally a guided workspace-source step. Generic MCP clients can use the JSON printed by `init`.
 
+After upgrading the installed runtime, restart every long-running MCP client connection. A stdio server keeps the code and tool catalog loaded from process start, so replacing the installed package does not add new tools to an already-running connection. Finish in-flight work first; do not kill shared client processes indiscriminately.
+
 Every client must follow the same lifecycle, independently of hooks:
 
 1. `project_resolve(cwd)` using the canonical current workspace as the preferred identity hint.

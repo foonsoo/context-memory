@@ -750,6 +750,36 @@ class StoreTests(unittest.TestCase):
         self.assertEqual([item for item in self.store.review_queue(p["id"])
                           if item["review_kind"] == "wiki_revision"], [])
 
+    def test_review_queue_prioritizes_actionable_wiki_revision_over_old_memory_candidates(self):
+        p = self.store.create_project("wiki-review-priority")
+        old_event = self.store.record_event(p["id"], "fact", "Old candidate")
+        self.store.upsert_memory(p["id"], "Old candidate", "Old candidate", "fact", "proposed",
+                                 source_event_ids=[old_event["id"]])
+        decision_event = self.store.record_event(p["id"], "decision", "Use SQLite")
+        self.store.upsert_memory(p["id"], "Storage", "Use SQLite", "decision", "active",
+                                 source_event_ids=[decision_event["id"]])
+        page = self.store.create_wiki_page(p["id"], "storage", "Storage")
+        revision = self.store.generate_wiki_revision(page["id"], "storage decision")
+        queue = self.store.review_queue(p["id"])
+        self.assertEqual(queue[0]["id"], revision["id"])
+        self.assertEqual(queue[0]["review_kind"], "wiki_revision")
+        self.assertLess(queue[0]["queue_priority"], queue[1]["queue_priority"])
+
+    def test_wiki_lint_allows_terminal_memories_only_in_history_or_alternatives(self):
+        p = self.store.create_project("wiki-terminal-history")
+        old_event = self.store.record_event(p["id"], "decision", "Use files")
+        old = self.store.upsert_memory(p["id"], "Old storage", "Use files", "decision", "active",
+                                       source_event_ids=[old_event["id"]])
+        new_event = self.store.record_event(p["id"], "decision", "Use SQLite")
+        self.store.upsert_memory(p["id"], "Current storage", "Use SQLite", "decision", "active",
+                                 source_event_ids=[new_event["id"]])
+        self.store.transition(old["id"], "superseded")
+        page = self.store.create_wiki_page(p["id"], "storage decision", "Storage")
+        revision = self.store.generate_wiki_revision(page["id"], "storage decision history")
+        terminal = [item for item in self.store.lint_wiki_revision(revision["id"])["findings"]
+                    if item["code"] == "terminal_memory" and item["memory_id"] == old["id"]]
+        self.assertEqual(terminal, [])
+
     def test_topic_wiki_export_import_round_trip(self):
         p = self.store.create_project("wiki-export")
         event = self.store.record_event(p["id"], "decision", "Choose option A")

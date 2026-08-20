@@ -334,6 +334,7 @@ class MemoryStore:
             item["conflicts"] = [dict(x) for x in self.conn.execute("SELECT * FROM review_conflicts WHERE candidate_memory_id=? ORDER BY similarity DESC", (item["id"],))]
             item["sources"] = [dict(x) for x in self.conn.execute("SELECT e.id,e.kind,e.source_uri,e.created_at FROM memory_sources s JOIN events e ON e.id=s.event_id WHERE s.memory_id=?", (item["id"],))]
             item["available_actions"] = ["approve", "reject"] + (["supersede", "dispute"] if item["conflicts"] else [])
+            item["queue_priority"] = 2
             rows.append(item)
         revisions = self.conn.execute("""SELECT r.id FROM wiki_revisions r JOIN wiki_pages p ON p.id=r.page_id
           WHERE p.project_id=? AND r.status<>'rejected' AND r.revision_no=(
@@ -352,10 +353,15 @@ class MemoryStore:
                     {"action":"approve", "tool":"wiki_revision_transition", "arguments":{"status":"published"}},
                     {"action":"reject", "tool":"wiki_revision_transition", "arguments":{"status":"rejected"}},
                 ]
+            priority = 0 if revision["status"] == "proposed" and lint["status"] == "fail" else 1 if revision["status"] == "proposed" else 3
             rows.append({"review_kind":"wiki_revision", "id":revision["id"],
                          "page_id":revision["page_id"], "page_title":page["title"], "topic":page["topic"],
                          "revision_no":revision["revision_no"], "status":revision["status"],
+                         "created_at":revision["created_at"], "queue_priority":priority,
                          "lint":lint, "available_actions":actions})
+        rows.sort(key=lambda item: (item["queue_priority"],
+                                    "" if item["review_kind"] == "memory_candidate" else item["created_at"],
+                                    item["id"]), reverse=False)
         return rows
 
     def propose_correction(self, project_id: str, memory_id: str, content: str, title: str | None = None) -> dict[str, Any]:
@@ -801,6 +807,9 @@ class MemoryStore:
         citation_keys = {(item["section"],item["ordinal"],item["memory_id"],item["event_id"])
                          for item in revision["citations"]}
         cited_memories = {item["memory_id"] for item in revision["citations"]}
+        citation_sections: dict[str, set[str]] = {}
+        for citation in revision["citations"]:
+            citation_sections.setdefault(citation["memory_id"], set()).add(citation["section"])
         for section, entries in revision["sections"].items():
             for ordinal, entry in enumerate(entries):
                 embedded = []
@@ -851,7 +860,9 @@ class MemoryStore:
             if exact_sources != indexed:
                 add("missing_source", "error", "A citation is not backed by an exact memory source event.",
                     memory_id=memory_id, indexed_citations=indexed, exact_sources=exact_sources)
-            if memory["status"] in {"superseded","expired","rejected"}:
+            historical_sections = {"decision_timeline", "considered_alternatives"}
+            history_only = bool(citation_sections.get(memory_id)) and citation_sections[memory_id] <= historical_sections
+            if memory["status"] in {"superseded","expired","rejected"} and not history_only:
                 add("terminal_memory", "error", "Revision cites a terminal memory.",
                     memory_id=memory_id, memory_status=memory["status"])
             elif memory["status"] == "disputed":
