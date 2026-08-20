@@ -89,5 +89,5 @@ All three default lexical modes missed the deliberately disjoint paraphrase `dat
 - Lexical FTS can miss semantically equivalent wording unless project aliases cover it; arbitrary paraphrases still need optional embeddings.
 - Agent compliance with recording instructions is not guaranteed without client hooks.
 - A local unencrypted database shares the OS-user trust boundary.
-- There is no automatic retention, redaction, cross-device sync, or candidate-review UI yet.
+- There is no automatic retention, redaction, or cross-device sync. A separate candidate-review UI is intentionally deferred until deployed Wiki usage demonstrates friction that the typed `review_queue` contract cannot address cleanly.
 - Provenance proves what source supported a memory; it does not prove the source itself was correct.

@@ -20,7 +20,7 @@ External clients may read Confluence or another source with the user's existing 
 
 ### Current implementation priority
 
-P0 Decision Brief/evaluation, P1 Research-to-Decision provenance, P2 topic Wiki revisions, P2.5 non-neural retrieval quality/latency, P3 Decision Wiki lint/review, and P4 source revalidation are implemented. The next evidence-led product track is **P5 Human navigation and export**, gated on real Decision Wiki revision usage. Neural embedding remains an optional evaluated adapter and is not part of the active implementation path because its measured latency cost did not justify making it the default.
+P0 Decision Brief/evaluation, P1 Research-to-Decision provenance, P2 topic Wiki revisions, P2.5 non-neural retrieval quality/latency, P3 Decision Wiki lint/review, P4 source revalidation, and the P5 navigation/export contracts are implemented. A separate review UI is deferred because the active runtime has not yet produced real Wiki review usage. The next evidence-led step is a backed-up runtime upgrade through the Wiki migrations followed by observation of concrete review friction. Neural embedding remains an optional evaluated adapter and is not part of the active implementation path because its measured latency cost did not justify making it the default.
 
 ### P0 — Decision Brief contract and evaluation
 
@@ -119,9 +119,11 @@ FTS5 remains the primary scalable candidate index. Local-hash is not an FTS repl
 
 1. **Add bounded Wiki browsing and backlinks — completed.** A read-only, paginated page/topic index exposes each page's current revision and lifecycle counts. Selecting a page returns reverse citation backlinks from its cited memories to other current pages. Navigation reads authoritative Wiki tables and does not duplicate the existing text-search stack.
 2. **Add richer Markdown export — completed.** A bounded browse window renders a deterministic index and stable page-ID paths with page/revision metadata, adjacent-page navigation, and related-page links derived from shared citations. SQLite remains the sole writable authority.
-3. Evaluate whether the existing explicit review queue is sufficient in real usage before adding a separate review UI.
+3. **Evaluate the review surface — completed; UI deferred.** Read-only inspection found that the active database has only migrations 1–12 and therefore no deployed Wiki revision history. Existing regression scenarios prove functional queue coverage but cannot establish real-usage ergonomics. Do not add a separate UI until a backed-up upgrade through migrations 13–16 and subsequent use reveal repeated, recorded friction.
 
 **Exit gate:** a user can discover current topic pages, follow provenance-backed relationships, and export a useful human-readable Wiki without creating a second source of truth.
+
+**Exit result — contract passed, adoption evidence pending 2026-08-20.** Navigation, backlinks, and linked Markdown export satisfy the read-only product contract in regression coverage. The [review-surface evaluation](P5_REVIEW_EVALUATION.md) records why a separate UI is deferred and defines the evidence required to reconsider it. No runtime migration or deployment was performed as part of this evaluation.
 
 ## Existing work: overlap and disposition
 
