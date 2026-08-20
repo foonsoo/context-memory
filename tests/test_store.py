@@ -632,6 +632,32 @@ class StoreTests(unittest.TestCase):
                            if item.get("memory_id") == recommendation["id"]}
         self.assertEqual(supported_codes, {"recommendation_mislabeled_as_evidence"})
 
+    def test_wiki_revision_lint_reports_source_age_only_as_reinspection_prompt(self):
+        p = self.store.create_project("wiki-source-age")
+        investigation = self.store.create_investigation(
+            p["id"], "Which deployment policy?", "Guidance may age", "Choose a policy", [], "test")
+        recorded = self.store.record_source_analysis(investigation["id"], {
+            "source_type":"documentation", "stable_source_id":"deployment-policy", "source_version":"v1",
+            "canonical_uri":"https://example.invalid/deployment", "retrieved_at":"2000-01-01T00:00:00+00:00",
+            "access_reason":"Check deployment guidance", "analysis_method":"manual claim extraction",
+        }, [
+            {"key":"guidance", "role":"evidence", "content":"Staged deployment limits rollout risk", "memory_status":"active"},
+            {"key":"policy", "role":"decision", "content":"Use staged deployment",
+             "evidence_claim_keys":["guidance"], "memory_status":"active"},
+        ])
+        memory_id = recorded["claims"][1]["memory_id"]
+        page = self.store.create_wiki_page(p["id"], "Use staged deployment", "Deployment")
+        revision = self.store.generate_wiki_revision(page["id"], "Use staged deployment")
+
+        findings = [item for item in self.store.lint_wiki_revision(revision["id"])["findings"]
+                    if item["code"] == "source_reinspection_due"]
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["memory_id"], memory_id)
+        self.assertEqual(findings[0]["prompt"], "reinspect_source_version")
+        self.assertFalse(findings[0]["external_change_verified"])
+        self.assertGreaterEqual(findings[0]["age_days"], findings[0]["threshold_days"])
+        self.assertNotIn("stale_revision", {item["code"] for item in self.store.lint_wiki_revision(revision["id"])["findings"]})
+
     def test_topic_wiki_export_import_round_trip(self):
         p = self.store.create_project("wiki-export")
         event = self.store.record_event(p["id"], "decision", "Choose option A")

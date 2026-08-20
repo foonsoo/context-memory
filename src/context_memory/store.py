@@ -32,6 +32,7 @@ NEGATIVE_VECTOR_ONLY_MIN_SEPARATION = .03
 LOCAL_HASH_FALLBACK_CANDIDATE_LIMIT = 1000
 LOCAL_HASH_FALLBACK_TIME_LIMIT_MS = 25
 DISCOVERY_PROJECT_CANDIDATE_LIMIT = 12
+SOURCE_REINSPECTION_AGE_DAYS = 30
 
 
 def now() -> str:
@@ -785,6 +786,32 @@ class MemoryStore:
             elif memory["status"] == "disputed":
                 add("unresolved_dispute", "warning", "Revision cites a disputed memory.",
                     memory_id=memory_id, memory_status=memory["status"])
+
+        inspected_at = datetime.now(timezone.utc)
+        source_versions = self.conn.execute("""SELECT DISTINCT c.memory_id,s.id AS source_analysis_id,
+          s.source_type,s.stable_source_id,s.canonical_uri,s.source_version,s.source_updated_at,s.retrieved_at
+          FROM investigation_claims c JOIN source_analyses s ON s.id=c.source_analysis_id
+          WHERE c.memory_id IN (SELECT memory_id FROM wiki_revision_citations WHERE revision_id=?)
+          ORDER BY c.memory_id,s.retrieved_at,s.id""", (revision_id,))
+        for source in source_versions:
+            try:
+                retrieved_at = datetime.fromisoformat(source["retrieved_at"].replace("Z", "+00:00"))
+                if retrieved_at.tzinfo is None:
+                    retrieved_at = retrieved_at.replace(tzinfo=timezone.utc)
+                age_days = max(0, (inspected_at - retrieved_at.astimezone(timezone.utc)).days)
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if age_days < SOURCE_REINSPECTION_AGE_DAYS:
+                continue
+            add("source_reinspection_due", "warning",
+                "The cited source version was inspected long enough ago to warrant reinspection; "
+                "this does not establish that the external source changed or that the citation is stale.",
+                memory_id=source["memory_id"], source_analysis_id=source["source_analysis_id"],
+                source_type=source["source_type"], stable_source_id=source["stable_source_id"],
+                canonical_uri=source["canonical_uri"], source_version=source["source_version"],
+                source_updated_at=source["source_updated_at"], retrieved_at=source["retrieved_at"],
+                age_days=age_days, threshold_days=SOURCE_REINSPECTION_AGE_DAYS,
+                prompt="reinspect_source_version", external_change_verified=False)
 
         if revision["status"] == "stale":
             add("stale_revision", "error", "Wiki revision is marked stale.", reason=revision["stale_reason"])

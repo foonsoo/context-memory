@@ -97,7 +97,7 @@ FTS5 remains the primary scalable candidate index. Local-hash is not an FTS repl
 
 1. **Detect evidence and lifecycle gaps — completed.** Deterministically report missing citations, missing sources, citations to terminal memories, unresolved disputes, stale page revisions, and relevant current memories omitted from a revision. The read-only lint contract exposes stable finding codes and never changes memory or Wiki state.
 2. **Detect unsupported recommendations — completed.** Conservative English/Korean recommendation signals are checked against explicit investigation-claim and verified memory relations. Unsupported recommendation-like claims and recommendations labeled as evidence instead of inference receive stable error findings; lint remains deterministic and read-only.
-3. Report source-version age as a reinspection prompt, not as proof that an external page changed. The core must not claim freshness it cannot verify.
+3. **Report source-version age conservatively — completed.** After 30 days, cited investigation source versions receive a deterministic reinspection prompt with their observed age and version metadata. The finding explicitly records that no external change was verified and does not mark the revision stale or claim freshness.
 4. Integrate lint findings into the existing review queue and explicit approve/reject/supersede/dispute workflow instead of creating an unrelated review system.
 5. Make lint deterministic where possible. Optional model-assisted checks must be separately labeled and must not change active state autonomously.
 
