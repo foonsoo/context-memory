@@ -820,6 +820,10 @@ class StoreTests(unittest.TestCase):
         self.assertTrue(first["has_more"]); self.assertEqual(first["next_offset"], 2)
         second = self.store.browse_wiki(p["id"], limit=2, offset=first["next_offset"])
         self.assertEqual([item["topic"] for item in second["pages"]], ["operations"])
+        self.assertEqual(second["pages"][0]["reader_state"], "no_current_revision")
+        self.assertFalse(second["pages"][0]["renderable"])
+        self.assertEqual(second["renderable_page_count"], 0)
+        self.assertEqual(second["unrenderable_page_count"], 1)
         self.assertFalse(second["has_more"])
 
         statements = []
@@ -848,6 +852,8 @@ class StoreTests(unittest.TestCase):
         exported = self.store.export_wiki_markdown(p["id"])
         self.assertEqual(exported["contract_version"], "topic-wiki-export/v1")
         self.assertEqual(exported["page_count"], 2)
+        self.assertEqual(exported["source_page_count"], 3)
+        self.assertEqual(exported["skipped_page_count"], 1)
         self.assertEqual(exported, self.store.export_wiki_markdown(p["id"]))
         self.assertFalse(exported["markdown_writable_authority"])
         self.assertEqual(exported["authoritative_source"], "sqlite")

@@ -976,8 +976,10 @@ class MemoryStore:
             page = dict(raw); current = current_by_page.get(page["id"])
             counts = counts_by_page.get(page["id"], {})
             citation_count = citations_by_revision.get(current["id"], 0) if current else 0
+            reader_state = current["status"] if current else "no_current_revision"
             pages.append({"id":page["id"],"topic":page["topic"],"title":page["title"],
                           "scope_id":page["scope_id"],"updated_at":page["updated_at"],
+                          "reader_state":reader_state,"renderable":current is not None,
                           "current_revision":({"id":current["id"],"revision_no":current["revision_no"],
                                                "status":current["status"],"created_at":current["created_at"]}
                                               if current else None),
@@ -1030,6 +1032,8 @@ class MemoryStore:
         return {"contract_version":"topic-wiki-navigation/v1","project_id":project_id,"scope_id":scope_id,
                 "pages":pages,"topic_index":[{"topic":item["topic"],"page_id":item["id"],"title":item["title"]}
                                                for item in pages],
+                "renderable_page_count":sum(1 for item in pages if item["renderable"]),
+                "unrenderable_page_count":sum(1 for item in pages if not item["renderable"]),
                 "page_count":len(pages),"offset":offset,"next_offset":offset + len(pages) if has_more else None,
                 "has_more":has_more,"selected":selected,"search_index_duplicated":False,"state_changed":False}
 
@@ -1105,7 +1109,9 @@ class MemoryStore:
         index_lines.append("")
         return {"contract_version":"topic-wiki-export/v1","project_id":project_id,"scope_id":scope_id,
                 "offset":offset,"next_offset":navigation["next_offset"],"has_more":navigation["has_more"],
-                "page_count":len(documents),"index":{"path":"index.md","markdown":"\n".join(index_lines)},
+                "page_count":len(documents),"source_page_count":navigation["page_count"],
+                "skipped_page_count":navigation["unrenderable_page_count"],
+                "index":{"path":"index.md","markdown":"\n".join(index_lines)},
                 "documents":documents,"authoritative_source":"sqlite","markdown_writable_authority":False,
                 "state_changed":False}
 
