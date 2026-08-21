@@ -45,6 +45,7 @@ include = [
   "src/context_memory/contracts.py",
   "src/context_memory/embeddings.py",
   "src/context_memory/hooks.py",
+  "src/context_memory/mcp.py",
   "src/context_memory/tasks.py",
 ]
 
