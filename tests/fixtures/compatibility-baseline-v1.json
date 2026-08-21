@@ -87,16 +87,16 @@
     ]
   },
   "compact_context": {
-    "sha256":"6c013fbd02b1bf4441146ec5cf80ac37a4f8105264e81eb51040a79417f9c9b4",
+    "sha256":"40ac4a40a8898b0fa188ee561908c9eaa0dd657a8470a549aa508d00b209de7a",
     "keys":["budget","budget_capped","event_budget","event_cursor","event_snapshot_cursor","event_used","has_more","has_more_events","items","max_items","memory_budget","memory_used","next_event_cursor","project_discovery","query","recent_events","requested_budget","response_format","retrieval_gate","truncated","used"],
     "budget":4000,
     "used":563,
     "item_count":4,
-    "retrieval_gate":{"status":"accepted","reason":"lexical_match","components":{"lexical_rank":1,"query_coverage":1.0,"semantic_similarity":null,"lexical_vector_agreement":false,"top_score":0.019191,"runner_up_score":0.018222,"score_margin":0.000968,"semantic_separation":0.0},"thresholds":{"vector_only_similarity":0.3,"vector_only_separation":0.03}},
+    "retrieval_gate":{"status":"accepted","reason":"lexical_match","components":{"lexical_rank":1,"query_coverage":1.0,"semantic_similarity":null,"lexical_vector_agreement":false,"top_score":0.01919,"runner_up_score":0.01822,"score_margin":0.00097,"semantic_separation":0.0},"thresholds":{"vector_only_similarity":0.3,"vector_only_separation":0.03}},
     "response_format":"compact"
   },
   "decision_brief": {
-    "sha256":"c69e4db5c1a51a3cba32f28e9efd727636dd5e0c4e4c503763815c292ef7af1b",
+    "sha256":"e8522400aee88332e4f61411370aad71403383fdd65dbf1dd36334520fe1f081",
     "keys":["alternatives","citation_index","constraints","contract_version","current_decisions","disputes","expected_vs_observed","history","open_questions","outcomes","question","rationale","recommendation","retrieval","uncertainty"],
     "contract_version":"decision-brief/v1",
     "question":"Which SQLite authority decision is current?",

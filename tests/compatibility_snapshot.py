@@ -101,7 +101,7 @@ def _normalize_response(value: object, key: str = "") -> object:
     if key.endswith("_ms"):
         return "<timing>"
     if isinstance(value, float):
-        return round(value, 6)
+        return round(value, 5)
     if isinstance(value, list):
         return [_normalize_response(item) for item in value]
     if isinstance(value, dict):
