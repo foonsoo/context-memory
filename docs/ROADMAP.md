@@ -142,10 +142,11 @@ Refactor only where the current implementation has measured maintenance cost. Pr
    suppression policy are now evaluated from already-observed state in a
    directly tested database-free module. Wiki revision Markdown rendering now
    operates on already-loaded page and revision data in a directly tested pure
+   helper. Wiki citation, lifecycle, source-age, and result-contract lint rules
+   similarly operate on state observed by `MemoryStore` in a database-free
    helper. `MemoryStore` retains compatibility delegates and constant exports.
-   Continue with bounded Wiki lint and audit serialization slices. Keep
-   transaction boundaries and SQL in `MemoryStore` until each extraction has
-   direct tests.
+   Continue with bounded audit serialization slices. Keep transaction
+   boundaries and SQL in `MemoryStore` until each extraction has direct tests.
 5. **Split persistence by bounded domain behind a stable facade.** Separate project/session/evidence, memory/retrieval, investigation, Wiki, checkpoint, and maintenance/backup persistence incrementally. `context_memory.store.MemoryStore` remains the compatibility facade; avoid mixin inheritance and circular service dependencies.
 6. **Decompose CLI and MCP declarations.** Split parser construction from command handlers, replace the single dispatch chain with an explicit command registry, and move MCP schema declarations into readable per-domain definitions. Preserve tool pagination, profiles, validation errors, and zero runtime dependencies.
 7. **Consolidate repeated infrastructure.** Centralize row conversion, existence checks, idempotency hashing, JSON serialization, timestamps, and repeated validation only when the extracted helper keeps error types and transaction semantics unchanged.

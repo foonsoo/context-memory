@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from . import retrieval
+from . import retrieval, wiki_lint
 from .checkpoint_policy import evaluate_checkpoint_policy
 from .contracts import PROMOTABLE_EVENT_KINDS
 from .embeddings import (
@@ -30,6 +30,13 @@ from .retrieval import (
     select_project_candidate,
 )
 from .validation import normalize_test_results
+from .wiki_lint import (
+    embedded_citation_findings,
+    embedded_memory_ids,
+    finish_lint_result,
+    memory_citation_findings,
+    source_reinspection_finding,
+)
 from .wiki_rendering import render_wiki_markdown
 
 DISCOVERY_MIN_CONFIDENCE = retrieval.DISCOVERY_MIN_CONFIDENCE
@@ -41,6 +48,7 @@ NEGATIVE_VECTOR_ONLY_MIN_SIMILARITY = (
 NEGATIVE_VECTOR_ONLY_MIN_SEPARATION = (
     retrieval.NEGATIVE_VECTOR_ONLY_MIN_SEPARATION
 )
+SOURCE_REINSPECTION_AGE_DAYS = wiki_lint.SOURCE_REINSPECTION_AGE_DAYS
 
 TYPES = {
     "fact",
@@ -79,7 +87,6 @@ CHECKPOINT_REASONS = {
     "completed",
     "manual",
 }
-SOURCE_REINSPECTION_AGE_DAYS = 30
 
 
 def now() -> str:
@@ -1958,37 +1965,6 @@ class MemoryStore:
             raise KeyError("wiki page not found")
         findings: list[dict[str, Any]] = []
 
-        def add(
-            code: str, severity: str, message: str, **details: Any
-        ) -> None:
-            findings.append(
-                {
-                    "code": code,
-                    "severity": severity,
-                    "message": message,
-                    **details,
-                }
-            )
-
-        def recommendation_signal(claim: str) -> str | None:
-            patterns = (
-                ("recommend", r"\b(?:recommend|recommended|advisable)\b"),
-                ("should", r"\b(?:should|ought\s+to|best\s+to)\b"),
-                (
-                    "korean_recommend",
-                    r"(?:권장|추천|하는\s*것이\s*좋|해야\s*(?:한다|합니다|함))",
-                ),
-            )
-            folded = claim.casefold()
-            return next(
-                (
-                    name
-                    for name, pattern in patterns
-                    if re.search(pattern, folded)
-                ),
-                None,
-            )
-
         def claim_provenance(memory_id: str) -> tuple[str, bool]:
             claim = self._row(
                 "SELECT id,role FROM investigation_claims WHERE memory_id=?",
@@ -2020,174 +1996,47 @@ class MemoryStore:
             )
             return role, supported
 
-        citation_keys = {
-            (
-                item["section"],
-                item["ordinal"],
-                item["memory_id"],
-                item["event_id"],
-            )
-            for item in revision["citations"]
-        }
         cited_memories = {item["memory_id"] for item in revision["citations"]}
+        provenance = {
+            memory_id: claim_provenance(memory_id)
+            for memory_id in embedded_memory_ids(revision)
+        }
+        findings.extend(embedded_citation_findings(revision, provenance))
         citation_sections: dict[str, set[str]] = {}
         for citation in revision["citations"]:
             citation_sections.setdefault(citation["memory_id"], set()).add(
                 citation["section"]
             )
-        for section, entries in revision["sections"].items():
-            for ordinal, entry in enumerate(entries):
-                embedded = []
-                if isinstance(entry, dict):
-                    embedded.extend(
-                        entry.get(key)
-                        for key in (
-                            "citations",
-                            "decision_citation",
-                            "outcome_citation",
-                        )
-                        if entry.get(key)
-                    )
-                if not embedded:
-                    add(
-                        "missing_citation",
-                        "error",
-                        "Wiki claim has no memory citation.",
-                        section=section,
-                        ordinal=ordinal,
-                    )
-                    continue
-                for citation in embedded:
-                    memory_id = citation.get("memory_id")
-                    event_ids = citation.get("source_event_ids") or []
-                    if not memory_id or not event_ids:
-                        add(
-                            "missing_citation",
-                            "error",
-                            "Wiki citation is incomplete.",
-                            section=section,
-                            ordinal=ordinal,
-                            memory_id=memory_id,
-                        )
-                        continue
-                    for event_id in event_ids:
-                        if (
-                            section,
-                            ordinal,
-                            memory_id,
-                            event_id,
-                        ) not in citation_keys:
-                            add(
-                                "missing_citation",
-                                "error",
-                                "Embedded citation is absent from the"
-                                " immutable citation index.",
-                                section=section,
-                                ordinal=ordinal,
-                                memory_id=memory_id,
-                                event_id=event_id,
-                            )
-                    signal = recommendation_signal(
-                        str(
-                            entry.get("claim")
-                            or entry.get("observed_outcome")
-                            or ""
-                        )
-                    )
-                    if signal and memory_id:
-                        role, supported = claim_provenance(memory_id)
-                        if role == "evidence":
-                            add(
-                                "recommendation_mislabeled_as_evidence",
-                                "error",
-                                "Recommendation-like language must be labeled"
-                                " as inference, not evidence.",
-                                section=section,
-                                ordinal=ordinal,
-                                memory_id=memory_id,
-                                detected_signal=signal,
-                                current_label=role,
-                                required_label="inference",
-                            )
-                        if not supported and role not in {
-                            "decision",
-                            "action",
-                        }:
-                            add(
-                                "unsupported_recommendation",
-                                "error",
-                                "Recommendation-like claim has no explicit"
-                                " supporting claim or memory relation.",
-                                section=section,
-                                ordinal=ordinal,
-                                memory_id=memory_id,
-                                detected_signal=signal,
-                                claim_role=role,
-                                required_label="inference",
-                            )
 
         for memory_id in sorted(cited_memories):
             memory = self._row(
                 "SELECT * FROM memories WHERE id=?", (memory_id,)
             )
-            if not memory:
-                add(
-                    "missing_source",
-                    "error",
-                    "Cited memory no longer exists.",
-                    memory_id=memory_id,
+            exact_sources = 0
+            indexed = 0
+            if memory:
+                exact_sources = self.conn.execute(
+                    """SELECT count(*) FROM wiki_revision_citations c
+                  JOIN memory_sources s ON s.memory_id=c.memory_id
+                    AND s.event_id=c.event_id
+                  JOIN events e ON e.id=s.event_id AND e.project_id=?
+                  WHERE c.revision_id=? AND c.memory_id=?""",
+                    (page["project_id"], revision_id, memory_id),
+                ).fetchone()[0]
+                indexed = self.conn.execute(
+                    "SELECT count(*) FROM wiki_revision_citations WHERE"
+                    " revision_id=? AND memory_id=?",
+                    (revision_id, memory_id),
+                ).fetchone()[0]
+            findings.extend(
+                memory_citation_findings(
+                    memory_id,
+                    memory,
+                    citation_sections.get(memory_id, set()),
+                    indexed,
+                    exact_sources,
                 )
-                continue
-            exact_sources = self.conn.execute(
-                """SELECT count(*) FROM wiki_revision_citations c
-              JOIN memory_sources s ON s.memory_id=c.memory_id
-                AND s.event_id=c.event_id
-              JOIN events e ON e.id=s.event_id AND e.project_id=?
-              WHERE c.revision_id=? AND c.memory_id=?""",
-                (page["project_id"], revision_id, memory_id),
-            ).fetchone()[0]
-            indexed = self.conn.execute(
-                "SELECT count(*) FROM wiki_revision_citations WHERE"
-                " revision_id=? AND memory_id=?",
-                (revision_id, memory_id),
-            ).fetchone()[0]
-            if exact_sources != indexed:
-                add(
-                    "missing_source",
-                    "error",
-                    "A citation is not backed by an exact memory source"
-                    " event.",
-                    memory_id=memory_id,
-                    indexed_citations=indexed,
-                    exact_sources=exact_sources,
-                )
-            historical_sections = {
-                "decision_timeline",
-                "considered_alternatives",
-            }
-            history_only = (
-                bool(citation_sections.get(memory_id))
-                and citation_sections[memory_id] <= historical_sections
             )
-            if (
-                memory["status"] in {"superseded", "expired", "rejected"}
-                and not history_only
-            ):
-                add(
-                    "terminal_memory",
-                    "error",
-                    "Revision cites a terminal memory.",
-                    memory_id=memory_id,
-                    memory_status=memory["status"],
-                )
-            elif memory["status"] == "disputed":
-                add(
-                    "unresolved_dispute",
-                    "warning",
-                    "Revision cites a disputed memory.",
-                    memory_id=memory_id,
-                    memory_status=memory["status"],
-                )
 
         inspected_at = datetime.now(timezone.utc)
         source_versions = self.conn.execute(
@@ -2201,48 +2050,18 @@ class MemoryStore:
             (revision_id,),
         )
         for source in source_versions:
-            try:
-                retrieved_at = datetime.fromisoformat(
-                    source["retrieved_at"].replace("Z", "+00:00")
-                )
-                if retrieved_at.tzinfo is None:
-                    retrieved_at = retrieved_at.replace(tzinfo=timezone.utc)
-                age_days = max(
-                    0,
-                    (
-                        inspected_at - retrieved_at.astimezone(timezone.utc)
-                    ).days,
-                )
-            except (AttributeError, TypeError, ValueError):
-                continue
-            if age_days < SOURCE_REINSPECTION_AGE_DAYS:
-                continue
-            add(
-                "source_reinspection_due",
-                "warning",
-                "The cited source version was inspected long enough ago to"
-                " warrant reinspection; this does not establish that the"
-                " external source changed or that the citation is stale.",
-                memory_id=source["memory_id"],
-                source_analysis_id=source["source_analysis_id"],
-                source_type=source["source_type"],
-                stable_source_id=source["stable_source_id"],
-                canonical_uri=source["canonical_uri"],
-                source_version=source["source_version"],
-                source_updated_at=source["source_updated_at"],
-                retrieved_at=source["retrieved_at"],
-                age_days=age_days,
-                threshold_days=SOURCE_REINSPECTION_AGE_DAYS,
-                prompt="reinspect_source_version",
-                external_change_verified=False,
-            )
+            finding = source_reinspection_finding(dict(source), inspected_at)
+            if finding:
+                findings.append(finding)
 
         if revision["status"] == "stale":
-            add(
-                "stale_revision",
-                "error",
-                "Wiki revision is marked stale.",
-                reason=revision["stale_reason"],
+            findings.append(
+                {
+                    "code": "stale_revision",
+                    "severity": "error",
+                    "message": "Wiki revision is marked stale.",
+                    "reason": revision["stale_reason"],
+                }
             )
 
         query = " ".join(
@@ -2264,43 +2083,20 @@ class MemoryStore:
             if memory["type"] == "task":
                 continue
             if memory["id"] not in cited_memories:
-                add(
-                    "omitted_current_memory",
-                    "warning",
-                    "Relevant active memory is omitted from the revision.",
-                    memory_id=memory["id"],
-                    memory_type=memory["type"],
-                    title=memory["title"],
+                findings.append(
+                    {
+                        "code": "omitted_current_memory",
+                        "severity": "warning",
+                        "message": (
+                            "Relevant active memory is omitted from the"
+                            " revision."
+                        ),
+                        "memory_id": memory["id"],
+                        "memory_type": memory["type"],
+                        "title": memory["title"],
+                    }
                 )
-
-        findings.sort(
-            key=lambda item: (
-                item["code"],
-                item.get("section", ""),
-                item.get("ordinal", -1),
-                item.get("memory_id", ""),
-                item.get("event_id", ""),
-            )
-        )
-        return {
-            "contract_version": "topic-wiki-lint/v1",
-            "revision_id": revision_id,
-            "page_id": revision["page_id"],
-            "status": (
-                "fail"
-                if any(x["severity"] == "error" for x in findings)
-                else "warn"
-                if findings
-                else "pass"
-            ),
-            "finding_count": len(findings),
-            "findings": findings,
-            "check_mode": "deterministic_rules",
-            "deterministic": True,
-            "model_assisted": False,
-            "state_changed": False,
-            "autonomous_state_changes": False,
-        }
+        return finish_lint_result(revision, findings)
 
     def get_wiki_page(self, page_id: str) -> dict[str, Any]:
         page = self._row("SELECT * FROM wiki_pages WHERE id=?", (page_id,))

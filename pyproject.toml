@@ -52,6 +52,7 @@ include = [
   "src/context_memory/store.py",
   "src/context_memory/tasks.py",
   "src/context_memory/validation.py",
+  "src/context_memory/wiki_lint.py",
   "src/context_memory/wiki_rendering.py",
 ]
 
