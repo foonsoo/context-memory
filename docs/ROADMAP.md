@@ -136,11 +136,12 @@ Refactor only where the current implementation has measured maintenance cost. Pr
 3. **Remove proven dead or redundant code first — completed.** The reproducible public/private call inventory covers store-internal calls, MCP, CLI, hooks, Tasks, tests, and other Python consumers. All 28 private `MemoryStore` methods have static call sites, Vulture reports no unused production symbol, and public methods remain compatibility surface; therefore this evidence-gated slice correctly removes no production code. The inventory test freezes 89 methods (61 public including the constructor, 28 private) and fails if a future private method loses every static call site. A private helper or compatibility branch may be removed only when characterization tests prove it unreachable or a documented deprecation path exists. Do not treat shorter code as inherently better.
 4. **Extract pure domain helpers from `store.py` — in progress.** The
    retrieval thresholds, project-selection policy, and negative-result gate now
-   live in a directly tested, database-free retrieval module; `MemoryStore`
-   retains compatibility delegates and constant exports. Continue with bounded
-   validation, Wiki rendering/lint, checkpoint policy, and audit serialization
-   slices. Keep transaction boundaries and SQL in `MemoryStore` until each
-   extraction has direct tests.
+   live in a directly tested, database-free retrieval module. Checkpoint test
+   result validation and normalization also live in a directly tested pure
+   validation module. `MemoryStore` retains compatibility delegates and
+   constant exports. Continue with bounded Wiki rendering/lint, checkpoint
+   policy, and audit serialization slices. Keep transaction boundaries and SQL
+   in `MemoryStore` until each extraction has direct tests.
 5. **Split persistence by bounded domain behind a stable facade.** Separate project/session/evidence, memory/retrieval, investigation, Wiki, checkpoint, and maintenance/backup persistence incrementally. `context_memory.store.MemoryStore` remains the compatibility facade; avoid mixin inheritance and circular service dependencies.
 6. **Decompose CLI and MCP declarations.** Split parser construction from command handlers, replace the single dispatch chain with an explicit command registry, and move MCP schema declarations into readable per-domain definitions. Preserve tool pagination, profiles, validation errors, and zero runtime dependencies.
 7. **Consolidate repeated infrastructure.** Centralize row conversion, existence checks, idempotency hashing, JSON serialization, timestamps, and repeated validation only when the extracted helper keeps error types and transaction semantics unchanged.

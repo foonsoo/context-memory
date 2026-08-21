@@ -50,6 +50,7 @@ include = [
   "src/context_memory/retrieval.py",
   "src/context_memory/store.py",
   "src/context_memory/tasks.py",
+  "src/context_memory/validation.py",
 ]
 
 [tool.ruff.lint]
