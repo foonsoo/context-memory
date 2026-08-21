@@ -206,7 +206,8 @@ class MemoryStore:
     ) -> None:
         cx.execute(
             "INSERT INTO"
-            " audit_log(project_id,entity_type,entity_id,action,snapshot_json,created_at)"
+            " audit_log(project_id,entity_type,entity_id,action,"
+            "snapshot_json,created_at)"
             " VALUES(?,?,?,?,?,?)",
             (project_id, kind, entity_id, action, canonical(snapshot), now()),
         )
@@ -341,9 +342,12 @@ class MemoryStore:
             if existing:
                 item["created_at"] = existing["created_at"]
             cx.execute(
-                """INSERT INTO project_aliases(project_id,kind,value,normalized,created_at,updated_at)
-              VALUES(:project_id,:kind,:value,:normalized,:created_at,:updated_at)
-              ON CONFLICT(project_id,kind,normalized) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at""",
+                """INSERT INTO project_aliases(
+                project_id,kind,value,normalized,created_at,updated_at)
+              VALUES(:project_id,:kind,:value,:normalized,:created_at,
+                :updated_at)
+              ON CONFLICT(project_id,kind,normalized) DO UPDATE SET
+                value=excluded.value,updated_at=excluded.updated_at""",
                 item,
             )
             self._audit(
@@ -380,8 +384,10 @@ class MemoryStore:
         rows = self.conn.execute(
             """SELECT DISTINCT candidate.project_id
           FROM project_aliases source JOIN project_aliases candidate
-            ON candidate.kind=source.kind AND candidate.normalized=source.normalized
-          WHERE source.project_id=? AND candidate.project_id<>? AND source.kind='name'
+            ON candidate.kind=source.kind
+            AND candidate.normalized=source.normalized
+          WHERE source.project_id=? AND candidate.project_id<>?
+            AND source.kind='name'
           ORDER BY candidate.project_id""",
             (project_id, project_id),
         )
@@ -427,7 +433,8 @@ class MemoryStore:
             rows = self.conn.execute(
                 f"""SELECT DISTINCT p.id FROM projects p
               LEFT JOIN project_aliases a ON a.project_id=p.id
-              WHERE p.id<>? AND ({" OR ".join(clauses)}) ORDER BY p.id LIMIT ?""",
+              WHERE p.id<>? AND ({" OR ".join(clauses)})
+              ORDER BY p.id LIMIT ?""",
                 [project_id, *args, DISCOVERY_PROJECT_CANDIDATE_LIMIT + 1],
             )
             for row in rows:
@@ -558,7 +565,8 @@ class MemoryStore:
         with self.tx() as cx:
             cx.execute(
                 "INSERT INTO sessions"
-                " VALUES(:id,:project_id,:scope_id,:client,:external_id,:started_at,:ended_at,:metadata_json)",
+                " VALUES(:id,:project_id,:scope_id,:client,:external_id,"
+                ":started_at,:ended_at,:metadata_json)",
                 item,
             )
             self._audit(cx, project_id, "session", item["id"], "started", item)
@@ -720,7 +728,8 @@ class MemoryStore:
             item["queue_priority"] = 2
             rows.append(item)
         revisions = self.conn.execute(
-            """SELECT r.id FROM wiki_revisions r JOIN wiki_pages p ON p.id=r.page_id
+            """SELECT r.id FROM wiki_revisions r
+          JOIN wiki_pages p ON p.id=r.page_id
           WHERE p.project_id=? AND r.status<>'rejected' AND r.revision_no=(
             SELECT max(latest.revision_no) FROM wiki_revisions latest
             WHERE latest.page_id=r.page_id AND latest.status<>'rejected')
@@ -927,8 +936,11 @@ class MemoryStore:
                 "event_seq": cursor[0],
             }
             cx.execute(
-                """INSERT INTO events(id,project_id,scope_id,session_id,kind,content,source_uri,metadata_json,content_hash,created_at,event_seq)
-              VALUES(:id,:project_id,:scope_id,:session_id,:kind,:content,:source_uri,:metadata_json,:content_hash,:created_at,:event_seq)""",
+                """INSERT INTO events(id,project_id,scope_id,session_id,
+              kind,content,source_uri,metadata_json,content_hash,created_at,
+              event_seq) VALUES(:id,:project_id,:scope_id,:session_id,
+              :kind,:content,:source_uri,:metadata_json,:content_hash,
+              :created_at,:event_seq)""",
                 item,
             )
             self._audit(cx, project_id, "event", item["id"], "recorded", item)
@@ -984,9 +996,11 @@ class MemoryStore:
         }
         with self.tx() as cx:
             cx.execute(
-                """INSERT INTO investigations(id,project_id,scope_id,question,reason,decision_to_inform,
-              constraints_json,initiator,status,started_at,completed_at)
-              VALUES(:id,:project_id,:scope_id,:question,:reason,:decision_to_inform,:constraints_json,
+                """INSERT INTO investigations(id,project_id,scope_id,
+              question,reason,decision_to_inform,constraints_json,initiator,
+              status,started_at,completed_at)
+              VALUES(:id,:project_id,:scope_id,:question,:reason,
+              :decision_to_inform,:constraints_json,
               :initiator,:status,:started_at,:completed_at)""",
                 item,
             )
@@ -1123,8 +1137,10 @@ class MemoryStore:
         result_claims = []
         with self.tx() as cx:
             cx.execute(
-                """INSERT INTO source_analyses VALUES(:id,:investigation_id,:source_type,:stable_source_id,
-              :canonical_uri,:source_version,:source_updated_at,:retrieved_at,:section_anchor,:access_reason,
+                """INSERT INTO source_analyses VALUES(:id,
+              :investigation_id,:source_type,:stable_source_id,
+              :canonical_uri,:source_version,:source_updated_at,
+              :retrieved_at,:section_anchor,:access_reason,
               :analysis_method,:content_fingerprint,:identity_key,:created_at)""",
                 source_item,
             )
@@ -1164,7 +1180,8 @@ class MemoryStore:
                         )
                     prior = cx.execute(
                         """SELECT c.* FROM investigation_claims c
-                      WHERE c.investigation_id=? AND c.source_analysis_id=? AND c.claim_key=?""",
+                      WHERE c.investigation_id=?
+                        AND c.source_analysis_id=? AND c.claim_key=?""",
                         (
                             investigation_id,
                             ref["source_analysis_id"],
@@ -1244,8 +1261,10 @@ class MemoryStore:
                     "event_seq": cursor[0],
                 }
                 cx.execute(
-                    """INSERT INTO events(id,project_id,scope_id,session_id,kind,content,source_uri,metadata_json,
-                  content_hash,created_at,event_seq) VALUES(:id,:project_id,:scope_id,:session_id,:kind,:content,
+                    """INSERT INTO events(id,project_id,scope_id,session_id,
+                  kind,content,source_uri,metadata_json,content_hash,
+                  created_at,event_seq) VALUES(:id,:project_id,:scope_id,
+                  :session_id,:kind,:content,
                   :source_uri,:metadata_json,:content_hash,:created_at,:event_seq)""",
                     event,
                 )
@@ -1301,10 +1320,14 @@ class MemoryStore:
                 ):
                     raise ValueError("confidence and importance must be 0..1")
                 cx.execute(
-                    """INSERT INTO memories(id,project_id,scope_id,type,status,title,content,confidence,importance,
-                  valid_from,valid_until,tags_json,created_at,updated_at,observed_at,last_confirmed_at,visibility)
-                  VALUES(:id,:project_id,:scope_id,:type,:status,:title,:content,:confidence,:importance,:valid_from,
-                  :valid_until,:tags_json,:created_at,:updated_at,:observed_at,:last_confirmed_at,:visibility)""",
+                    """INSERT INTO memories(id,project_id,scope_id,type,
+                  status,title,content,confidence,importance,valid_from,
+                  valid_until,tags_json,created_at,updated_at,observed_at,
+                  last_confirmed_at,visibility) VALUES(:id,:project_id,
+                  :scope_id,:type,:status,:title,:content,:confidence,
+                  :importance,:valid_from,:valid_until,:tags_json,
+                  :created_at,:updated_at,:observed_at,:last_confirmed_at,
+                  :visibility)""",
                     memory,
                 )
                 cx.execute(
@@ -1336,9 +1359,12 @@ class MemoryStore:
                     "outcome_effect": outcome_effect,
                 }
                 cx.execute(
-                    """INSERT INTO investigation_claims(id,investigation_id,source_analysis_id,claim_key,ordinal,
-                  role,event_id,memory_id,created_at,expected_outcome,outcome_effect)
-                  VALUES(:id,:investigation_id,:source_analysis_id,:claim_key,:ordinal,:role,:event_id,:memory_id,
+                    """INSERT INTO investigation_claims(id,
+                  investigation_id,source_analysis_id,claim_key,ordinal,role,
+                  event_id,memory_id,created_at,expected_outcome,
+                  outcome_effect) VALUES(:id,:investigation_id,
+                  :source_analysis_id,:claim_key,:ordinal,:role,:event_id,
+                  :memory_id,
                   :created_at,:expected_outcome,:outcome_effect)""",
                     claim_item,
                 )
@@ -1438,8 +1464,11 @@ class MemoryStore:
                 item["evidence"] = [
                     dict(link)
                     for link in self.conn.execute(
-                        """SELECT l.relation,c.source_analysis_id,c.claim_key,c.event_id,c.memory_id FROM investigation_claim_links l
-                    JOIN investigation_claims c ON c.id=l.from_claim_id WHERE l.to_claim_id=? ORDER BY c.claim_key""",
+                        """SELECT l.relation,c.source_analysis_id,
+                    c.claim_key,c.event_id,c.memory_id
+                    FROM investigation_claim_links l
+                    JOIN investigation_claims c ON c.id=l.from_claim_id
+                    WHERE l.to_claim_id=? ORDER BY c.claim_key""",
                         (item["id"],),
                     )
                 ]
@@ -1623,7 +1652,8 @@ class MemoryStore:
         with self.tx() as cx:
             cx.execute(
                 "INSERT INTO wiki_pages"
-                " VALUES(:id,:project_id,:scope_id,:topic,:title,:manual_notes,:created_at,:updated_at)",
+                " VALUES(:id,:project_id,:scope_id,:topic,:title,"
+                ":manual_notes,:created_at,:updated_at)",
                 item,
             )
             self._audit(
@@ -1764,14 +1794,18 @@ class MemoryStore:
                 "stale_reason": None,
             }
             cx.execute(
-                """INSERT INTO wiki_revisions VALUES(:id,:page_id,:revision_no,:status,:question,:sections_json,
+                """INSERT INTO wiki_revisions VALUES(:id,:page_id,
+              :revision_no,:status,:question,:sections_json,
               :generation_json,:created_at,:published_at,:stale_reason)""",
                 item,
             )
             for section_name, ordinal, memory_id, event_id in cited_entries:
                 source = cx.execute(
-                    """SELECT m.project_id FROM memory_sources s JOIN memories m ON m.id=s.memory_id
-                  JOIN events e ON e.id=s.event_id WHERE s.memory_id=? AND s.event_id=? AND m.project_id=e.project_id""",
+                    """SELECT m.project_id FROM memory_sources s
+                  JOIN memories m ON m.id=s.memory_id
+                  JOIN events e ON e.id=s.event_id
+                  WHERE s.memory_id=? AND s.event_id=?
+                    AND m.project_id=e.project_id""",
                     (memory_id, event_id),
                 ).fetchone()
                 if not source or source["project_id"] != page["project_id"]:
@@ -2093,7 +2127,8 @@ class MemoryStore:
                 continue
             exact_sources = self.conn.execute(
                 """SELECT count(*) FROM wiki_revision_citations c
-              JOIN memory_sources s ON s.memory_id=c.memory_id AND s.event_id=c.event_id
+              JOIN memory_sources s ON s.memory_id=c.memory_id
+                AND s.event_id=c.event_id
               JOIN events e ON e.id=s.event_id AND e.project_id=?
               WHERE c.revision_id=? AND c.memory_id=?""",
                 (page["project_id"], revision_id, memory_id),
@@ -2144,9 +2179,11 @@ class MemoryStore:
         inspected_at = datetime.now(timezone.utc)
         source_versions = self.conn.execute(
             """SELECT DISTINCT c.memory_id,s.id AS source_analysis_id,
-          s.source_type,s.stable_source_id,s.canonical_uri,s.source_version,s.source_updated_at,s.retrieved_at
-          FROM investigation_claims c JOIN source_analyses s ON s.id=c.source_analysis_id
-          WHERE c.memory_id IN (SELECT memory_id FROM wiki_revision_citations WHERE revision_id=?)
+          s.source_type,s.stable_source_id,s.canonical_uri,s.source_version,
+          s.source_updated_at,s.retrieved_at FROM investigation_claims c
+          JOIN source_analyses s ON s.id=c.source_analysis_id
+          WHERE c.memory_id IN (SELECT memory_id
+            FROM wiki_revision_citations WHERE revision_id=?)
           ORDER BY c.memory_id,s.retrieved_at,s.id""",
             (revision_id,),
         )
@@ -2301,8 +2338,10 @@ class MemoryStore:
 
         def current_revision(page: dict[str, Any]) -> dict[str, Any] | None:
             row = self._row(
-                """SELECT * FROM wiki_revisions WHERE page_id=? AND status<>'rejected'
-              ORDER BY CASE status WHEN 'published' THEN 0 WHEN 'proposed' THEN 1 ELSE 2 END,
+                """SELECT * FROM wiki_revisions
+              WHERE page_id=? AND status<>'rejected'
+              ORDER BY CASE status WHEN 'published' THEN 0
+                WHEN 'proposed' THEN 1 ELSE 2 END,
               revision_no DESC LIMIT 1""",
                 (page["id"],),
             )
@@ -2317,9 +2356,12 @@ class MemoryStore:
             for row in self.conn.execute(
                 f"""SELECT * FROM (
                 SELECT r.*,row_number() OVER (PARTITION BY r.page_id ORDER BY
-                  CASE r.status WHEN 'published' THEN 0 WHEN 'proposed' THEN 1 ELSE 2 END,
+                  CASE r.status WHEN 'published' THEN 0
+                    WHEN 'proposed' THEN 1 ELSE 2 END,
                   r.revision_no DESC) AS rank
-                FROM wiki_revisions r WHERE r.page_id IN ({placeholders}) AND r.status<>'rejected')
+                FROM wiki_revisions r
+                WHERE r.page_id IN ({placeholders})
+                  AND r.status<>'rejected')
               WHERE rank=1""",
                 page_ids,
             ):
@@ -2337,7 +2379,8 @@ class MemoryStore:
                 revision_placeholders = ",".join("?" for _ in revision_ids)
                 for row in self.conn.execute(
                     f"""SELECT revision_id,count(DISTINCT memory_id) AS count
-                  FROM wiki_revision_citations WHERE revision_id IN ({revision_placeholders})
+                  FROM wiki_revision_citations
+                  WHERE revision_id IN ({revision_placeholders})
                   GROUP BY revision_id""",
                     revision_ids,
                 ):
@@ -2402,8 +2445,10 @@ class MemoryStore:
                 cited = list(
                     self.conn.execute(
                         """SELECT DISTINCT c.memory_id,m.title,m.status
-                  FROM wiki_revision_citations c JOIN memories m ON m.id=c.memory_id
-                  WHERE c.revision_id=? ORDER BY m.title COLLATE NOCASE,c.memory_id""",
+                  FROM wiki_revision_citations c
+                  JOIN memories m ON m.id=c.memory_id
+                  WHERE c.revision_id=?
+                  ORDER BY m.title COLLATE NOCASE,c.memory_id""",
                         (selected_revision["id"],),
                     )
                 )
@@ -2415,21 +2460,34 @@ class MemoryStore:
                     cited_placeholders = ",".join("?" for _ in cited_ids)
                     for row in self.conn.execute(
                         f"""WITH current AS (
-                        SELECT r.*,row_number() OVER (PARTITION BY r.page_id ORDER BY
-                          CASE r.status WHEN 'published' THEN 0 WHEN 'proposed' THEN 1 ELSE 2 END,
+                        SELECT r.*,row_number() OVER (
+                          PARTITION BY r.page_id ORDER BY
+                          CASE r.status WHEN 'published' THEN 0
+                            WHEN 'proposed' THEN 1 ELSE 2 END,
                           r.revision_no DESC) AS rank
-                        FROM wiki_revisions r JOIN wiki_pages p ON p.id=r.page_id
-                        WHERE p.project_id=? AND (? IS NULL OR p.scope_id=?) AND r.status<>'rejected'),
+                        FROM wiki_revisions r
+                        JOIN wiki_pages p ON p.id=r.page_id
+                        WHERE p.project_id=?
+                          AND (? IS NULL OR p.scope_id=?)
+                          AND r.status<>'rejected'),
                       links AS (
-                        SELECT DISTINCT c.memory_id,p.id AS page_id,p.topic,p.title,current.id AS revision_id,
+                        SELECT DISTINCT c.memory_id,p.id AS page_id,
+                          p.topic,p.title,current.id AS revision_id,
                           current.revision_no,current.status
-                        FROM current JOIN wiki_pages p ON p.id=current.page_id
-                        JOIN wiki_revision_citations c ON c.revision_id=current.id
-                        WHERE current.rank=1 AND c.memory_id IN ({cited_placeholders}) AND p.id<>?),
+                        FROM current
+                        JOIN wiki_pages p ON p.id=current.page_id
+                        JOIN wiki_revision_citations c
+                          ON c.revision_id=current.id
+                        WHERE current.rank=1
+                          AND c.memory_id IN ({cited_placeholders})
+                          AND p.id<>?),
                       ranked AS (
-                        SELECT links.*,row_number() OVER (PARTITION BY memory_id ORDER BY
-                          topic COLLATE NOCASE,title COLLATE NOCASE,page_id) AS backlink_rank FROM links)
-                      SELECT * FROM ranked WHERE backlink_rank<=101 ORDER BY memory_id,backlink_rank""",
+                        SELECT links.*,row_number() OVER (
+                          PARTITION BY memory_id ORDER BY topic COLLATE NOCASE,
+                          title COLLATE NOCASE,page_id) AS backlink_rank
+                        FROM links)
+                      SELECT * FROM ranked WHERE backlink_rank<=101
+                      ORDER BY memory_id,backlink_rank""",
                         (project_id, scope_id, scope_id, *cited_ids, page_id),
                     ):
                         item = dict(row)
@@ -2561,11 +2619,15 @@ class MemoryStore:
             placeholders = ",".join("?" for _ in revision_ids)
             rows = list(
                 self.conn.execute(
-                    f"""SELECT DISTINCT a.page_id AS from_page,b.page_id AS to_page
-              FROM wiki_revision_citations ca JOIN wiki_revisions a ON a.id=ca.revision_id
+                    f"""SELECT DISTINCT a.page_id AS from_page,
+                b.page_id AS to_page
+              FROM wiki_revision_citations ca
+              JOIN wiki_revisions a ON a.id=ca.revision_id
               JOIN wiki_revision_citations cb ON cb.memory_id=ca.memory_id
               JOIN wiki_revisions b ON b.id=cb.revision_id
-              WHERE a.id IN ({placeholders}) AND b.id IN ({placeholders}) AND a.page_id<>b.page_id
+              WHERE a.id IN ({placeholders})
+                AND b.id IN ({placeholders})
+                AND a.page_id<>b.page_id
               ORDER BY from_page,to_page""",
                     (*revision_ids, *revision_ids),
                 )
@@ -2656,7 +2718,8 @@ class MemoryStore:
         rows = list(
             cx.execute(
                 """SELECT DISTINCT r.id,p.project_id FROM wiki_revisions r
-          JOIN wiki_pages p ON p.id=r.page_id JOIN wiki_revision_citations c ON c.revision_id=r.id
+          JOIN wiki_pages p ON p.id=r.page_id
+          JOIN wiki_revision_citations c ON c.revision_id=r.id
           WHERE c.memory_id=? AND r.status='published'""",
                 (memory_id,),
             )
@@ -2921,8 +2984,11 @@ class MemoryStore:
                 "event_seq": next_cursor[0],
             }
             cx.execute(
-                """INSERT INTO events(id,project_id,scope_id,session_id,kind,content,source_uri,metadata_json,content_hash,created_at,event_seq)
-              VALUES(:id,:project_id,:scope_id,:session_id,:kind,:content,:source_uri,:metadata_json,:content_hash,:created_at,:event_seq)""",
+                """INSERT INTO events(id,project_id,scope_id,session_id,
+              kind,content,source_uri,metadata_json,content_hash,created_at,
+              event_seq) VALUES(:id,:project_id,:scope_id,:session_id,
+              :kind,:content,:source_uri,:metadata_json,:content_hash,
+              :created_at,:event_seq)""",
                 event,
             )
             self._audit(
@@ -2969,10 +3035,14 @@ class MemoryStore:
                     "visibility": "project",
                 }
                 cx.execute(
-                    """INSERT INTO memories(id,project_id,scope_id,type,status,title,content,confidence,importance,valid_from,valid_until,
-                  tags_json,created_at,updated_at,observed_at,last_confirmed_at,visibility)
-                  VALUES(:id,:project_id,:scope_id,:type,:status,:title,:content,:confidence,:importance,:valid_from,:valid_until,
-                  :tags_json,:created_at,:updated_at,:observed_at,:last_confirmed_at,:visibility)""",
+                    """INSERT INTO memories(id,project_id,scope_id,type,
+                  status,title,content,confidence,importance,valid_from,
+                  valid_until,tags_json,created_at,updated_at,observed_at,
+                  last_confirmed_at,visibility) VALUES(:id,:project_id,
+                  :scope_id,:type,:status,:title,:content,:confidence,
+                  :importance,:valid_from,:valid_until,:tags_json,
+                  :created_at,:updated_at,:observed_at,:last_confirmed_at,
+                  :visibility)""",
                     handoff,
                 )
                 for event_id in [event["id"], *verified_event_ids]:
@@ -3451,7 +3521,8 @@ class MemoryStore:
             kinds, scope_id
         )
         receipt = self._row(
-            """SELECT * FROM event_receipts WHERE project_id=? AND consumer_id=?
+            """SELECT * FROM event_receipts
+          WHERE project_id=? AND consumer_id=?
           AND scope_key=? AND kinds_json=?""",
             (project_id, consumer_id, scope_key, kinds_json),
         )
@@ -3463,9 +3534,13 @@ class MemoryStore:
         ts = now()
         with self.tx() as cx:
             cx.execute(
-                """INSERT INTO event_receipts(project_id,consumer_id,scope_key,kinds_json,acknowledged_cursor,delivered_cursor,created_at,updated_at)
-              VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(project_id,consumer_id,scope_key,kinds_json)
-              DO UPDATE SET delivered_cursor=max(event_receipts.delivered_cursor,excluded.delivered_cursor),updated_at=excluded.updated_at""",
+                """INSERT INTO event_receipts(project_id,consumer_id,
+              scope_key,kinds_json,acknowledged_cursor,delivered_cursor,
+              created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)
+              ON CONFLICT(project_id,consumer_id,scope_key,kinds_json)
+              DO UPDATE SET delivered_cursor=max(
+                event_receipts.delivered_cursor,excluded.delivered_cursor),
+                updated_at=excluded.updated_at""",
                 (
                     project_id,
                     consumer_id,
@@ -3503,7 +3578,8 @@ class MemoryStore:
         scope_key, kinds_json, _ = self._receipt_stream(kinds, scope_id)
         with self.tx() as cx:
             row = cx.execute(
-                """SELECT * FROM event_receipts WHERE project_id=? AND consumer_id=?
+                """SELECT * FROM event_receipts
+              WHERE project_id=? AND consumer_id=?
               AND scope_key=? AND kinds_json=?""",
                 (project_id, consumer_id, scope_key, kinds_json),
             ).fetchone()
@@ -3520,13 +3596,15 @@ class MemoryStore:
                 )
             ts = now()
             cx.execute(
-                """UPDATE event_receipts SET acknowledged_cursor=?,updated_at=? WHERE project_id=?
+                """UPDATE event_receipts
+              SET acknowledged_cursor=?,updated_at=? WHERE project_id=?
               AND consumer_id=? AND scope_key=? AND kinds_json=?""",
                 (cursor, ts, project_id, consumer_id, scope_key, kinds_json),
             )
             item = dict(
                 cx.execute(
-                    """SELECT * FROM event_receipts WHERE project_id=? AND consumer_id=?
+                    """SELECT * FROM event_receipts
+              WHERE project_id=? AND consumer_id=?
               AND scope_key=? AND kinds_json=?""",
                     (project_id, consumer_id, scope_key, kinds_json),
                 ).fetchone()
@@ -3614,9 +3692,14 @@ class MemoryStore:
                 if existing["project_id"] != project_id:
                     raise ValueError("memory belongs to another project")
                 cx.execute(
-                    """UPDATE memories SET scope_id=:scope_id,type=:type,status=:status,title=:title,content=:content,confidence=:confidence,
-                  importance=:importance,valid_from=:valid_from,valid_until=:valid_until,tags_json=:tags_json,updated_at=:updated_at,
-                  observed_at=:observed_at,last_confirmed_at=:last_confirmed_at,visibility=:visibility WHERE id=:id""",
+                    """UPDATE memories SET scope_id=:scope_id,type=:type,
+                  status=:status,title=:title,content=:content,
+                  confidence=:confidence,importance=:importance,
+                  valid_from=:valid_from,valid_until=:valid_until,
+                  tags_json=:tags_json,updated_at=:updated_at,
+                  observed_at=:observed_at,
+                  last_confirmed_at=:last_confirmed_at,
+                  visibility=:visibility WHERE id=:id""",
                     item,
                 )
                 action = "updated"
@@ -3637,10 +3720,14 @@ class MemoryStore:
                     )
             else:
                 cx.execute(
-                    """INSERT INTO memories(id,project_id,scope_id,type,status,title,content,confidence,importance,valid_from,valid_until,
-                  tags_json,created_at,updated_at,observed_at,last_confirmed_at,visibility)
-                  VALUES(:id,:project_id,:scope_id,:type,:status,:title,:content,:confidence,:importance,:valid_from,:valid_until,
-                  :tags_json,:created_at,:updated_at,:observed_at,:last_confirmed_at,:visibility)""",
+                    """INSERT INTO memories(id,project_id,scope_id,type,
+                  status,title,content,confidence,importance,valid_from,
+                  valid_until,tags_json,created_at,updated_at,observed_at,
+                  last_confirmed_at,visibility) VALUES(:id,:project_id,
+                  :scope_id,:type,:status,:title,:content,:confidence,
+                  :importance,:valid_from,:valid_until,:tags_json,
+                  :created_at,:updated_at,:observed_at,:last_confirmed_at,
+                  :visibility)""",
                     item,
                 )
                 action = "created"
@@ -3694,9 +3781,11 @@ class MemoryStore:
             return
         vector = self.embedding_provider.embed([text])[0]
         cx.execute(
-            """INSERT INTO memory_embeddings(memory_id,provider,dimensions,content_hash,vector_json,updated_at)
-          VALUES(?,?,?,?,?,?) ON CONFLICT(memory_id) DO UPDATE SET provider=excluded.provider,dimensions=excluded.dimensions,
-          content_hash=excluded.content_hash,vector_json=excluded.vector_json,updated_at=excluded.updated_at""",
+            """INSERT INTO memory_embeddings(memory_id,provider,dimensions,
+          content_hash,vector_json,updated_at) VALUES(?,?,?,?,?,?)
+          ON CONFLICT(memory_id) DO UPDATE SET provider=excluded.provider,
+          dimensions=excluded.dimensions,content_hash=excluded.content_hash,
+          vector_json=excluded.vector_json,updated_at=excluded.updated_at""",
             (
                 memory["id"],
                 provider,
@@ -3813,8 +3902,12 @@ class MemoryStore:
         )
         with self.tx() as cx:
             cx.execute(
-                """INSERT INTO search_aliases(project_id,term,aliases_json,created_at,updated_at) VALUES(:project_id,:term,:aliases_json,:created_at,:updated_at)
-              ON CONFLICT(project_id,term) DO UPDATE SET aliases_json=excluded.aliases_json,updated_at=excluded.updated_at""",
+                """INSERT INTO search_aliases(project_id,term,aliases_json,
+              created_at,updated_at) VALUES(:project_id,:term,
+              :aliases_json,:created_at,:updated_at)
+              ON CONFLICT(project_id,term) DO UPDATE SET
+              aliases_json=excluded.aliases_json,
+              updated_at=excluded.updated_at""",
                 item,
             )
             self._audit(
@@ -3874,7 +3967,8 @@ class MemoryStore:
         with self.tx() as cx:
             cx.execute(
                 "INSERT INTO edges"
-                " VALUES(:id,:project_id,:from_memory_id,:to_memory_id,:relation,:note,:created_at)",
+                " VALUES(:id,:project_id,:from_memory_id,:to_memory_id,"
+                ":relation,:note,:created_at)",
                 item,
             )
             self._audit(cx, project_id, "edge", item["id"], "created", item)
@@ -4030,10 +4124,13 @@ class MemoryStore:
             else "(m.project_id=? OR m.visibility='global')"
         )
         boundary_args: list[Any] = [] if discover_projects else [project_id]
-        lexical_sql = f"""SELECT m.*, bm25(memories_fts, 0, 5, 1, .5) AS fts_rank
+        lexical_sql = f"""SELECT m.*,
+          bm25(memories_fts, 0, 5, 1, .5) AS fts_rank
           FROM memories_fts JOIN memories m ON m.id=memories_fts.memory_id
-          WHERE memories_fts MATCH ? AND {boundary} AND m.status IN ({placeholders})
-          AND (m.valid_from IS NULL OR m.valid_from<=?) AND (m.valid_until IS NULL OR m.valid_until>?)"""
+          WHERE memories_fts MATCH ? AND {boundary}
+          AND m.status IN ({placeholders})
+          AND (m.valid_from IS NULL OR m.valid_from<=?)
+          AND (m.valid_until IS NULL OR m.valid_until>?)"""
         lexical_args: list[Any] = [
             *boundary_args,
             *allowed,
@@ -4102,9 +4199,13 @@ class MemoryStore:
                     )
                 else:
                     sem_boundary = "m.visibility='global'"
-            sem_sql = f"""SELECT m.id, e.vector_json FROM memory_embeddings e JOIN memories m ON m.id=e.memory_id
-              WHERE {sem_boundary} AND m.status IN ({placeholders}) AND e.provider=? AND e.dimensions=?
-              AND (m.valid_from IS NULL OR m.valid_from<=?) AND (m.valid_until IS NULL OR m.valid_until>?)"""
+            sem_sql = f"""SELECT m.id, e.vector_json
+              FROM memory_embeddings e
+              JOIN memories m ON m.id=e.memory_id
+              WHERE {sem_boundary} AND m.status IN ({placeholders})
+              AND e.provider=? AND e.dimensions=?
+              AND (m.valid_from IS NULL OR m.valid_from<=?)
+              AND (m.valid_until IS NULL OR m.valid_until>?)"""
             sem_boundary_args = (
                 discovery_project_ids or []
                 if discover_projects
@@ -4240,7 +4341,8 @@ class MemoryStore:
             for source in self.conn.execute(
                 f"""SELECT s.memory_id,e.id,e.kind,e.source_uri,e.created_at
               FROM memory_sources s JOIN events e ON e.id=s.event_id
-              WHERE s.memory_id IN ({candidate_placeholders}) ORDER BY s.memory_id,e.id""",
+              WHERE s.memory_id IN ({candidate_placeholders})
+              ORDER BY s.memory_id,e.id""",
                 candidate_ids,
             ):
                 item = dict(source)
@@ -4350,14 +4452,16 @@ class MemoryStore:
             )
             activity = self._row(
                 """SELECT MAX(activity_at) AS activity_at FROM (
-              SELECT MAX(COALESCE(ended_at,started_at)) AS activity_at FROM sessions WHERE project_id=?
+              SELECT MAX(COALESCE(ended_at,started_at)) AS activity_at
+              FROM sessions WHERE project_id=?
               UNION ALL SELECT MAX(created_at) FROM events WHERE project_id=?
             )""",
                 (candidate_id, candidate_id),
             )
             checkpoint = self._row(
                 """SELECT id,title,type,status,updated_at FROM memories
-              WHERE project_id=? AND status IN ('active','disputed') AND type IN ('task','summary')
+              WHERE project_id=? AND status IN ('active','disputed')
+              AND type IN ('task','summary')
               ORDER BY updated_at DESC,id LIMIT 1""",
                 (candidate_id,),
             )
@@ -4505,7 +4609,8 @@ class MemoryStore:
         column = signal + "_count"
         with self.tx() as cx:
             cx.execute(
-                """INSERT OR IGNORE INTO memory_usage(memory_id,updated_at) VALUES(?,?)""",
+                """INSERT OR IGNORE INTO memory_usage(
+                memory_id,updated_at) VALUES(?,?)""",
                 (memory_id, ts),
             )
             updates = f"{column}={column}+1,updated_at=?"
@@ -5172,7 +5277,8 @@ class MemoryStore:
         for edge in self.conn.execute(
             f"""SELECT * FROM edges WHERE project_id=?
           AND relation IN ('supports','depends_on','supersedes')
-          AND (from_memory_id IN ({placeholders}) OR to_memory_id IN ({placeholders}))
+          AND (from_memory_id IN ({placeholders})
+            OR to_memory_id IN ({placeholders}))
           ORDER BY relation,created_at,id LIMIT ?""",
             (project_id, *seed_ids, *seed_ids, candidate_limit + 1),
         ):
@@ -5205,9 +5311,12 @@ class MemoryStore:
           i.id investigation_id,l.relation
           FROM investigation_claims sc
           JOIN investigations i ON i.id=sc.investigation_id
-          JOIN investigation_claims oc ON oc.investigation_id=sc.investigation_id AND oc.memory_id<>sc.memory_id
+          JOIN investigation_claims oc
+            ON oc.investigation_id=sc.investigation_id
+            AND oc.memory_id<>sc.memory_id
           LEFT JOIN investigation_claim_links l ON
-            (l.from_claim_id=sc.id AND l.to_claim_id=oc.id) OR (l.to_claim_id=sc.id AND l.from_claim_id=oc.id)
+            (l.from_claim_id=sc.id AND l.to_claim_id=oc.id)
+            OR (l.to_claim_id=sc.id AND l.from_claim_id=oc.id)
           WHERE i.project_id=? AND sc.memory_id IN ({placeholders})
           ORDER BY i.id,oc.created_at,oc.id LIMIT ?""",
             (project_id, *seed_ids, candidate_limit + 1),
@@ -5265,15 +5374,18 @@ class MemoryStore:
             rows = {
                 row["id"]: dict(row)
                 for row in self.conn.execute(
-                    f"""SELECT * FROM memories WHERE id IN ({remaining_placeholders})
-                AND (valid_from IS NULL OR valid_from<=?) AND (valid_until IS NULL OR valid_until>?)
+                    f"""SELECT * FROM memories
+                WHERE id IN ({remaining_placeholders})
+                AND (valid_from IS NULL OR valid_from<=?)
+                AND (valid_until IS NULL OR valid_until>?)
                 {scope_clause}""",
                     params,
                 )
             }
             for source in self.conn.execute(
                 f"""SELECT s.memory_id,s.event_id FROM memory_sources s
-              WHERE s.memory_id IN ({remaining_placeholders}) ORDER BY s.memory_id,s.event_id""",
+              WHERE s.memory_id IN ({remaining_placeholders})
+              ORDER BY s.memory_id,s.event_id""",
                 remaining_ids,
             ):
                 sources[source["memory_id"]].append(source["event_id"])
@@ -5332,13 +5444,17 @@ class MemoryStore:
         placeholders = ",".join("?" for _ in retrieved_memory_ids)
         rows = self.conn.execute(
             f"""SELECT d.memory_id decision_memory_id,d.expected_outcome,
-          o.memory_id outcome_memory_id,o.outcome_effect,om.content observed_outcome,
+          o.memory_id outcome_memory_id,o.outcome_effect,
+          om.content observed_outcome,
           d.event_id decision_event_id,o.event_id outcome_event_id
           FROM investigation_claim_links l
-          JOIN investigation_claims d ON d.id=l.from_claim_id AND d.role='decision'
-          JOIN investigation_claims o ON o.id=l.to_claim_id AND o.role='outcome'
+          JOIN investigation_claims d
+            ON d.id=l.from_claim_id AND d.role='decision'
+          JOIN investigation_claims o
+            ON o.id=l.to_claim_id AND o.role='outcome'
           JOIN memories om ON om.id=o.memory_id
-          WHERE (d.memory_id IN ({placeholders}) OR o.memory_id IN ({placeholders}))
+          WHERE (d.memory_id IN ({placeholders})
+            OR o.memory_id IN ({placeholders}))
           ORDER BY o.created_at,o.id""",
             (*retrieved_memory_ids, *retrieved_memory_ids),
         )
@@ -5438,12 +5554,19 @@ class MemoryStore:
         current["updated_at"] = now()
         with self.tx() as cx:
             cx.execute(
-                """UPDATE project_policies SET max_context_chars=:max_context_chars,max_context_items=:max_context_items,
-              audit_keep_entries=:audit_keep_entries,terminal_memory_days=:terminal_memory_days,
-              checkpoint_soft_usage=:checkpoint_soft_usage,checkpoint_hard_usage=:checkpoint_hard_usage,
-              checkpoint_elapsed_seconds=:checkpoint_elapsed_seconds,checkpoint_event_count=:checkpoint_event_count,
-              checkpoint_max_age_seconds=:checkpoint_max_age_seconds,checkpoint_cooldown_seconds=:checkpoint_cooldown_seconds,
-              checkpoint_hysteresis=:checkpoint_hysteresis,maintenance_interval_seconds=:maintenance_interval_seconds,
+                """UPDATE project_policies SET
+              max_context_chars=:max_context_chars,
+              max_context_items=:max_context_items,
+              audit_keep_entries=:audit_keep_entries,
+              terminal_memory_days=:terminal_memory_days,
+              checkpoint_soft_usage=:checkpoint_soft_usage,
+              checkpoint_hard_usage=:checkpoint_hard_usage,
+              checkpoint_elapsed_seconds=:checkpoint_elapsed_seconds,
+              checkpoint_event_count=:checkpoint_event_count,
+              checkpoint_max_age_seconds=:checkpoint_max_age_seconds,
+              checkpoint_cooldown_seconds=:checkpoint_cooldown_seconds,
+              checkpoint_hysteresis=:checkpoint_hysteresis,
+              maintenance_interval_seconds=:maintenance_interval_seconds,
               message_ttl_seconds=:message_ttl_seconds,
               updated_at=:updated_at WHERE project_id=:project_id""",
                 current,
@@ -5470,7 +5593,8 @@ class MemoryStore:
             (project_id,),
         ).fetchone()[0]
         duplicate = self.conn.execute(
-            """SELECT count(*) FROM (SELECT f.memory_id FROM memories_fts f JOIN memories m ON m.id=f.memory_id
+            """SELECT count(*) FROM (SELECT f.memory_id
+          FROM memories_fts f JOIN memories m ON m.id=f.memory_id
           WHERE m.project_id=? GROUP BY f.memory_id HAVING count(*)<>1)""",
             (project_id,),
         ).fetchone()[0]
@@ -5487,7 +5611,8 @@ class MemoryStore:
         }
         if self.embedding_provider:
             embedding["indexed_rows"] = self.conn.execute(
-                """SELECT count(*) FROM memory_embeddings e JOIN memories m ON m.id=e.memory_id
+                """SELECT count(*) FROM memory_embeddings e
+              JOIN memories m ON m.id=e.memory_id
               WHERE m.project_id=? AND e.provider=? AND e.dimensions=?""",
                 (
                     project_id,
@@ -5497,7 +5622,8 @@ class MemoryStore:
             ).fetchone()[0]
             embedding["missing"] = memories - embedding["indexed_rows"]
             for row in self.conn.execute(
-                """SELECT m.*,e.content_hash FROM memories m JOIN memory_embeddings e ON e.memory_id=m.id
+                """SELECT m.*,e.content_hash FROM memories m
+              JOIN memory_embeddings e ON e.memory_id=m.id
               WHERE m.project_id=? AND e.provider=?""",
                 (project_id, self._provider_name()),
             ):
@@ -5546,7 +5672,8 @@ class MemoryStore:
             dict(row)
             for row in self.conn.execute(
                 """SELECT * FROM memories WHERE project_id=?
-          AND status IN ('superseded','rejected','expired') AND updated_at<? ORDER BY updated_at,id""",
+          AND status IN ('superseded','rejected','expired')
+          AND updated_at<? ORDER BY updated_at,id""",
                 (project_id, cutoff),
             )
         ]
@@ -5626,7 +5753,8 @@ class MemoryStore:
                 }
                 cx.execute(
                     "INSERT INTO audit_checkpoints"
-                    " VALUES(:id,:project_id,:from_seq,:through_seq,:entry_count,:previous_digest,:digest,:created_at)",
+                    " VALUES(:id,:project_id,:from_seq,:through_seq,"
+                    ":entry_count,:previous_digest,:digest,:created_at)",
                     checkpoint,
                 )
                 cx.execute(
@@ -6050,7 +6178,8 @@ class MemoryStore:
                     "SELECT c.* FROM wiki_revision_citations c JOIN"
                     " wiki_revisions r ON r.id=c.revision_id JOIN wiki_pages p"
                     " ON p.id=r.page_id WHERE p.project_id=? ORDER BY"
-                    " c.revision_id,c.section_name,c.ordinal,c.memory_id,c.event_id"
+                    " c.revision_id,c.section_name,c.ordinal,c.memory_id,"
+                    " c.event_id"
                 ),
             ),
             (
@@ -6472,9 +6601,13 @@ class MemoryStore:
                         "project_id",
                     ]
                     cx.execute(
-                        """UPDATE project_policies SET max_context_chars=?,max_context_items=?,audit_keep_entries=?,
-                      terminal_memory_days=?,checkpoint_soft_usage=?,checkpoint_hard_usage=?,checkpoint_elapsed_seconds=?,
-                      checkpoint_event_count=?,checkpoint_max_age_seconds=?,checkpoint_cooldown_seconds=?,checkpoint_hysteresis=?,maintenance_interval_seconds=?,message_ttl_seconds=?,
+                        """UPDATE project_policies SET max_context_chars=?,
+                      max_context_items=?,audit_keep_entries=?,
+                      terminal_memory_days=?,checkpoint_soft_usage=?,
+                      checkpoint_hard_usage=?,checkpoint_elapsed_seconds=?,
+                      checkpoint_event_count=?,checkpoint_max_age_seconds=?,
+                      checkpoint_cooldown_seconds=?,checkpoint_hysteresis=?,
+                      maintenance_interval_seconds=?,message_ttl_seconds=?,
                       updated_at=? WHERE project_id=?""",
                         tuple(data[name] for name in names),
                     )
