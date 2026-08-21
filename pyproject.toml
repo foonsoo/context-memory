@@ -23,6 +23,7 @@ classifiers = [
 
 [project.optional-dependencies]
 crypto = ["cryptography>=42"]
+dev = ["ruff==0.16.1"]
 neural = ["sentence-transformers>=3,<6"]
 
 [project.scripts]
@@ -33,3 +34,27 @@ packages = ["src/context_memory"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "migrations" = "migrations"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 79
+include = [
+  "src/context_memory/__init__.py",
+  "src/context_memory/audit_anchor.py",
+  "src/context_memory/backup_crypto.py",
+  "src/context_memory/contracts.py",
+  "src/context_memory/embeddings.py",
+  "src/context_memory/hooks.py",
+  "src/context_memory/tasks.py",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+
+[tool.ruff.lint.pycodestyle]
+max-doc-length = 72
+
+[tool.ruff.format]
+indent-style = "space"
+line-ending = "lf"
+quote-style = "double"

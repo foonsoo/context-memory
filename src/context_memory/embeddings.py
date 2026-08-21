@@ -7,7 +7,7 @@ from typing import Protocol, Sequence
 
 
 class EmbeddingProvider(Protocol):
-    """Local or remote adapter behind a rebuildable retrieval projection."""
+    """Adapter behind a rebuildable retrieval projection."""
 
     @property
     def dimensions(self) -> int: ...
@@ -23,15 +23,21 @@ class EmbeddingProvider(Protocol):
 
 class EmbeddingsDisabled:
     @property
-    def dimensions(self) -> int: return 0
+    def dimensions(self) -> int:
+        return 0
 
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
-        raise RuntimeError("embeddings are disabled; FTS5 remains fully functional")
-class LocalHashEmbedding:
-    """Dependency-free local similarity projection using word and character features.
+        raise RuntimeError(
+            "embeddings are disabled; FTS5 remains fully functional"
+        )
 
-    This is intentionally not presented as a neural semantic model. It improves fuzzy,
-    morphological, and partial-phrase recall while keeping personal data on-device.
+
+class LocalHashEmbedding:
+    """Dependency-free local similarity projection.
+
+    This is intentionally not presented as a neural semantic model. It
+    improves fuzzy, morphological, and partial-phrase recall.
+    Personal data remains on-device.
     """
 
     def __init__(self, dimensions: int = 1024):
@@ -59,43 +65,53 @@ class LocalHashEmbedding:
         normalized = " ".join(text.casefold().split())
         words = re.findall(r"[\w-]+", normalized, flags=re.UNICODE)
         compact = re.sub(r"\s+", "", normalized)
-        grams = [compact[i:i + 3] for i in range(max(0, len(compact) - 2))]
-        # Hangul syllable bigrams recover spacing and particle changes that lose
-        # whole-word overlap. Restricting the shorter feature to Hangul avoids
-        # the common ASCII bigrams that raised negative-query similarities.
+        grams = [compact[i : i + 3] for i in range(max(0, len(compact) - 2))]
+        # Hangul syllable bigrams recover spacing and particle changes.
+        # Restricting the shorter feature to Hangul avoids common ASCII
+        # bigrams that raise negative similarities.
         hangul_bigrams = [
-            compact[i:i + 2] for i in range(max(0, len(compact) - 1))
-            if re.fullmatch(r"[가-힣]{2}", compact[i:i + 2])
+            compact[i : i + 2]
+            for i in range(max(0, len(compact) - 1))
+            if re.fullmatch(r"[가-힣]{2}", compact[i : i + 2])
         ]
-        return ([f"w:{word}" for word in words]
-                + [f"c3:{gram}" for gram in grams]
-                + [f"k2:{gram}" for gram in hangul_bigrams])
+        return (
+            [f"w:{word}" for word in words]
+            + [f"c3:{gram}" for gram in grams]
+            + [f"k2:{gram}" for gram in hangul_bigrams]
+        )
 
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
         result: list[list[float]] = []
         for text in texts:
             vector = [0.0] * self.dimensions
             for feature in self._features(text):
-                digest = hashlib.blake2b(feature.encode("utf-8"), digest_size=8).digest()
+                digest = hashlib.blake2b(
+                    feature.encode("utf-8"), digest_size=8
+                ).digest()
                 value = int.from_bytes(digest, "big")
                 index = value % self.dimensions
                 vector[index] += 1.0 if value & 1 else -1.0
             norm = math.sqrt(sum(value * value for value in vector))
-            result.append([value / norm for value in vector] if norm else vector)
+            result.append(
+                [value / norm for value in vector] if norm else vector
+            )
         return result
 
 
 class SentenceTransformerEmbedding:
     """Explicit opt-in adapter for a local sentence-transformers model.
 
-    Importing Context Memory never imports or downloads a neural model. Constructing
-    this adapter requires the optional dependency and either a local model path or an
-    explicitly chosen model identifier.
+    Importing Context Memory never imports or downloads a neural model.
+    Constructing this adapter requires the optional dependency. It also
+    requires a local model path or a chosen model identifier.
     """
 
     def __init__(self, model: str, *, device: str | None = None):
         if not model.strip():
-            raise ValueError("model must be a local path or sentence-transformers model identifier")
+            raise ValueError(
+                "model must be a local path or sentence-transformers "
+                "model identifier"
+            )
         try:
             from sentence_transformers import SentenceTransformer
         except ImportError as exc:
@@ -112,7 +128,10 @@ class SentenceTransformerEmbedding:
         )
         dimensions = get_dimensions()
         if not dimensions:
-            raise RuntimeError("the sentence-transformers model did not report embedding dimensions")
+            raise RuntimeError(
+                "the sentence-transformers model did not report "
+                "embedding dimensions"
+            )
         self._dimensions = int(dimensions)
 
     @property

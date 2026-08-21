@@ -450,6 +450,19 @@ See the [authorized source client workflow](docs/SOURCE_CLIENT_WORKFLOW.md) and 
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
+Development-only PEP 8 checks use the pinned Ruff version and do not add a
+runtime dependency:
+
+```bash
+python3 -m pip install -e '.[dev]'
+ruff check .
+ruff format --check .
+```
+
+The checked production-module allowlist in `pyproject.toml` expands one module
+at a time as existing violations are cleared. It is intentionally a positive
+adoption list rather than a permanent ignore list.
+
 Tests cover WAL persistence and permissions, append-only enforcement, FTS and alias-expanded retrieval, provenance, budget selection, state transitions, verified graph traversal, export/import, rollback, idempotency, MCP discovery/calls, stdio process handshake, HTTP process handshake, and external-bind refusal.
 
 CI also installs the built wheel beside the pinned official MCP Python SDK and runs `tests/official_sdk_e2e.py`. That black-box check exercises initialization, paginated tool discovery, structured tool calls, protocol validation errors, and two concurrent SDK clients sharing one database; the production package itself retains zero runtime dependencies.
