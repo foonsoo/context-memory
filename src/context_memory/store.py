@@ -181,7 +181,8 @@ class MemoryStore:
             if version in applied:
                 continue
             script = file.read_text(encoding="utf-8")
-            # executescript owns its transaction; migration is recorded only
+            # executescript owns its transaction; migration is recorded
+            # only
             # after all statements succeed.
             self.conn.executescript(
                 "BEGIN IMMEDIATE;\n"
@@ -375,7 +376,7 @@ class MemoryStore:
             self.set_project_alias(project_id, kind, value)
 
     def _related_project_ids(self, project_id: str) -> list[str]:
-        """Find registry projects sharing the hinted repository/workspace name."""
+        """Find projects sharing the hinted workspace name."""
         rows = self.conn.execute(
             """SELECT DISTINCT candidate.project_id
           FROM project_aliases source JOIN project_aliases candidate
@@ -392,7 +393,7 @@ class MemoryStore:
         query_tokens: list[str],
         lexical: list[dict[str, Any]],
     ) -> list[str]:
-        """Bound discovery to projects supported by lexical or identity evidence."""
+        """Bound discovery using lexical or identity evidence."""
         ordered: list[str] = []
 
         def add(candidate_id: str) -> None:
@@ -404,8 +405,10 @@ class MemoryStore:
                 add(memory["project_id"])
         for candidate_id in self._related_project_ids(project_id):
             add(candidate_id)
-        # Registry identity matching is the fallback when memory FTS supplied no
-        # project evidence. Avoid an alias join on the common lexical path.
+        # Registry identity matching is the fallback when memory FTS
+        # supplied no
+        # project evidence. Avoid an alias join on the common lexical
+        # path.
         if (
             not lexical
             and query_tokens
@@ -451,7 +454,7 @@ class MemoryStore:
         return item
 
     def resolve_project(self, cwd: str) -> dict[str, Any]:
-        """Resolve a workspace hint using paths first, then stable repository identities."""
+        """Resolve a workspace by path, then repository identity."""
         path = str(Path(cwd).expanduser().resolve())
         identities = self._workspace_identities(path)
         row = self.conn.execute(
@@ -464,7 +467,8 @@ class MemoryStore:
             scope_id = item.pop("scope_id")
             self._register_project_identities(item["id"], identities)
             return {"project": item, "scope_id": scope_id, "created": False}
-        # A repository name resolves ownership only when it identifies one project.
+        # A repository name resolves ownership only when it identifies
+        # one project.
         # Ambiguous names remain separate and are handled by retrieval
         # discovery.
         for kind in ("name",):
@@ -944,7 +948,7 @@ class MemoryStore:
         investigation_id: str | None = None,
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
-        """Create durable investigation intent without recording browsing activity."""
+        """Create durable investigation intent without browsing."""
         request = locals().copy()
         request.pop("self")
         request.pop("idempotency_key")
@@ -1007,7 +1011,7 @@ class MemoryStore:
         session_id: str | None = None,
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
-        """Atomically record one source version and its consequential typed claims."""
+        """Record a source version and consequential typed claims."""
         request = {
             "investigation_id": investigation_id,
             "source": source,
@@ -1456,7 +1460,7 @@ class MemoryStore:
         known_source_version: str | None = None,
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
-        """Record a client-owned request to reinspect one external source version."""
+        """Request client reinspection of an external source."""
         request = {
             "source_analysis_id": source_analysis_id,
             "reason": reason,
@@ -1898,7 +1902,7 @@ class MemoryStore:
         return self._wiki_revision_result(row, citations)
 
     def lint_wiki_revision(self, revision_id: str) -> dict[str, Any]:
-        """Deterministically surface evidence and lifecycle gaps in a Wiki revision."""
+        """Surface evidence and lifecycle gaps in a Wiki revision."""
         revision = self.get_wiki_revision(revision_id)
         page = self._row(
             "SELECT * FROM wiki_pages WHERE id=?", (revision["page_id"],)
@@ -2202,8 +2206,10 @@ class MemoryStore:
             scope_id=page["scope_id"],
         )
         for memory in relevant:
-            # Tasks are workflow state, not claims in the standard Decision Wiki page shape. In particular,
-            # accumulated checkpoint/handoff tasks otherwise dominate omission lint despite being intentionally
+            # Tasks are workflow state, not claims in the standard
+            # Decision Wiki page shape. In particular,
+            # accumulated checkpoint/handoff tasks otherwise dominate
+            # omission lint despite being intentionally
             # absent from generated sections.
             if memory["type"] == "task":
                 continue
@@ -2269,7 +2275,7 @@ class MemoryStore:
         limit: int = 50,
         offset: int = 0,
     ) -> dict[str, Any]:
-        """Browse the authoritative Wiki page index and reverse citation links without a second search stack."""
+        """Browse the Wiki index and reverse citation links."""
         if not self._row("SELECT id FROM projects WHERE id=?", (project_id,)):
             raise KeyError("project not found")
         if scope_id and not self._row(
@@ -2541,7 +2547,7 @@ class MemoryStore:
         limit: int = 50,
         offset: int = 0,
     ) -> dict[str, Any]:
-        """Render a bounded, deterministic Wiki snapshot without making Markdown authoritative."""
+        """Render a bounded, non-authoritative Wiki snapshot."""
         navigation = self.browse_wiki(
             project_id, scope_id=scope_id, limit=limit, offset=offset
         )
@@ -2718,8 +2724,9 @@ class MemoryStore:
     ) -> dict[str, Any]:
         """Record one explicit, client-neutral recovery checkpoint.
 
-        Interim checkpoints only record recovery state. Final checkpoints atomically
-        publish an evidence-backed handoff, replace its predecessor, and end the
+        Interim checkpoints record recovery state. Final checkpoints
+        atomically publish an evidence-backed handoff, replace its
+        predecessor, and end the
         referenced session. Neither mode mutates Git.
         """
         request = {
@@ -3042,7 +3049,7 @@ class MemoryStore:
         next_step: str | None = None,
         blockers: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Evaluate portable checkpoint triggers without writing a checkpoint."""
+        """Evaluate portable triggers without writing a checkpoint."""
         if context_usage is not None and not 0 <= context_usage <= 1:
             raise ValueError("context_usage must be between 0 and 1")
         policy = self.get_policy(project_id)
@@ -3353,7 +3360,7 @@ class MemoryStore:
         scope_id: str | None = None,
         limit: int = 100,
     ) -> dict[str, Any]:
-        """Read immutable events after a project cursor without mixing them into memory ranking."""
+        """Read project events after a cursor without ranking them."""
         if cursor < 0:
             raise ValueError("cursor must be non-negative")
         if not 1 <= limit <= 1000:
@@ -3436,7 +3443,7 @@ class MemoryStore:
         scope_id: str | None = None,
         limit: int = 100,
     ) -> dict[str, Any]:
-        """Read from a durable per-consumer receipt without acknowledging delivery."""
+        """Read a consumer receipt without acknowledging delivery."""
         consumer_id = consumer_id.strip()
         if not consumer_id:
             raise ValueError("consumer_id cannot be empty")
@@ -3487,7 +3494,7 @@ class MemoryStore:
         kinds: list[str] | None = None,
         scope_id: str | None = None,
     ) -> dict[str, Any]:
-        """Monotonically acknowledge a cursor previously delivered for this exact stream."""
+        """Acknowledge a cursor delivered for this exact stream."""
         consumer_id = consumer_id.strip()
         if not consumer_id:
             raise ValueError("consumer_id cannot be empty")
@@ -4012,8 +4019,10 @@ class MemoryStore:
         allowed = statuses or ["active", "proposed", "disputed"]
         placeholders = ",".join("?" for _ in allowed)
         timestamp = now()
-        # Discovery is deliberately whole-database. Project identity hints are a
-        # later prior, not a candidate-generation boundary: filtering here can
+        # Discovery is deliberately whole-database. Project identity
+        # hints are a
+        # later prior, not a candidate-generation boundary: filtering
+        # here can
         # make the actually relevant project impossible to retrieve.
         boundary = (
             "1=1"
@@ -4169,9 +4178,12 @@ class MemoryStore:
                 semantic_scan["evaluated"] += 1
                 vector = json.loads(row["vector_json"])
                 similarity = sum(a * b for a, b in zip(query_vector, vector))
-                # Weak similarities may rerank lexical hits. A provider may also
-                # opt into vector-only recall with an explicit calibrated threshold;
-                # this must remain available even when FTS returns an unrelated
+                # Weak similarities may rerank lexical hits. A provider
+                # may also
+                # opt into vector-only recall with an explicit
+                # calibrated threshold;
+                # this must remain available even when FTS returns an
+                # unrelated
                 # hit.
                 if similarity > 0.05 and (
                     row["id"] in candidates
@@ -4313,7 +4325,7 @@ class MemoryStore:
     def _aggregate_project_candidates(
         self, memories: list[dict[str, Any]], current_project_id: str
     ) -> list[dict[str, Any]]:
-        """Aggregate whole-DB memory relevance and recent project activity."""
+        """Aggregate database relevance and recent project activity."""
         grouped: dict[str, list[dict[str, Any]]] = {}
         for memory in memories:
             if (
@@ -4349,9 +4361,12 @@ class MemoryStore:
               ORDER BY updated_at DESC,id LIMIT 1""",
                 (candidate_id,),
             )
-            # Hybrid RRF should improve ordering within a project, but counting
-            # the same hit twice would dilute path/name priors during project
-            # selection. Collapse the overlapping lexical/vector contribution.
+            # Hybrid RRF should improve ordering within a project, but
+            # counting
+            # the same hit twice would dilute path/name priors during
+            # project
+            # selection. Collapse the overlapping lexical/vector
+            # contribution.
             relevance_scores = sorted(
                 (
                     m["retrieval"]["score"]
@@ -4410,8 +4425,10 @@ class MemoryStore:
                     else 0.0
                 )
             )
-            # A single strong lexical/local-vector hit is approximately 1/61.
-            # Normalize the aggregate before adding bounded identity and activity
+            # A single strong lexical/local-vector hit is approximately
+            # 1/61.
+            # Normalize the aggregate before adding bounded identity and
+            # activity
             # priors so registry size and raw RRF scale do not leak into
             # confidence.
             relevance_confidence = (
@@ -4456,7 +4473,7 @@ class MemoryStore:
     def _select_project_candidate(
         candidates: list[dict[str, Any]],
     ) -> tuple[str | None, str, float]:
-        """Select only a sufficiently strong and separated project candidate."""
+        """Select a sufficiently strong, separated project candidate."""
         if not candidates:
             return None, "no_candidates", 0.0
         top = candidates[0]
@@ -4534,7 +4551,7 @@ class MemoryStore:
 
     @staticmethod
     def _retrieval_gate(candidates: list[dict[str, Any]]) -> dict[str, Any]:
-        """Reject weak vector-only retrieval while leaving lexical recall unchanged."""
+        """Reject weak vector-only retrieval; retain lexical recall."""
         thresholds = {
             "vector_only_similarity": NEGATIVE_VECTOR_ONLY_MIN_SIMILARITY,
             "vector_only_separation": NEGATIVE_VECTOR_ONLY_MIN_SEPARATION,
@@ -4839,7 +4856,7 @@ class MemoryStore:
         scope_id: str | None = None,
         discover_projects: bool = True,
     ) -> dict[str, Any]:
-        """Compose a cited, read-only Decision Brief from the existing retrieval path."""
+        """Compose a cited Decision Brief from existing retrieval."""
         context = self.get_context(
             project_id,
             question,
@@ -4970,7 +4987,7 @@ class MemoryStore:
     def _rerank_decision_candidates(
         question: str, memories: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
-        """Rerank only a Decision Brief's already bounded retrieval results."""
+        """Rerank only a Decision Brief's bounded retrieval results."""
         question_tokens = set(
             re.findall(r"[\w-]+", question.casefold(), flags=re.UNICODE)
         )
@@ -5112,7 +5129,7 @@ class MemoryStore:
     def _expand_decision_seeds(
         self, project_id: str, context: dict[str, Any], scope_id: str | None
     ) -> None:
-        """Add a bounded one-hop evidence expansion without escaping context budgets."""
+        """Add one-hop evidence without escaping context budgets."""
         seed_limit = 3
         candidate_limit = 50
         seeds = [
@@ -5519,7 +5536,7 @@ class MemoryStore:
         return item
 
     def maintain(self, project_id: str, apply: bool = False) -> dict[str, Any]:
-        """Bound operational state while preserving events and checkpointing pruned audit detail."""
+        """Bound state while preserving events and audit detail."""
         policy = self.get_policy(project_id)
         cutoff = (
             datetime.now(timezone.utc)
@@ -5536,7 +5553,8 @@ class MemoryStore:
         audit_total = self.conn.execute(
             "SELECT count(*) FROM audit_log WHERE project_id=?", (project_id,)
         ).fetchone()[0]
-        # Purge audit records only after accounting for one purge audit entry
+        # Purge audit records only after accounting for one purge audit
+        # entry
         # per terminal memory.
         projected_total = audit_total + len(terminal)
         prune_count = max(0, projected_total - policy["audit_keep_entries"])
@@ -5680,7 +5698,7 @@ class MemoryStore:
         }
 
     def export_audit_chain(self, project_id: str) -> dict[str, Any]:
-        """Return a deterministic bundle suitable for offline audit-chain verification."""
+        """Return a bundle for offline audit-chain verification."""
         if not self._row("SELECT id FROM projects WHERE id=?", (project_id,)):
             raise KeyError("project not found")
         checkpoints = [
@@ -5713,8 +5731,9 @@ class MemoryStore:
     ) -> dict[str, Any]:
         """Verify an exported chain without opening its source database.
 
-        Checkpoint digests commit to compacted audit rows that are intentionally no longer
-        present. Supplying a separately recorded head digest anchors the exported chain and
+        Checkpoint digests commit to compacted audit rows that are
+        intentionally absent. A separately recorded head
+        digest anchors the exported chain and
         detects replacement of the bundle as a whole.
         """
         errors: list[str] = []
@@ -5806,7 +5825,7 @@ class MemoryStore:
         }
 
     def maintain_scheduled(self, project_id: str) -> dict[str, Any]:
-        """Run maintenance once when its persisted interval is due; safe for repeated scheduler invocations."""
+        """Run maintenance once when its persisted interval is due."""
         policy = self.get_policy(project_id)
         interval = policy["maintenance_interval_seconds"]
         if not interval:
@@ -5869,7 +5888,7 @@ class MemoryStore:
     def backup_to(
         self, output_path: str | Path, encryption_passphrase: str | None = None
     ) -> dict[str, Any]:
-        """Create one consistent SQLite snapshot using the Online Backup API, including committed WAL data."""
+        """Create a SQLite snapshot, including committed WAL data."""
         destination = Path(output_path).expanduser().resolve()
         if destination == self.path:
             raise ValueError(
@@ -5926,7 +5945,7 @@ class MemoryStore:
         }
 
     def export_project(self, project_id: str) -> list[dict[str, Any]]:
-        """Return a deterministic, portable snapshot without SQLite internals."""
+        """Return a portable snapshot without SQLite internals."""
         project = self._row("SELECT * FROM projects WHERE id=?", (project_id,))
         if not project:
             raise KeyError("project not found")
@@ -6099,7 +6118,7 @@ class MemoryStore:
         return records
 
     def import_project(self, records: list[dict[str, Any]]) -> dict[str, Any]:
-        """Restore one exported project. Existing project IDs are never overwritten."""
+        """Restore a project without overwriting project IDs."""
         if not records or records[0].get("record_type") != "project":
             raise ValueError("export must begin with a project record")
         allowed = {
