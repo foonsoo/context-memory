@@ -138,10 +138,12 @@ Refactor only where the current implementation has measured maintenance cost. Pr
    retrieval thresholds, project-selection policy, and negative-result gate now
    live in a directly tested, database-free retrieval module. Checkpoint test
    result validation and normalization also live in a directly tested pure
-   validation module. `MemoryStore` retains compatibility delegates and
-   constant exports. Continue with bounded Wiki rendering/lint, checkpoint
-   policy, and audit serialization slices. Keep transaction boundaries and SQL
-   in `MemoryStore` until each extraction has direct tests.
+   validation module. Checkpoint trigger selection, fallback priority, and
+   suppression policy are now evaluated from already-observed state in a
+   directly tested database-free module. `MemoryStore` retains compatibility
+   delegates and constant exports. Continue with bounded Wiki rendering/lint
+   and audit serialization slices. Keep transaction boundaries and SQL in
+   `MemoryStore` until each extraction has direct tests.
 5. **Split persistence by bounded domain behind a stable facade.** Separate project/session/evidence, memory/retrieval, investigation, Wiki, checkpoint, and maintenance/backup persistence incrementally. `context_memory.store.MemoryStore` remains the compatibility facade; avoid mixin inheritance and circular service dependencies.
 6. **Decompose CLI and MCP declarations.** Split parser construction from command handlers, replace the single dispatch chain with an explicit command registry, and move MCP schema declarations into readable per-domain definitions. Preserve tool pagination, profiles, validation errors, and zero runtime dependencies.
 7. **Consolidate repeated infrastructure.** Centralize row conversion, existence checks, idempotency hashing, JSON serialization, timestamps, and repeated validation only when the extracted helper keeps error types and transaction semantics unchanged.

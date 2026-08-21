@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from . import retrieval
+from .checkpoint_policy import evaluate_checkpoint_policy
 from .contracts import PROMOTABLE_EVENT_KINDS
 from .embeddings import (
     EmbeddingProvider,
@@ -3217,107 +3218,23 @@ class MemoryStore:
             blockers or [],
             current_repository,
         )
-        unchanged = latest_payload.get("recovery_hash") == recovery_hash
-        signals = {
-            "context_usage": context_usage,
-            "material_change": material_change,
-            "repository_changed": repository_changed,
-            "durable_event_count": durable_event_count,
-            "session_elapsed_seconds": session_elapsed,
-            "checkpoint_age_seconds": checkpoint_age,
-            "recoverable_state_changed": not unchanged,
-        }
-        trigger = None
-        mode = None
-        if context_usage is not None:
-            if context_usage >= policy["checkpoint_hard_usage"]:
-                trigger, mode = "hard_context_usage", "interim"
-            elif (
-                context_usage >= policy["checkpoint_soft_usage"]
-                and material_change
-            ):
-                trigger, mode = (
-                    "soft_context_usage_after_material_change",
-                    "interim",
-                )
-        else:
-            fallback = [
-                (
-                    session_elapsed is not None
-                    and session_elapsed
-                    >= policy["checkpoint_elapsed_seconds"],
-                    "elapsed",
-                ),
-                (
-                    durable_event_count >= policy["checkpoint_event_count"],
-                    "event_count",
-                ),
-                (repository_changed, "repository_change"),
-                (
-                    checkpoint_age is not None
-                    and checkpoint_age >= policy["checkpoint_max_age_seconds"]
-                    and material_change,
-                    "checkpoint_age",
-                ),
-            ]
-            trigger = next(
-                (name for matched, name in fallback if matched), None
-            )
-            if trigger:
-                mode = "interim"
-        suppression = None
-        if trigger and unchanged:
-            suppression = "unchanged_recovery_state"
-        elif (
-            trigger
-            and checkpoint_age is not None
-            and checkpoint_age < policy["checkpoint_cooldown_seconds"]
-        ):
-            suppression = "cooldown"
-        elif (
-            trigger == "soft_context_usage_after_material_change"
-            and latest_payload.get("context_usage") is not None
-        ):
-            rearm_usage = min(
-                1.0,
-                latest_payload["context_usage"]
-                + policy["checkpoint_hysteresis"],
-            )
-            if context_usage < rearm_usage:
-                suppression = "hysteresis"
-        if suppression:
-            trigger, mode = None, None
+        evaluation = evaluate_checkpoint_policy(
+            context_usage=context_usage,
+            material_change=material_change,
+            repository_changed=repository_changed,
+            durable_event_count=durable_event_count,
+            session_elapsed=session_elapsed,
+            checkpoint_age=checkpoint_age,
+            recoverable_state_changed=(
+                latest_payload.get("recovery_hash") != recovery_hash
+            ),
+            latest_context_usage=latest_payload.get("context_usage"),
+            policy=policy,
+        )
         suggested_key = f"checkpoint:{project_id}:{recovery_hash}"
         return {
             "project_id": project_id,
-            "should_checkpoint": trigger is not None,
-            "recommended_mode": mode,
-            "recommended_reason": (
-                "context_budget"
-                if context_usage is not None and trigger
-                else (
-                    "elapsed"
-                    if trigger in {"elapsed", "checkpoint_age"}
-                    else "material_change"
-                    if trigger
-                    else None
-                )
-            ),
-            "trigger": trigger,
-            "suppression": suppression,
-            "signals": signals,
-            "thresholds": {
-                key: policy[key]
-                for key in (
-                    "checkpoint_soft_usage",
-                    "checkpoint_hard_usage",
-                    "checkpoint_elapsed_seconds",
-                    "checkpoint_event_count",
-                    "checkpoint_max_age_seconds",
-                    "checkpoint_cooldown_seconds",
-                    "checkpoint_hysteresis",
-                )
-            },
+            **evaluation,
             "recovery_hash": recovery_hash,
             "suggested_idempotency_key": suggested_key,
             "latest_checkpoint_id": latest["id"] if latest else None,
