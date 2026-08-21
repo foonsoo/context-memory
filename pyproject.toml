@@ -42,6 +42,7 @@ include = [
   "src/context_memory/__init__.py",
   "src/context_memory/audit_anchor.py",
   "src/context_memory/backup_crypto.py",
+  "src/context_memory/cli.py",
   "src/context_memory/contracts.py",
   "src/context_memory/embeddings.py",
   "src/context_memory/hooks.py",
