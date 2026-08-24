@@ -3,8 +3,9 @@ from __future__ import annotations
 import base64
 import json
 import re
-from datetime import datetime, timezone
 from typing import Any
+
+from .clock import utc_now
 
 
 def _crypto() -> tuple[Any, Any, Any]:
@@ -50,7 +51,7 @@ def create_anchor(
     private_key_type, _, _ = _crypto()
     key = private_key_type.from_private_bytes(private_bytes)
     public_bytes = key.public_key().public_bytes_raw()
-    created_at = datetime.now(timezone.utc).isoformat()
+    created_at = utc_now()
     signature = key.sign(_payload(project_id, head_digest, created_at))
     return {
         "format": "context-memory-audit-anchor",

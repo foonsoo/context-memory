@@ -14,6 +14,7 @@ from ..wiki_lint import (
     source_reinspection_finding,
 )
 from ..wiki_rendering import render_wiki_markdown
+from .primitives import row_dict, row_exists
 
 
 class WikiRepository:
@@ -36,20 +37,20 @@ class WikiRepository:
         row = self.connection.execute(
             "SELECT * FROM wiki_pages WHERE id=?", (page_id,)
         ).fetchone()
-        return dict(row) if row else None
+        return row_dict(row)
 
     def get_revision(self, revision_id: str) -> dict[str, Any] | None:
         row = self.connection.execute(
             "SELECT * FROM wiki_revisions WHERE id=?", (revision_id,)
         ).fetchone()
-        return dict(row) if row else None
+        return row_dict(row)
 
     def scope_belongs_to_project(self, scope_id: str, project_id: str) -> bool:
-        row = self.connection.execute(
+        return row_exists(
+            self.connection,
             "SELECT 1 FROM scopes WHERE id=? AND project_id=?",
             (scope_id, project_id),
-        ).fetchone()
-        return row is not None
+        )
 
     @staticmethod
     def insert_page(

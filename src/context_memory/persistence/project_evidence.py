@@ -5,12 +5,14 @@ import json
 import re
 import sqlite3
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
 
+from ..clock import utc_datetime, utc_now
 from ..retrieval import DISCOVERY_PROJECT_CANDIDATE_LIMIT
 from ..serialization import canonical
+from .primitives import row_dict, row_exists
 
 
 class ProjectEvidenceRepository:
@@ -27,17 +29,16 @@ class ProjectEvidenceRepository:
         self.connection: sqlite3.Connection = (
             owner if self.store is None else owner.conn
         )
-        self.now = now or (lambda: datetime.now(timezone.utc).isoformat())
-        self.current_datetime = current_datetime or (
-            lambda: datetime.now(timezone.utc)
-        )
+        self.now = now or utc_now
+        self.current_datetime = current_datetime or utc_datetime
         self.uid = uid or (lambda: str(uuid.uuid4()))
 
     def project_exists(self, project_id: str) -> bool:
-        row = self.connection.execute(
-            "SELECT 1 FROM projects WHERE id=?", (project_id,)
-        ).fetchone()
-        return row is not None
+        return row_exists(
+            self.connection,
+            "SELECT 1 FROM projects WHERE id=?",
+            (project_id,),
+        )
 
     @staticmethod
     def insert_scope(
@@ -57,13 +58,13 @@ class ProjectEvidenceRepository:
             " external_id=?",
             (project_id, client, external_id),
         ).fetchone()
-        return dict(row) if row else None
+        return row_dict(row)
 
     def get_session(self, session_id: str) -> dict[str, Any] | None:
         row = self.connection.execute(
             "SELECT * FROM sessions WHERE id=?", (session_id,)
         ).fetchone()
-        return dict(row) if row else None
+        return row_dict(row)
 
     @staticmethod
     def insert_session(
@@ -107,7 +108,7 @@ class ProjectEvidenceRepository:
         row = self.connection.execute(
             "SELECT * FROM events WHERE id=?", (event_id,)
         ).fetchone()
-        return dict(row) if row else None
+        return row_dict(row)
 
     @staticmethod
     def message_ttl_seconds(
@@ -669,10 +670,11 @@ class ProjectEvidenceRepository:
             "SELECT * FROM projects WHERE slug=?", (slug,)
         )
         if existing:
-            has_root = self.store.conn.execute(
+            has_root = row_exists(
+                self.store.conn,
                 "SELECT 1 FROM scopes WHERE project_id=? AND path IS NOT NULL",
                 (existing["id"],),
-            ).fetchone()
+            )
             if not has_root:
                 scope = self.create_scope(existing["id"], "__root__", path)
                 return {

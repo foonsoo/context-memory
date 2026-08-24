@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from typing import Any, Callable
 
 from ..audit_serialization import build_audit_checkpoint, serialize_audit_chain
+from .primitives import row_dict
 
 
 class MaintenanceRepository:
@@ -30,7 +31,7 @@ class MaintenanceRepository:
             "SELECT * FROM project_policies WHERE project_id=?",
             (project_id,),
         ).fetchone()
-        return dict(row) if row else None
+        return row_dict(row)
 
     def audit_checkpoints(self, project_id: str) -> list[dict[str, Any]]:
         return [

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
@@ -9,12 +8,13 @@ import stat
 import subprocess
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterator
 
 from . import retrieval, wiki_lint
 from .audit_serialization import verify_audit_chain_bundle
+from .clock import utc_now
 from .context_assembly import ContextAssembler
 from .contracts import (
     MEMORY_TYPES,
@@ -38,8 +38,9 @@ from .persistence import (
     TransferRepository,
     WikiRepository,
 )
+from .persistence.primitives import row_dict
 from .retrieval import retrieval_gate, select_project_candidate
-from .serialization import canonical
+from .serialization import canonical, canonical_digest
 from .validation import normalize_test_results
 
 DISCOVERY_MIN_CONFIDENCE = retrieval.DISCOVERY_MIN_CONFIDENCE
@@ -79,7 +80,7 @@ CHECKPOINT_REASONS = {
 
 
 def now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return utc_now(datetime)
 
 
 def current_datetime() -> datetime:
@@ -223,7 +224,7 @@ class MemoryStore:
 
     def _row(self, query: str, args: tuple[Any, ...]) -> dict[str, Any] | None:
         row = self.conn.execute(query, args).fetchone()
-        return dict(row) if row else None
+        return row_dict(row)
 
     def _audit(
         self,
@@ -254,7 +255,7 @@ class MemoryStore:
         )
         if not row:
             return None
-        digest = hashlib.sha256(canonical(request).encode()).hexdigest()
+        digest = canonical_digest(request)
         if digest != row["request_hash"]:
             raise ValueError("idempotency key reused with a different request")
         return json.loads(row["response_json"])
@@ -273,7 +274,7 @@ class MemoryStore:
                 (
                     operation,
                     key,
-                    hashlib.sha256(canonical(request).encode()).hexdigest(),
+                    canonical_digest(request),
                     canonical(response),
                     now(),
                 ),

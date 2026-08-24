@@ -1,6 +1,6 @@
 import unittest
 
-from context_memory.serialization import canonical
+from context_memory.serialization import canonical, canonical_digest
 
 
 class SerializationTests(unittest.TestCase):
@@ -8,4 +8,10 @@ class SerializationTests(unittest.TestCase):
         self.assertEqual(
             canonical({"z": "기억", "a": [2, 1]}),
             '{"a":[2,1],"z":"기억"}',
+        )
+
+    def test_canonical_digest_uses_canonical_json(self):
+        self.assertEqual(
+            canonical_digest({"z": "기억", "a": [2, 1]}),
+            canonical_digest({"a": [2, 1], "z": "기억"}),
         )

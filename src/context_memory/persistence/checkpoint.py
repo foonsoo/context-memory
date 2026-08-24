@@ -8,7 +8,8 @@ from datetime import datetime
 from typing import Any, Callable
 
 from ..checkpoint_policy import evaluate_checkpoint_policy
-from ..serialization import canonical
+from ..serialization import canonical, canonical_digest
+from .primitives import row_dict
 
 CHECKPOINT_MODES = {"interim", "final"}
 CHECKPOINT_REASONS = {
@@ -41,7 +42,7 @@ class CheckpointRepository:
             "SELECT project_id,started_at FROM sessions WHERE id=?",
             (session_id,),
         ).fetchone()
-        return dict(row) if row else None
+        return row_dict(row)
 
     def recovery_hash(
         self,
@@ -69,7 +70,7 @@ class CheckpointRepository:
             "repository": repository,
             "event_hashes": event_hashes,
         }
-        return hashlib.sha256(canonical(state).encode()).hexdigest()
+        return canonical_digest(state)
 
     def latest(self, project_id: str) -> dict[str, Any] | None:
         row = self.connection.execute(
@@ -77,7 +78,7 @@ class CheckpointRepository:
             " ORDER BY event_seq DESC LIMIT 1",
             (project_id,),
         ).fetchone()
-        return dict(row) if row else None
+        return row_dict(row)
 
     def event_cursor(self, project_id: str) -> int | None:
         row = self.connection.execute(

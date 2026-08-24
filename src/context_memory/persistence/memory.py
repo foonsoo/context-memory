@@ -7,6 +7,7 @@ from typing import Any, Callable
 
 from ..contracts import MEMORY_TYPES
 from ..serialization import canonical
+from .primitives import row_dict
 
 STATUSES = {
     "proposed",
@@ -44,14 +45,14 @@ class MemoryRepository:
         row = self.connection.execute(
             "SELECT * FROM memories WHERE id=?", (memory_id,)
         ).fetchone()
-        return dict(row) if row else None
+        return row_dict(row)
 
     def get_proposed(self, memory_id: str) -> dict[str, Any] | None:
         row = self.connection.execute(
             "SELECT * FROM memories WHERE id=? AND status='proposed'",
             (memory_id,),
         ).fetchone()
-        return dict(row) if row else None
+        return row_dict(row)
 
     def provider_name(self) -> str | None:
         if not self.store.embedding_provider:
