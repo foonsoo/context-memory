@@ -42,9 +42,12 @@ If `init --register` reports a client as unavailable, install that client's CLI 
 
 ## Install
 
-### Published package (recommended)
+### Published package (available after the first release)
 
-Initialize the current folder without cloning the repository or managing a virtual environment:
+There is no PyPI release tag yet. Until the first trusted-publishing workflow
+completes, use the source installation above or a full-commit-pinned Git source
+below. After the first release, initialize the current folder without cloning
+the repository or managing a virtual environment:
 
 ```bash
 uvx context-memory init
@@ -75,7 +78,11 @@ uvx --from "$SOURCE" context-memory init \
 
 `context-memory init` rejects unpinned Git package sources. A PyPI package name, or a one-time installed executable with `--launcher installed`, does not use a Git URL at MCP startup.
 
-Until the first PyPI release, use the source install below and replace the default launcher with `--launcher installed`.
+Until the first PyPI release, use the source install above and replace the
+default launcher with `--launcher installed`. Release requirements and the
+TestPyPI-before-PyPI procedure are documented in
+[`docs/RELEASING.md`](docs/RELEASING.md); published changes are tracked in
+[`CHANGELOG.md`](CHANGELOG.md).
 
 ### From source
 

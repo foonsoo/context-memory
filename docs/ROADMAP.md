@@ -22,7 +22,13 @@ External clients may read Confluence or another source with the user's existing 
 
 P0 Decision Brief/evaluation, P1 Research-to-Decision provenance, P2 topic Wiki revisions, P2.5 non-neural retrieval quality/latency, P3 Decision Wiki lint/review, P4 source revalidation, and the P5 navigation/export contracts are implemented. The active runtime was backed up and upgraded through Wiki migrations 13–16 on 2026-08-20. Two live Wiki review cycles produced actionable evidence and corresponding client-neutral fixes for omission noise, generation diagnostics, actionable queue ordering, historical terminal citations, and runtime-restart guidance. A third cycle on a fresh stdio connection verified the complete installed Wiki MCP surface and published the first lint-clean revision through the corrected queue. The first reader-side cycle exposed and resolved ambiguity between browse pages and exportable pages by adding explicit reader/renderability states and skipped-page counts. After deployment, a second cycle verified those fields plus real backlinks and linked Markdown across two published pages without finding additional friction.
 
-The next active priority is P6 behavior-preserving compaction and maintainability. The pre-P6 2026-08-20 baseline had 135 passing tests (one skipped), but `store.py` is 2,652 lines, `MemoryStore` owns 99 methods, several methods exceed 100 lines, and the CLI dispatch remains one 213-line function. This is now a clearer risk than missing core Decision Wiki functionality. P7 records the additional work required only if the local single-user MCP product is offered as a hosted or broadly distributed service. Neural embedding remains an optional evaluated adapter and is not part of the active implementation path because its measured latency cost did not justify making it the default.
+P6 behavior-preserving compaction and maintainability passed its exit gate on
+2026-08-24. The next active priority is P7-1: close the local distribution
+release gap before presenting `uvx context-memory` as an available install.
+Hosted-service work in P7 remains conditional on choosing that product track.
+Neural embedding remains an optional evaluated adapter and is not part of the
+active implementation path because its measured latency cost did not justify
+making it the default.
 
 ### P0 — Decision Brief contract and evaluation
 
@@ -162,7 +168,7 @@ Refactor only where the current implementation has measured maintenance cost. Pr
 
 Keep the current local-first, single-user stdio product and a possible hosted service as explicit product tracks. Do not weaken the local zero-runtime-dependency path to satisfy hosted deployment needs.
 
-1. **Close the release gap.** Reconcile the README's `uvx`/published-package instructions with the current absence of a release tag, add changelog and release policy, build reproducible wheels, test TestPyPI before PyPI, and publish signed/provenance-bearing artifacts only through an explicit release workflow.
+1. **Close the release gap — in progress.** Reconcile the README's `uvx`/published-package instructions with the current absence of a release tag, add changelog and release policy, build reproducible wheels, test TestPyPI before PyPI, and publish signed/provenance-bearing artifacts only through an explicit release workflow.
 2. **Define support and compatibility policy.** State supported Python, SQLite, operating systems, MCP protocol versions, schema migration guarantees, backup compatibility, deprecation windows, and the recovery path for failed upgrades.
 3. **Add user-owned controls.** Provide a minimal review/control surface for onboarding, memory provenance inspection, approve/reject/correct/delete/export, storage status, backup/restore, and complete uninstall. This surface must call the same authoritative service layer and must not become a second writable Wiki store. A separate browsing UI for the local product remains evidence-gated; a hosted service cannot launch without these user controls.
 4. **Design hosted identity and isolation before remote access.** Add authenticated users, tenant/project authorization, session revocation, least-privilege service roles, rate limits, quotas, and tests that prevent cross-tenant search, export, event polling, and backup access. A single bearer token is not sufficient for an untrusted network.
