@@ -1,7 +1,11 @@
 import sqlite3
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 from context_memory.persistence import ProjectEvidenceRepository
+from context_memory.store import MemoryStore
 
 
 class ProjectEvidenceRepositoryTests(unittest.TestCase):
@@ -129,3 +133,28 @@ class ProjectEvidenceRepositoryTests(unittest.TestCase):
         }
         self.repository.insert_event(self.connection, item)
         self.assertEqual(self.repository.get_event("e2")["event_seq"], 2)
+
+    def test_facade_delegates_durable_cursor_operations(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            store = MemoryStore(Path(temporary) / "memory.db")
+            try:
+                project = store.create_project("cursor-repository")
+                store.record_event(project["id"], "message", "Update")
+                with patch.object(
+                    store.project_evidence,
+                    "read_events_since",
+                    wraps=store.project_evidence.read_events_since,
+                ) as read:
+                    result = store.read_events_since(project["id"])
+                read.assert_called_once_with(project["id"], 0, None, None, 100)
+                self.assertEqual(result["events"][0]["content"], "Update")
+
+                delivered = store.poll_events(project["id"], "consumer")
+                receipt = store.acknowledge_events(
+                    project["id"], "consumer", delivered["next_cursor"]
+                )
+                self.assertEqual(
+                    receipt["acknowledged_cursor"], delivered["next_cursor"]
+                )
+            finally:
+                store.close()
