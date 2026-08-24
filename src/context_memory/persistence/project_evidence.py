@@ -5,7 +5,7 @@ import json
 import re
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -352,6 +352,66 @@ class ProjectEvidenceRepository:
                 f"{consumer_id}:{scope_key}:{kinds_json}",
                 "acknowledged",
                 item,
+            )
+        return item
+
+    def record_event(
+        self,
+        project_id: str,
+        kind: str,
+        content: str,
+        session_id: str | None = None,
+        scope_id: str | None = None,
+        source_uri: str | None = None,
+        metadata: dict | None = None,
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        request = locals().copy()
+        request.pop("self")
+        request.pop("idempotency_key")
+        if hit := self.store._idem("record_event", idempotency_key, request):
+            if "event_seq" not in hit:
+                migrated = self.store._row(
+                    "SELECT event_seq FROM events WHERE id=?", (hit["id"],)
+                )
+                if migrated:
+                    hit["event_seq"] = migrated["event_seq"]
+            self.store._add_promotion_advisory(hit)
+            return hit
+        if not content.strip():
+            raise ValueError("event content cannot be empty")
+        with self.store.tx() as cx:
+            stored_metadata = dict(metadata or {})
+            if kind == "message" and "expires_at" not in stored_metadata:
+                ttl_seconds = self.message_ttl_seconds(cx, project_id)
+                if ttl_seconds:
+                    stored_metadata["expires_at"] = (
+                        self.current_datetime()
+                        + timedelta(seconds=ttl_seconds)
+                    ).isoformat()
+            event_seq = self.allocate_event_sequence(cx, project_id)
+            if event_seq is None:
+                raise KeyError("project not found")
+            item = {
+                "id": self.uid(),
+                "project_id": project_id,
+                "scope_id": scope_id,
+                "session_id": session_id,
+                "kind": kind,
+                "content": content,
+                "source_uri": source_uri,
+                "metadata_json": canonical(stored_metadata),
+                "content_hash": hashlib.sha256(content.encode()).hexdigest(),
+                "created_at": self.now(),
+                "event_seq": event_seq,
+            }
+            self.insert_event(cx, item)
+            self.store._audit(
+                cx, project_id, "event", item["id"], "recorded", item
+            )
+            self.store._add_promotion_advisory(item)
+            self.store._save_idem(
+                cx, "record_event", idempotency_key, request, item
             )
         return item
 

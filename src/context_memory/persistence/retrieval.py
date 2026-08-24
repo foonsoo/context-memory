@@ -397,3 +397,152 @@ class RetrievalRepository:
             )
             r["sources"] = sources[r["id"]]
         return rows
+
+    def _aggregate_project_candidates(
+        self, memories: list[dict[str, Any]], current_project_id: str
+    ) -> list[dict[str, Any]]:
+        """Aggregate database relevance and recent project activity."""
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for memory in memories:
+            if (
+                memory["project_id"] != current_project_id
+                and memory["visibility"] == "project"
+            ):
+                grouped.setdefault(memory["project_id"], []).append(memory)
+        candidates = []
+        source_aliases = {
+            (row["kind"], row["normalized"])
+            for row in self.store.conn.execute(
+                "SELECT kind,normalized FROM project_aliases WHERE"
+                " project_id=?",
+                (current_project_id,),
+            )
+        }
+        current = self.current_datetime()
+        for candidate_id, matches in grouped.items():
+            project = self.store._row(
+                "SELECT id,slug,name,description FROM projects WHERE id=?",
+                (candidate_id,),
+            )
+            activity = self.store._row(
+                """SELECT MAX(activity_at) AS activity_at FROM (
+              SELECT MAX(COALESCE(ended_at,started_at)) AS activity_at
+              FROM sessions WHERE project_id=?
+              UNION ALL SELECT MAX(created_at) FROM events WHERE project_id=?
+            )""",
+                (candidate_id, candidate_id),
+            )
+            checkpoint = self.store._row(
+                """SELECT id,title,type,status,updated_at FROM memories
+              WHERE project_id=? AND status IN ('active','disputed')
+              AND type IN ('task','summary')
+              ORDER BY updated_at DESC,id LIMIT 1""",
+                (candidate_id,),
+            )
+            # Hybrid RRF should improve ordering within a project, but
+            # counting
+            # the same hit twice would dilute path/name priors during
+            # project
+            # selection. Collapse the overlapping lexical/vector
+            # contribution.
+            relevance_scores = sorted(
+                (
+                    m["retrieval"]["score"]
+                    - min(
+                        m["retrieval"]["components"].get("lexical_rrf", 0.0),
+                        m["retrieval"]["components"].get("semantic_rrf", 0.0),
+                    )
+                    for m in matches
+                ),
+                reverse=True,
+            )
+            relevance = sum(
+                score / (index + 1)
+                for index, score in enumerate(relevance_scores)
+            )
+            evidence_quality = max(
+                max(
+                    m["retrieval"].get("query_coverage", 0.0),
+                    m["retrieval"].get("semantic_similarity") or 0.0,
+                )
+                for m in matches
+            )
+            activity_at = activity["activity_at"] if activity else None
+            try:
+                age_days = (
+                    max(
+                        0.0,
+                        (
+                            current - datetime.fromisoformat(activity_at)
+                        ).total_seconds()
+                        / 86400,
+                    )
+                    if activity_at
+                    else None
+                )
+            except ValueError:
+                age_days = None
+            recency = (
+                0.0 if age_days is None else 1.0 / (1.0 + age_days / 30.0)
+            )
+            candidate_aliases = {
+                (row["kind"], row["normalized"])
+                for row in self.store.conn.execute(
+                    "SELECT kind,normalized FROM project_aliases WHERE"
+                    " project_id=?",
+                    (candidate_id,),
+                )
+            }
+            shared_aliases = source_aliases & candidate_aliases
+            identity_prior = (
+                0.35
+                if any(kind == "path" for kind, _ in shared_aliases)
+                else (
+                    0.15
+                    if any(kind == "name" for kind, _ in shared_aliases)
+                    else 0.0
+                )
+            )
+            # A single strong lexical/local-vector hit is approximately
+            # 1/61.
+            # Normalize the aggregate before adding bounded identity and
+            # activity
+            # priors so registry size and raw RRF scale do not leak into
+            # confidence.
+            relevance_confidence = (
+                min(1.0, relevance / 0.02) * evidence_quality
+            )
+            confidence = min(
+                1.0,
+                relevance_confidence * 0.75 + identity_prior + recency * 0.05,
+            )
+            reasons = ["memory_relevance"]
+            if identity_prior:
+                reasons.append(
+                    "shared_path" if identity_prior == 0.35 else "shared_name"
+                )
+            if recency:
+                reasons.append("recent_activity")
+            candidates.append(
+                {
+                    **project,
+                    "relevance": relevance,
+                    "matching_memory_count": len(matches),
+                    "top_memory_score": relevance_scores[0],
+                    "recent_activity_at": activity_at,
+                    "recency": recency,
+                    "identity_prior": identity_prior,
+                    "evidence_quality": evidence_quality,
+                    "confidence": confidence,
+                    "confidence_reasons": reasons,
+                    "latest_checkpoint": checkpoint,
+                }
+            )
+        return sorted(
+            candidates,
+            key=lambda item: (
+                -item["confidence"],
+                -item["relevance"],
+                item["id"],
+            ),
+        )

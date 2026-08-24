@@ -9,15 +9,12 @@ import stat
 import subprocess
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
 from . import retrieval, wiki_lint
-from .audit_serialization import (
-    serialize_audit_chain,
-    verify_audit_chain_bundle,
-)
+from .audit_serialization import verify_audit_chain_bundle
 from .context_assembly import ContextAssembler
 from .contracts import (
     MEMORY_TYPES,
@@ -415,53 +412,16 @@ class MemoryStore:
         metadata: dict | None = None,
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
-        request = locals().copy()
-        request.pop("self")
-        request.pop("idempotency_key")
-        if hit := self._idem("record_event", idempotency_key, request):
-            if "event_seq" not in hit:
-                migrated = self._row(
-                    "SELECT event_seq FROM events WHERE id=?", (hit["id"],)
-                )
-                if migrated:
-                    hit["event_seq"] = migrated["event_seq"]
-            self._add_promotion_advisory(hit)
-            return hit
-        if not content.strip():
-            raise ValueError("event content cannot be empty")
-        with self.tx() as cx:
-            stored_metadata = dict(metadata or {})
-            if kind == "message" and "expires_at" not in stored_metadata:
-                ttl_seconds = self.project_evidence.message_ttl_seconds(
-                    cx, project_id
-                )
-                if ttl_seconds:
-                    stored_metadata["expires_at"] = (
-                        current_datetime() + timedelta(seconds=ttl_seconds)
-                    ).isoformat()
-            event_seq = self.project_evidence.allocate_event_sequence(
-                cx, project_id
-            )
-            if event_seq is None:
-                raise KeyError("project not found")
-            item = {
-                "id": uid(),
-                "project_id": project_id,
-                "scope_id": scope_id,
-                "session_id": session_id,
-                "kind": kind,
-                "content": content,
-                "source_uri": source_uri,
-                "metadata_json": canonical(stored_metadata),
-                "content_hash": hashlib.sha256(content.encode()).hexdigest(),
-                "created_at": now(),
-                "event_seq": event_seq,
-            }
-            self.project_evidence.insert_event(cx, item)
-            self._audit(cx, project_id, "event", item["id"], "recorded", item)
-            self._add_promotion_advisory(item)
-            self._save_idem(cx, "record_event", idempotency_key, request, item)
-        return item
+        return self.project_evidence.record_event(
+            project_id,
+            kind,
+            content,
+            session_id,
+            scope_id,
+            source_uri,
+            metadata,
+            idempotency_key,
+        )
 
     def create_investigation(
         self,
@@ -730,23 +690,15 @@ class MemoryStore:
         blockers: list[str],
         repository: dict[str, Any] | None,
     ) -> str:
-        event_hashes = [
-            row[0]
-            for row in self.conn.execute(
-                "SELECT content_hash FROM events WHERE project_id=? AND"
-                " event_seq<=? AND kind<>'checkpoint' ORDER BY event_seq",
-                (project_id, cursor),
-            )
-        ]
-        state = {
-            "goal": goal.strip(),
-            "completed": [item.strip() for item in completed],
-            "next_step": next_step.strip() if next_step else None,
-            "blockers": [item.strip() for item in blockers],
-            "repository": repository,
-            "event_hashes": event_hashes,
-        }
-        return hashlib.sha256(canonical(state).encode()).hexdigest()
+        return self.checkpoints.recovery_hash(
+            project_id,
+            cursor,
+            goal,
+            completed,
+            next_step,
+            blockers,
+            repository,
+        )
 
     @staticmethod
     def _normalize_test_results(
@@ -963,150 +915,8 @@ class MemoryStore:
     def _aggregate_project_candidates(
         self, memories: list[dict[str, Any]], current_project_id: str
     ) -> list[dict[str, Any]]:
-        """Aggregate database relevance and recent project activity."""
-        grouped: dict[str, list[dict[str, Any]]] = {}
-        for memory in memories:
-            if (
-                memory["project_id"] != current_project_id
-                and memory["visibility"] == "project"
-            ):
-                grouped.setdefault(memory["project_id"], []).append(memory)
-        candidates = []
-        source_aliases = {
-            (row["kind"], row["normalized"])
-            for row in self.conn.execute(
-                "SELECT kind,normalized FROM project_aliases WHERE"
-                " project_id=?",
-                (current_project_id,),
-            )
-        }
-        current = current_datetime()
-        for candidate_id, matches in grouped.items():
-            project = self._row(
-                "SELECT id,slug,name,description FROM projects WHERE id=?",
-                (candidate_id,),
-            )
-            activity = self._row(
-                """SELECT MAX(activity_at) AS activity_at FROM (
-              SELECT MAX(COALESCE(ended_at,started_at)) AS activity_at
-              FROM sessions WHERE project_id=?
-              UNION ALL SELECT MAX(created_at) FROM events WHERE project_id=?
-            )""",
-                (candidate_id, candidate_id),
-            )
-            checkpoint = self._row(
-                """SELECT id,title,type,status,updated_at FROM memories
-              WHERE project_id=? AND status IN ('active','disputed')
-              AND type IN ('task','summary')
-              ORDER BY updated_at DESC,id LIMIT 1""",
-                (candidate_id,),
-            )
-            # Hybrid RRF should improve ordering within a project, but
-            # counting
-            # the same hit twice would dilute path/name priors during
-            # project
-            # selection. Collapse the overlapping lexical/vector
-            # contribution.
-            relevance_scores = sorted(
-                (
-                    m["retrieval"]["score"]
-                    - min(
-                        m["retrieval"]["components"].get("lexical_rrf", 0.0),
-                        m["retrieval"]["components"].get("semantic_rrf", 0.0),
-                    )
-                    for m in matches
-                ),
-                reverse=True,
-            )
-            relevance = sum(
-                score / (index + 1)
-                for index, score in enumerate(relevance_scores)
-            )
-            evidence_quality = max(
-                max(
-                    m["retrieval"].get("query_coverage", 0.0),
-                    m["retrieval"].get("semantic_similarity") or 0.0,
-                )
-                for m in matches
-            )
-            activity_at = activity["activity_at"] if activity else None
-            try:
-                age_days = (
-                    max(
-                        0.0,
-                        (
-                            current - datetime.fromisoformat(activity_at)
-                        ).total_seconds()
-                        / 86400,
-                    )
-                    if activity_at
-                    else None
-                )
-            except ValueError:
-                age_days = None
-            recency = (
-                0.0 if age_days is None else 1.0 / (1.0 + age_days / 30.0)
-            )
-            candidate_aliases = {
-                (row["kind"], row["normalized"])
-                for row in self.conn.execute(
-                    "SELECT kind,normalized FROM project_aliases WHERE"
-                    " project_id=?",
-                    (candidate_id,),
-                )
-            }
-            shared_aliases = source_aliases & candidate_aliases
-            identity_prior = (
-                0.35
-                if any(kind == "path" for kind, _ in shared_aliases)
-                else (
-                    0.15
-                    if any(kind == "name" for kind, _ in shared_aliases)
-                    else 0.0
-                )
-            )
-            # A single strong lexical/local-vector hit is approximately
-            # 1/61.
-            # Normalize the aggregate before adding bounded identity and
-            # activity
-            # priors so registry size and raw RRF scale do not leak into
-            # confidence.
-            relevance_confidence = (
-                min(1.0, relevance / 0.02) * evidence_quality
-            )
-            confidence = min(
-                1.0,
-                relevance_confidence * 0.75 + identity_prior + recency * 0.05,
-            )
-            reasons = ["memory_relevance"]
-            if identity_prior:
-                reasons.append(
-                    "shared_path" if identity_prior == 0.35 else "shared_name"
-                )
-            if recency:
-                reasons.append("recent_activity")
-            candidates.append(
-                {
-                    **project,
-                    "relevance": relevance,
-                    "matching_memory_count": len(matches),
-                    "top_memory_score": relevance_scores[0],
-                    "recent_activity_at": activity_at,
-                    "recency": recency,
-                    "identity_prior": identity_prior,
-                    "evidence_quality": evidence_quality,
-                    "confidence": confidence,
-                    "confidence_reasons": reasons,
-                    "latest_checkpoint": checkpoint,
-                }
-            )
-        return sorted(
-            candidates,
-            key=lambda item: (
-                -item["confidence"],
-                -item["relevance"],
-                item["id"],
-            ),
+        return self.retrieval_repository._aggregate_project_candidates(
+            memories, current_project_id
         )
 
     @staticmethod
@@ -1245,12 +1055,7 @@ class MemoryStore:
         return self.maintenance.status(project_id)
 
     def export_audit_chain(self, project_id: str) -> dict[str, Any]:
-        """Return a bundle for offline audit-chain verification."""
-        if not self._row("SELECT id FROM projects WHERE id=?", (project_id,)):
-            raise KeyError("project not found")
-        checkpoints = self.maintenance.audit_checkpoints(project_id)
-        entries = self.maintenance.audit_entries(project_id)
-        return serialize_audit_chain(project_id, checkpoints, entries)
+        return self.maintenance.export_audit_chain(project_id)
 
     @staticmethod
     def verify_audit_chain(

@@ -6,7 +6,7 @@ import sqlite3
 from datetime import datetime, timedelta
 from typing import Any, Callable
 
-from ..audit_serialization import build_audit_checkpoint
+from ..audit_serialization import build_audit_checkpoint, serialize_audit_chain
 
 
 class MaintenanceRepository:
@@ -50,6 +50,19 @@ class MaintenanceRepository:
                 (project_id,),
             )
         ]
+
+    def export_audit_chain(self, project_id: str) -> dict[str, Any]:
+        """Return a bundle for offline audit-chain verification."""
+        row = self.connection.execute(
+            "SELECT id FROM projects WHERE id=?", (project_id,)
+        ).fetchone()
+        if not row:
+            raise KeyError("project not found")
+        return serialize_audit_chain(
+            project_id,
+            self.audit_checkpoints(project_id),
+            self.audit_entries(project_id),
+        )
 
     def maintain(self, project_id: str, apply: bool = False) -> dict[str, Any]:
         """Bound state while preserving events and audit detail."""

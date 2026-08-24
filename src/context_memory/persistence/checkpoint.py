@@ -43,6 +43,34 @@ class CheckpointRepository:
         ).fetchone()
         return dict(row) if row else None
 
+    def recovery_hash(
+        self,
+        project_id: str,
+        cursor: int,
+        goal: str,
+        completed: list[str],
+        next_step: str | None,
+        blockers: list[str],
+        repository: dict[str, Any] | None,
+    ) -> str:
+        event_hashes = [
+            row[0]
+            for row in self.connection.execute(
+                "SELECT content_hash FROM events WHERE project_id=? AND"
+                " event_seq<=? AND kind<>'checkpoint' ORDER BY event_seq",
+                (project_id, cursor),
+            )
+        ]
+        state = {
+            "goal": goal.strip(),
+            "completed": [item.strip() for item in completed],
+            "next_step": next_step.strip() if next_step else None,
+            "blockers": [item.strip() for item in blockers],
+            "repository": repository,
+            "event_hashes": event_hashes,
+        }
+        return hashlib.sha256(canonical(state).encode()).hexdigest()
+
     def latest(self, project_id: str) -> dict[str, Any] | None:
         row = self.connection.execute(
             "SELECT * FROM events WHERE project_id=? AND kind='checkpoint'"
