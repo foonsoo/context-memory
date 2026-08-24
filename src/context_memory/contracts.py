@@ -10,6 +10,31 @@ PROMOTABLE_EVENT_KINDS = (
     "summary",
 )
 
+MEMORY_TYPES = {
+    "fact",
+    "decision",
+    "preference",
+    "constraint",
+    "procedure",
+    "summary",
+    "task",
+    "other",
+}
+INVESTIGATION_ROLES = {
+    "evidence",
+    "inference",
+    "action",
+    "decision",
+    "rationale",
+    "outcome",
+}
+OUTCOME_EFFECTS = {"confirms", "weakens", "disputes", "supersedes"}
+SOURCE_REINSPECTION_REASONS = {
+    "old",
+    "unavailable",
+    "newer_version_known",
+}
+
 
 def promotable_kinds_text() -> str:
     return ", ".join(f"`{kind}`" for kind in PROMOTABLE_EVENT_KINDS)
