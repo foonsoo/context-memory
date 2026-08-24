@@ -27,6 +27,7 @@ from .embeddings import (
     LocalHashEmbedding,
     SentenceTransformerEmbedding,
 )
+from .persistence import ProjectEvidenceRepository
 from .retrieval import (
     DISCOVERY_PROJECT_CANDIDATE_LIMIT,
     LOCAL_HASH_FALLBACK_CANDIDATE_LIMIT,
@@ -99,6 +100,11 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def current_datetime() -> datetime:
+    """Return time through the patchable timestamp contract."""
+    return datetime.fromisoformat(now())
+
+
 def uid() -> str:
     return str(uuid.uuid4())
 
@@ -115,6 +121,7 @@ class MemoryStore:
             self.path, isolation_level=None, timeout=10
         )
         self.conn.row_factory = sqlite3.Row
+        self.project_evidence = ProjectEvidenceRepository(self.conn)
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA synchronous=FULL")
@@ -315,10 +322,7 @@ class MemoryStore:
         return item
 
     def list_projects(self) -> list[dict[str, Any]]:
-        return [
-            dict(r)
-            for r in self.conn.execute("SELECT * FROM projects ORDER BY slug")
-        ]
+        return self.project_evidence.list_projects()
 
     @staticmethod
     def _normalize_project_alias(kind: str, value: str) -> str:
@@ -381,14 +385,7 @@ class MemoryStore:
         return item
 
     def list_project_aliases(self, project_id: str) -> list[dict[str, Any]]:
-        return [
-            dict(row)
-            for row in self.conn.execute(
-                "SELECT * FROM project_aliases WHERE project_id=? ORDER BY"
-                " kind,normalized",
-                (project_id,),
-            )
-        ]
+        return self.project_evidence.list_project_aliases(project_id)
 
     def _workspace_identities(self, path: str) -> dict[str, str]:
         return {"path": path, "name": Path(path).name}
@@ -932,7 +929,7 @@ class MemoryStore:
                 ).fetchone()
                 if policy and policy["message_ttl_seconds"]:
                     stored_metadata["expires_at"] = (
-                        datetime.now(timezone.utc)
+                        current_datetime()
                         + timedelta(seconds=policy["message_ttl_seconds"])
                     ).isoformat()
             cursor = cx.execute(
@@ -2038,7 +2035,7 @@ class MemoryStore:
                 )
             )
 
-        inspected_at = datetime.now(timezone.utc)
+        inspected_at = current_datetime()
         source_versions = self.conn.execute(
             """SELECT DISTINCT c.memory_id,s.id AS source_analysis_id,
           s.source_type,s.stable_source_id,s.canonical_uri,s.source_version,
@@ -2940,7 +2937,7 @@ class MemoryStore:
             " AND kind<>'checkpoint'",
             (project_id, baseline_cursor),
         ).fetchone()[0]
-        current_time = datetime.now(timezone.utc)
+        current_time = current_datetime()
         checkpoint_age = (
             int(
                 (
@@ -3121,7 +3118,7 @@ class MemoryStore:
         rows = rows[:limit]
         page_cursor = rows[-1]["event_seq"] if has_more and rows else snapshot
         visible = []
-        current = datetime.now(timezone.utc)
+        current = current_datetime()
         for row in rows:
             row["metadata"] = json.loads(row.pop("metadata_json"))
             expires_at = (
@@ -4002,7 +3999,7 @@ class MemoryStore:
             ):
                 item = dict(source)
                 sources[item.pop("memory_id")].append(item)
-        current = datetime.now(timezone.utc)
+        current = current_datetime()
         for memory_id, row in candidates.items():
             confirmed = row.get("last_confirmed_at") or row.get("updated_at")
             try:
@@ -4099,7 +4096,7 @@ class MemoryStore:
                 (current_project_id,),
             )
         }
-        current = datetime.now(timezone.utc)
+        current = current_datetime()
         for candidate_id, matches in grouped.items():
             project = self._row(
                 "SELECT id,slug,name,description FROM projects WHERE id=?",
@@ -4705,7 +4702,7 @@ class MemoryStore:
             for role, terms in intent_terms.items()
             if question_tokens & terms
         }
-        current = datetime.now(timezone.utc)
+        current = current_datetime()
         ranked: list[dict[str, Any]] = []
         for base_rank, memory in enumerate(memories, 1):
             tags = {
@@ -5215,7 +5212,7 @@ class MemoryStore:
         }
 
     def get_source(self, event_id: str) -> dict[str, Any]:
-        item = self._row("SELECT * FROM events WHERE id=?", (event_id,))
+        item = self.project_evidence.get_event(event_id)
         if not item:
             raise KeyError("source event not found")
         return item
@@ -5224,8 +5221,7 @@ class MemoryStore:
         """Bound state while preserving events and audit detail."""
         policy = self.get_policy(project_id)
         cutoff = (
-            datetime.now(timezone.utc)
-            - timedelta(days=policy["terminal_memory_days"])
+            current_datetime() - timedelta(days=policy["terminal_memory_days"])
         ).isoformat()
         terminal = [
             dict(row)
@@ -6146,11 +6142,4 @@ class MemoryStore:
         }
 
     def audit(self, entity_type: str, entity_id: str) -> list[dict[str, Any]]:
-        return [
-            dict(r)
-            for r in self.conn.execute(
-                "SELECT * FROM audit_log WHERE entity_type=? AND entity_id=?"
-                " ORDER BY seq",
-                (entity_type, entity_id),
-            )
-        ]
+        return self.project_evidence.audit_entries(entity_type, entity_id)

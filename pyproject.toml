@@ -49,6 +49,8 @@ include = [
   "src/context_memory/embeddings.py",
   "src/context_memory/hooks.py",
   "src/context_memory/mcp.py",
+  "src/context_memory/persistence/__init__.py",
+  "src/context_memory/persistence/project_evidence.py",
   "src/context_memory/retrieval.py",
   "src/context_memory/serialization.py",
   "src/context_memory/store.py",
