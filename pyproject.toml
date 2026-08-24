@@ -64,6 +64,7 @@ include = [
   "src/context_memory/persistence/investigation.py",
   "src/context_memory/persistence/maintenance.py",
   "src/context_memory/persistence/memory.py",
+  "src/context_memory/persistence/operations.py",
   "src/context_memory/persistence/project_evidence.py",
   "src/context_memory/persistence/retrieval.py",
   "src/context_memory/persistence/review.py",

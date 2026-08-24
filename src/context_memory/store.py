@@ -34,6 +34,7 @@ from .persistence import (
     InvestigationRepository,
     MaintenanceRepository,
     MemoryRepository,
+    OperationsRepository,
     ProjectEvidenceRepository,
     RetrievalRepository,
     ReviewRepository,
@@ -125,6 +126,7 @@ class MemoryStore:
             self, now, uid, current_datetime
         )
         self.memories = MemoryRepository(self, now, uid)
+        self.operations = OperationsRepository(self, now, uid)
         self.wiki = WikiRepository(self, now, uid, current_datetime)
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.execute("PRAGMA journal_mode=WAL")
@@ -1269,61 +1271,7 @@ class MemoryStore:
     def backup_to(
         self, output_path: str | Path, encryption_passphrase: str | None = None
     ) -> dict[str, Any]:
-        """Create a SQLite snapshot, including committed WAL data."""
-        destination = Path(output_path).expanduser().resolve()
-        if destination == self.path:
-            raise ValueError(
-                "backup output must differ from the live database"
-            )
-        destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        temporary = destination.with_name(f".{destination.name}.{uid()}.tmp")
-        target = sqlite3.connect(temporary)
-        try:
-            self.conn.backup(target)
-            integrity = target.execute("PRAGMA integrity_check").fetchone()[0]
-            if integrity != "ok":
-                raise RuntimeError(
-                    f"backup integrity check failed: {integrity}"
-                )
-        except Exception:
-            target.close()
-            temporary.unlink(missing_ok=True)
-            raise
-        else:
-            target.close()
-        os.chmod(temporary, 0o600)
-        encryption = {"encrypted": False}
-        if encryption_passphrase is not None:
-            from .backup_crypto import encrypt_file
-
-            plaintext = temporary
-            encrypted = temporary.with_suffix(temporary.suffix + ".enc")
-            try:
-                encryption = encrypt_file(
-                    plaintext, encrypted, encryption_passphrase
-                )
-                os.chmod(encrypted, 0o600)
-                temporary = encrypted
-            except Exception:
-                encrypted.unlink(missing_ok=True)
-                raise
-            finally:
-                plaintext.unlink(missing_ok=True)
-        os.replace(temporary, destination)
-        digest = hashlib.sha256()
-        with destination.open("rb") as stream:
-            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-                digest.update(chunk)
-        return {
-            "ok": True,
-            "source": str(self.path),
-            "output": str(destination),
-            "bytes": destination.stat().st_size,
-            "sha256": digest.hexdigest(),
-            "created_at": now(),
-            "integrity": "ok",
-            **encryption,
-        }
+        return self.operations.backup_to(output_path, encryption_passphrase)
 
     def export_project(self, project_id: str) -> list[dict[str, Any]]:
         return self.transfer.export_project(project_id)
@@ -1332,60 +1280,7 @@ class MemoryStore:
         return self.transfer.import_project(records)
 
     def rebuild_fts(self, project_id: str | None = None) -> dict[str, Any]:
-        if project_id and not self._row(
-            "SELECT id FROM projects WHERE id=?", (project_id,)
-        ):
-            raise KeyError("project not found")
-        condition = " WHERE project_id=?" if project_id else ""
-        args = (project_id,) if project_id else ()
-        with self.tx() as cx:
-            if project_id:
-                ids = [
-                    row[0]
-                    for row in cx.execute(
-                        "SELECT id FROM memories WHERE project_id=?", args
-                    )
-                ]
-                if ids:
-                    cx.execute(
-                        "DELETE FROM memories_fts WHERE memory_id IN ("
-                        + ",".join("?" for _ in ids)
-                        + ")",
-                        ids,
-                    )
-            else:
-                cx.execute("DELETE FROM memories_fts")
-            rows = list(
-                cx.execute(
-                    "SELECT id,title,content,tags_json FROM memories"
-                    + condition,
-                    args,
-                )
-            )
-            for row in rows:
-                cx.execute(
-                    "INSERT INTO memories_fts(memory_id,title,content,tags)"
-                    " VALUES(?,?,?,?)",
-                    (
-                        row["id"],
-                        row["title"],
-                        row["content"],
-                        " ".join(json.loads(row["tags_json"])),
-                    ),
-                )
-            if self.embedding_provider:
-                memories = list(
-                    cx.execute("SELECT * FROM memories" + condition, args)
-                )
-                for memory in memories:
-                    self._index_embedding(cx, dict(memory))
-        return {
-            "ok": True,
-            "project_id": project_id,
-            "indexed_memories": len(rows),
-            "embedding_provider": self._provider_name(),
-            "embedded_memories": len(rows) if self.embedding_provider else 0,
-        }
+        return self.operations.rebuild_fts(project_id)
 
     def audit(self, entity_type: str, entity_id: str) -> list[dict[str, Any]]:
         return self.project_evidence.audit_entries(entity_type, entity_id)

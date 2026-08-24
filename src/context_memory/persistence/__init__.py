@@ -4,6 +4,7 @@ from .checkpoint import CheckpointRepository
 from .investigation import InvestigationRepository
 from .maintenance import MaintenanceRepository
 from .memory import MemoryRepository
+from .operations import OperationsRepository
 from .project_evidence import ProjectEvidenceRepository
 from .retrieval import RetrievalRepository
 from .review import ReviewRepository
@@ -15,6 +16,7 @@ __all__ = [
     "InvestigationRepository",
     "MaintenanceRepository",
     "MemoryRepository",
+    "OperationsRepository",
     "ProjectEvidenceRepository",
     "RetrievalRepository",
     "ReviewRepository",
