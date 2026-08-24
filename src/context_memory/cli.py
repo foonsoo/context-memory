@@ -384,7 +384,7 @@ def doctor(store: MemoryStore) -> dict[str, object]:
     }
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="context-memory", description="Local-first context memory"
     )
@@ -664,6 +664,11 @@ def main() -> None:
     )
     migrate.add_argument("source")
     migrate.add_argument("--replace", action="store_true")
+    return p
+
+
+def main() -> None:
+    p = build_parser()
     args = p.parse_args()
     if args.command == "migrate-db":
         source = Path(args.source).expanduser().resolve()
