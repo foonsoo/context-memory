@@ -41,6 +41,7 @@ line-length = 79
 include = [
   "src/context_memory/__init__.py",
   "src/context_memory/audit_anchor.py",
+  "src/context_memory/audit_serialization.py",
   "src/context_memory/backup_crypto.py",
   "src/context_memory/checkpoint_policy.py",
   "src/context_memory/cli.py",
