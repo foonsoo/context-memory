@@ -34,5 +34,20 @@ class RetrievalRepositoryTests(unittest.TestCase):
                 )
                 self.assertEqual(results[0]["title"], "Bounded retrieval")
                 self.assertIn("retrieval", results[0])
+
+                with patch.object(
+                    store.context_assembler,
+                    "get_context",
+                    wraps=store.context_assembler.get_context,
+                ) as get_context:
+                    context = store.get_context(
+                        project["id"],
+                        "bounded retrieval",
+                        response_format="compact",
+                    )
+                self.assertEqual(get_context.call_count, 1)
+                self.assertEqual(
+                    context["items"][0]["title"], "Bounded retrieval"
+                )
             finally:
                 store.close()

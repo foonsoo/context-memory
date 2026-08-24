@@ -46,6 +46,7 @@ include = [
   "src/context_memory/checkpoint_policy.py",
   "src/context_memory/cli.py",
   "src/context_memory/contracts.py",
+  "src/context_memory/context_assembly.py",
   "src/context_memory/embeddings.py",
   "src/context_memory/hooks.py",
   "src/context_memory/mcp.py",
