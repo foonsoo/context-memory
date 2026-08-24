@@ -96,7 +96,7 @@ python3.14 -m venv .venv  # recommended; Python 3.11+ is supported
 
 The default database is `~/.local/share/context-memory/memory.db`. Pass `--db .context-memory/memory.db` if repository-local isolation is preferred and add `.context-memory/` to the consumer repository's `.gitignore`.
 
-For a previous live WAL database, use the integrity-checked `migrate-db` flow in [docs/CLIENTS.md](docs/CLIENTS.md); do not copy only the main SQLite file.
+For a previous live WAL database, use the integrity-checked `migrate-db` flow in [docs/CLIENTS.md](docs/CLIENTS.md); do not copy only the main SQLite file. The supported Python/SQLite/OS matrix, public-contract guarantees, deprecation window, and failed-upgrade recovery procedure are defined in [docs/SUPPORT.md](docs/SUPPORT.md).
 
 Run without installing, if preferred:
 

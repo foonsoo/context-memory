@@ -15,6 +15,8 @@ uses semantic versioning for the public Python package and MCP/CLI contracts.
 - An explicit trusted-publishing workflow that verifies a release tag, tests
   the built distributions on TestPyPI, and can then publish the same artifacts
   to PyPI with build provenance.
+- A support and compatibility policy covering runtimes, MCP/CLI contracts,
+  migrations, backups, deprecations, and failed-upgrade recovery.
 
 ### Changed
 

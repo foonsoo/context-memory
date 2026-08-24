@@ -169,7 +169,12 @@ Refactor only where the current implementation has measured maintenance cost. Pr
 Keep the current local-first, single-user stdio product and a possible hosted service as explicit product tracks. Do not weaken the local zero-runtime-dependency path to satisfy hosted deployment needs.
 
 1. **Close the release gap — in progress.** Reconcile the README's `uvx`/published-package instructions with the current absence of a release tag, add changelog and release policy, build reproducible wheels, test TestPyPI before PyPI, and publish signed/provenance-bearing artifacts only through an explicit release workflow.
-2. **Define support and compatibility policy.** State supported Python, SQLite, operating systems, MCP protocol versions, schema migration guarantees, backup compatibility, deprecation windows, and the recovery path for failed upgrades.
+2. **Define support and compatibility policy — completed.** The local release
+   policy now states the tested Python and OS tiers, capability-based SQLite
+   requirement, MCP protocol/SDK baseline, compatibility fixture guarantees,
+   pre-1.0 deprecation rules, forward-only migration contract, backup/restore
+   compatibility, and a restore-forward failed-upgrade procedure. Hosted and
+   multi-user service support remains explicitly outside this release line.
 3. **Add user-owned controls.** Provide a minimal review/control surface for onboarding, memory provenance inspection, approve/reject/correct/delete/export, storage status, backup/restore, and complete uninstall. This surface must call the same authoritative service layer and must not become a second writable Wiki store. A separate browsing UI for the local product remains evidence-gated; a hosted service cannot launch without these user controls.
 4. **Design hosted identity and isolation before remote access.** Add authenticated users, tenant/project authorization, session revocation, least-privilege service roles, rate limits, quotas, and tests that prevent cross-tenant search, export, event polling, and backup access. A single bearer token is not sufficient for an untrusted network.
 5. **Add transport and API production controls.** Put TLS and trusted-proxy handling at the deployment boundary; define request/body/time limits, pagination and cancellation, stable error codes, idempotency retention, CORS policy where applicable, and backward-compatible API versioning.

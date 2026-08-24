@@ -10,11 +10,15 @@ The package uses semantic versioning. A release candidate must preserve the
 documented compatibility baseline unless its changelog explicitly identifies a
 breaking change. Database migrations are forward-only; release verification
 must include backup/restore guidance and the installed-wheel restart test.
+The normative runtime, MCP/CLI, migration, backup, deprecation, and recovery
+guarantees are in [SUPPORT.md](SUPPORT.md).
 
 ## Release procedure
 
 1. Start from a clean `main` that has passed CI. Update `CHANGELOG.md`, set the
-   version in `pyproject.toml`, and run the complete local verification matrix.
+   version in `pyproject.toml`, confirm that `SUPPORT.md` still matches the CI
+   matrix and protocol declaration, and run the complete local verification
+   matrix.
 2. Build twice with the same `SOURCE_DATE_EPOCH` and verify that the wheel and
    source distribution hashes match. Inspect both archives before tagging.
 3. Create an annotated tag exactly matching the package version, such as
