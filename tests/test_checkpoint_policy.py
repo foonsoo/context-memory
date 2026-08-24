@@ -1,7 +1,6 @@
-import pytest
+import unittest
 
 from context_memory.checkpoint_policy import evaluate_checkpoint_policy
-
 
 POLICY = {
     "checkpoint_soft_usage": 0.6,
@@ -30,58 +29,62 @@ def evaluate(**overrides):
     return evaluate_checkpoint_policy(**arguments)
 
 
-def test_checkpoint_policy_context_thresholds():
-    assert not evaluate(context_usage=0.6)["should_checkpoint"]
-    soft = evaluate(context_usage=0.6, material_change=True)
-    assert soft["trigger"] == "soft_context_usage_after_material_change"
-    assert soft["recommended_reason"] == "context_budget"
-    assert evaluate(context_usage=0.8)["trigger"] == "hard_context_usage"
+class CheckpointPolicyTests(unittest.TestCase):
+    def test_context_thresholds(self):
+        self.assertFalse(evaluate(context_usage=0.6)["should_checkpoint"])
+        soft = evaluate(context_usage=0.6, material_change=True)
+        self.assertEqual(
+            soft["trigger"], "soft_context_usage_after_material_change"
+        )
+        self.assertEqual(soft["recommended_reason"], "context_budget")
+        self.assertEqual(
+            evaluate(context_usage=0.8)["trigger"], "hard_context_usage"
+        )
 
+    def test_fallback_priority(self):
+        cases = [
+            ({"session_elapsed": 1800}, "elapsed", "elapsed"),
+            ({"durable_event_count": 10}, "event_count", "material_change"),
+            (
+                {"repository_changed": True},
+                "repository_change",
+                "material_change",
+            ),
+            (
+                {"checkpoint_age": 3600, "material_change": True},
+                "checkpoint_age",
+                "elapsed",
+            ),
+        ]
+        for overrides, trigger, reason in cases:
+            with self.subTest(overrides=overrides):
+                result = evaluate(**overrides)
+                self.assertEqual(result["trigger"], trigger)
+                self.assertEqual(result["recommended_reason"], reason)
 
-@pytest.mark.parametrize(
-    ("overrides", "trigger", "reason"),
-    [
-        ({"session_elapsed": 1800}, "elapsed", "elapsed"),
-        ({"durable_event_count": 10}, "event_count", "material_change"),
-        ({"repository_changed": True}, "repository_change", "material_change"),
-        (
-            {"checkpoint_age": 3600, "material_change": True},
-            "checkpoint_age",
-            "elapsed",
-        ),
-    ],
-)
-def test_checkpoint_policy_fallback_priority(overrides, trigger, reason):
-    result = evaluate(**overrides)
-    assert result["trigger"] == trigger
-    assert result["recommended_reason"] == reason
+    def test_suppression(self):
+        cases = [
+            (
+                {"context_usage": 0.8, "recoverable_state_changed": False},
+                "unchanged_recovery_state",
+            ),
+            ({"context_usage": 0.8, "checkpoint_age": 299}, "cooldown"),
+            (
+                {
+                    "context_usage": 0.64,
+                    "material_change": True,
+                    "latest_context_usage": 0.6,
+                },
+                "hysteresis",
+            ),
+        ]
+        for overrides, suppression in cases:
+            with self.subTest(overrides=overrides):
+                result = evaluate(**overrides)
+                self.assertFalse(result["should_checkpoint"])
+                self.assertIsNone(result["trigger"])
+                self.assertEqual(result["suppression"], suppression)
 
-
-@pytest.mark.parametrize(
-    ("overrides", "suppression"),
-    [
-        (
-            {"context_usage": 0.8, "recoverable_state_changed": False},
-            "unchanged_recovery_state",
-        ),
-        ({"context_usage": 0.8, "checkpoint_age": 299}, "cooldown"),
-        (
-            {
-                "context_usage": 0.64,
-                "material_change": True,
-                "latest_context_usage": 0.6,
-            },
-            "hysteresis",
-        ),
-    ],
-)
-def test_checkpoint_policy_suppression(overrides, suppression):
-    result = evaluate(**overrides)
-    assert not result["should_checkpoint"]
-    assert result["trigger"] is None
-    assert result["suppression"] == suppression
-
-
-def test_checkpoint_policy_rejects_invalid_usage():
-    with pytest.raises(ValueError, match="between 0 and 1"):
-        evaluate(context_usage=1.01)
+    def test_rejects_invalid_usage(self):
+        with self.assertRaisesRegex(ValueError, "between 0 and 1"):
+            evaluate(context_usage=1.01)
