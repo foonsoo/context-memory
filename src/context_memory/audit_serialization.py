@@ -2,11 +2,41 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from typing import Any
 
+from .serialization import canonical
+
 AUDIT_CHAIN_FORMAT = "context-memory-audit-chain"
 AUDIT_CHAIN_VERSION = 1
+
+
+def build_audit_checkpoint(
+    project_id: str,
+    rows: list[dict[str, Any]],
+    previous_digest: str | None,
+    checkpoint_id: str,
+    created_at: str,
+) -> dict[str, Any]:
+    """Build a digest checkpoint from already-loaded contiguous rows."""
+    if not rows:
+        raise ValueError("audit checkpoint requires at least one row")
+    payload = (
+        (previous_digest or "")
+        + "\n"
+        + "\n".join(canonical(row) for row in rows)
+    )
+    return {
+        "id": checkpoint_id,
+        "project_id": project_id,
+        "from_seq": rows[0]["seq"],
+        "through_seq": rows[-1]["seq"],
+        "entry_count": len(rows),
+        "previous_digest": previous_digest,
+        "digest": hashlib.sha256(payload.encode()).hexdigest(),
+        "created_at": created_at,
+    }
 
 
 def serialize_audit_chain(

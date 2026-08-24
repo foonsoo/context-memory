@@ -16,6 +16,7 @@ from typing import Any, Iterator
 
 from . import retrieval, wiki_lint
 from .audit_serialization import (
+    build_audit_checkpoint,
     serialize_audit_chain,
     verify_audit_chain_bundle,
 )
@@ -33,6 +34,7 @@ from .retrieval import (
     retrieval_gate,
     select_project_candidate,
 )
+from .serialization import canonical
 from .validation import normalize_test_results
 from .wiki_lint import (
     embedded_citation_findings,
@@ -99,12 +101,6 @@ def now() -> str:
 
 def uid() -> str:
     return str(uuid.uuid4())
-
-
-def canonical(value: Any) -> str:
-    return json.dumps(
-        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-    )
 
 
 class MemoryStore:
@@ -5299,21 +5295,13 @@ class MemoryStore:
                     (project_id,),
                 ).fetchone()
                 previous_digest = previous[0] if previous else None
-                payload = (
-                    (previous_digest or "")
-                    + "\n"
-                    + "\n".join(canonical(row) for row in rows)
+                checkpoint = build_audit_checkpoint(
+                    project_id,
+                    rows,
+                    previous_digest,
+                    checkpoint_id=uid(),
+                    created_at=now(),
                 )
-                checkpoint = {
-                    "id": uid(),
-                    "project_id": project_id,
-                    "from_seq": rows[0]["seq"],
-                    "through_seq": rows[-1]["seq"],
-                    "entry_count": len(rows),
-                    "previous_digest": previous_digest,
-                    "digest": hashlib.sha256(payload.encode()).hexdigest(),
-                    "created_at": now(),
-                }
                 cx.execute(
                     "INSERT INTO audit_checkpoints"
                     " VALUES(:id,:project_id,:from_seq,:through_seq,"

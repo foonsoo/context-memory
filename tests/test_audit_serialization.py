@@ -1,6 +1,7 @@
 import unittest
 
 from context_memory.audit_serialization import (
+    build_audit_checkpoint,
     serialize_audit_chain,
     verify_audit_chain_bundle,
 )
@@ -26,6 +27,27 @@ def bundle():
 
 
 class AuditSerializationTests(unittest.TestCase):
+    def test_builds_checkpoint_from_loaded_rows(self):
+        checkpoint = build_audit_checkpoint(
+            PROJECT_ID,
+            [{"seq": 2, "value": "first"}, {"seq": 3, "value": "second"}],
+            DIGEST,
+            checkpoint_id="checkpoint-id",
+            created_at="2026-08-24T00:00:00+00:00",
+        )
+
+        self.assertEqual(checkpoint["from_seq"], 2)
+        self.assertEqual(checkpoint["through_seq"], 3)
+        self.assertEqual(checkpoint["entry_count"], 2)
+        self.assertEqual(checkpoint["previous_digest"], DIGEST)
+        self.assertRegex(checkpoint["digest"], r"^[0-9a-f]{64}$")
+
+    def test_checkpoint_requires_rows(self):
+        with self.assertRaisesRegex(ValueError, "at least one row"):
+            build_audit_checkpoint(
+                PROJECT_ID, [], None, "checkpoint-id", "created-at"
+            )
+
     def test_serializes_and_verifies_audit_chain_without_database(self):
         result = verify_audit_chain_bundle(bundle(), DIGEST)
 

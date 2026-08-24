@@ -132,9 +132,9 @@ FTS5 remains the primary scalable candidate index. Local-hash is not an FTS repl
 Refactor only where the current implementation has measured maintenance cost. Preserve the SQLite schema, migrations, public `MemoryStore` import, CLI commands, MCP tool names and schemas, response shapes, ranking diagnostics, and deterministic behavior throughout this phase.
 
 1. **Freeze the compatibility baseline — completed.** The versioned P6 fixture snapshots every MCP tool name/schema/annotation and every CLI command/argument contract, exercises every exported record type through an import/export round trip, and freezes normalized compact-context and Decision Brief responses, exact Wiki Markdown, retrieval constants, and the accepted P2.5 evaluation thresholds. Runtime timings and sub-micro score noise are normalized while structural and semantic response changes remain detectable. The baseline adds one characterization test without changing production code or dependencies.
-2. **Adopt PEP 8 as the repository convention — in progress.** Ruff 0.16.1 is pinned in the development-only extra with explicit `E`, `W`, `F`, `I`, and `N` rules, 79-character code, 72-character comments/docstrings, and deterministic formatting. CI runs both lint and format checks without adding a runtime dependency. The positive adoption list now covers `__init__`, audit anchor, backup crypto, CLI, contracts, embeddings, hooks, MCP, store, and Tasks; all pass without per-file ignores. The large `store.py` module completed behavior-preserving structural formatting, comment/docstring wrapping, and SQL/diagnostic string wrapping before joining the positive list. The list expands only after each remaining module is cleaned, keeping existing violations visible rather than hiding them behind a permanent ignore baseline.
+2. **Adopt PEP 8 as the repository convention — completed.** Ruff 0.16.1 is pinned in the development-only extra with explicit `E`, `W`, `F`, `I`, and `N` rules, 79-character code, 72-character comments/docstrings, and deterministic formatting. CI runs both lint and format checks without adding a runtime dependency. The positive adoption list covers every production Python module and all pass without per-file ignores. The large `store.py` module completed behavior-preserving structural formatting, comment/docstring wrapping, and SQL/diagnostic string wrapping before joining the list.
 3. **Remove proven dead or redundant code first — completed.** The reproducible public/private call inventory covers store-internal calls, MCP, CLI, hooks, Tasks, tests, and other Python consumers. All 28 private `MemoryStore` methods have static call sites, Vulture reports no unused production symbol, and public methods remain compatibility surface; therefore this evidence-gated slice correctly removes no production code. The inventory test freezes 89 methods (61 public including the constructor, 28 private) and fails if a future private method loses every static call site. A private helper or compatibility branch may be removed only when characterization tests prove it unreachable or a documented deprecation path exists. Do not treat shorter code as inherently better.
-4. **Extract pure domain helpers from `store.py` — in progress.** The
+4. **Extract pure domain helpers from `store.py` — completed.** The
    retrieval thresholds, project-selection policy, and negative-result gate now
    live in a directly tested, database-free retrieval module. Checkpoint test
    result validation and normalization also live in a directly tested pure
@@ -145,10 +145,10 @@ Refactor only where the current implementation has measured maintenance cost. Pr
    helper. Wiki citation, lifecycle, source-age, and result-contract lint rules
    similarly operate on state observed by `MemoryStore` in a database-free
    helper. `MemoryStore` retains compatibility delegates and constant exports.
-   Audit-chain bundle serialization and offline verification now live in a
-   directly tested pure helper. Continue with bounded audit checkpoint
-   construction slices. Keep transaction boundaries and SQL in `MemoryStore`
-   until each extraction has direct tests.
+   Audit-chain checkpoint construction, bundle serialization, and offline
+   verification now live in a directly tested pure helper. Deterministic JSON
+   serialization is shared through one tested primitive. Transaction boundaries
+   and SQL remain in `MemoryStore`.
 5. **Split persistence by bounded domain behind a stable facade.** Separate project/session/evidence, memory/retrieval, investigation, Wiki, checkpoint, and maintenance/backup persistence incrementally. `context_memory.store.MemoryStore` remains the compatibility facade; avoid mixin inheritance and circular service dependencies.
 6. **Decompose CLI and MCP declarations.** Split parser construction from command handlers, replace the single dispatch chain with an explicit command registry, and move MCP schema declarations into readable per-domain definitions. Preserve tool pagination, profiles, validation errors, and zero runtime dependencies.
 7. **Consolidate repeated infrastructure.** Centralize row conversion, existence checks, idempotency hashing, JSON serialization, timestamps, and repeated validation only when the extracted helper keeps error types and transaction semantics unchanged.
