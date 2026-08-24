@@ -49,5 +49,24 @@ class RetrievalRepositoryTests(unittest.TestCase):
                 self.assertEqual(
                     context["items"][0]["title"], "Bounded retrieval"
                 )
+
+                with patch.object(
+                    store.decision_assembler,
+                    "decision_context",
+                    wraps=store.decision_assembler.decision_context,
+                ) as decision_context:
+                    brief = store.decision_context(
+                        project["id"], "Why bounded retrieval?"
+                    )
+                decision_context.assert_called_once_with(
+                    project["id"],
+                    "Why bounded retrieval?",
+                    6000,
+                    None,
+                    True,
+                )
+                self.assertEqual(
+                    brief["contract_version"], "decision-brief/v1"
+                )
             finally:
                 store.close()
