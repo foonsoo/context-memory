@@ -27,7 +27,14 @@ from .embeddings import (
     LocalHashEmbedding,
     SentenceTransformerEmbedding,
 )
-from .persistence import ProjectEvidenceRepository
+from .persistence import (
+    CheckpointRepository,
+    InvestigationRepository,
+    MaintenanceRepository,
+    MemoryRepository,
+    ProjectEvidenceRepository,
+    WikiRepository,
+)
 from .retrieval import (
     DISCOVERY_PROJECT_CANDIDATE_LIMIT,
     LOCAL_HASH_FALLBACK_CANDIDATE_LIMIT,
@@ -122,6 +129,11 @@ class MemoryStore:
         )
         self.conn.row_factory = sqlite3.Row
         self.project_evidence = ProjectEvidenceRepository(self.conn)
+        self.checkpoints = CheckpointRepository(self.conn)
+        self.investigations = InvestigationRepository(self.conn)
+        self.maintenance = MaintenanceRepository(self.conn)
+        self.memories = MemoryRepository(self.conn)
+        self.wiki = WikiRepository(self.conn)
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA synchronous=FULL")
@@ -849,10 +861,7 @@ class MemoryStore:
         related_memory_id: str | None = None,
         note: str = "",
     ) -> dict[str, Any]:
-        candidate = self._row(
-            "SELECT * FROM memories WHERE id=? AND status='proposed'",
-            (memory_id,),
-        )
+        candidate = self.memories.get_proposed(memory_id)
         if not candidate:
             raise KeyError("proposed memory not found")
         if action == "approve":
@@ -876,7 +885,7 @@ class MemoryStore:
         self.transition(memory_id, "active", note=note)
         status = "superseded" if action == "supersede" else "disputed"
         self.transition(target, status, memory_id, note)
-        return self._row("SELECT * FROM memories WHERE id=?", (memory_id,))
+        return self.memories.get(memory_id)
 
     def record_event(
         self,
@@ -965,9 +974,8 @@ class MemoryStore:
             )
         if not self._row("SELECT id FROM projects WHERE id=?", (project_id,)):
             raise KeyError("project not found")
-        if scope_id and not self._row(
-            "SELECT id FROM scopes WHERE id=? AND project_id=?",
-            (scope_id, project_id),
+        if scope_id and not self.wiki.scope_belongs_to_project(
+            scope_id, project_id
         ):
             raise ValueError("scope must belong to project")
         item = {
@@ -1415,60 +1423,12 @@ class MemoryStore:
     def get_investigation(
         self, investigation_id: str, source_analysis_id: str | None = None
     ) -> dict[str, Any]:
-        investigation = self._row(
-            "SELECT * FROM investigations WHERE id=?", (investigation_id,)
+        result = self.investigations.get_investigation(
+            investigation_id, source_analysis_id
         )
-        if not investigation:
+        if not result:
             raise KeyError("investigation not found")
-        result = dict(investigation)
-        result["constraints"] = json.loads(result.pop("constraints_json"))
-        condition, args = (
-            (" AND id=?", (investigation_id, source_analysis_id))
-            if source_analysis_id
-            else ("", (investigation_id,))
-        )
-        analyses = []
-        for row in self.conn.execute(
-            "SELECT * FROM source_analyses WHERE investigation_id=?"
-            + condition
-            + " ORDER BY created_at,id",
-            args,
-        ):
-            analysis = dict(row)
-            analysis["claims"] = []
-            analysis["reinspection_requests"] = [
-                dict(item)
-                for item in self.conn.execute(
-                    "SELECT * FROM source_reinspection_requests WHERE"
-                    " source_analysis_id=? ORDER BY requested_at,id",
-                    (analysis["id"],),
-                )
-            ]
-            for claim in self.conn.execute(
-                "SELECT * FROM investigation_claims WHERE source_analysis_id=?"
-                " ORDER BY ordinal",
-                (analysis["id"],),
-            ):
-                item = dict(claim)
-                item["evidence"] = [
-                    dict(link)
-                    for link in self.conn.execute(
-                        """SELECT l.relation,c.source_analysis_id,
-                    c.claim_key,c.event_id,c.memory_id
-                    FROM investigation_claim_links l
-                    JOIN investigation_claims c ON c.id=l.from_claim_id
-                    WHERE l.to_claim_id=? ORDER BY c.claim_key""",
-                        (item["id"],),
-                    )
-                ]
-                analysis["claims"].append(item)
-            analyses.append(analysis)
-        return {
-            "contract_version": "research-provenance/v1",
-            "investigation": result,
-            "source_analyses": analyses,
-            "idempotent": source_analysis_id is not None,
-        }
+        return result
 
     def request_source_reinspection(
         self,
@@ -1639,12 +1599,7 @@ class MemoryStore:
             "updated_at": ts,
         }
         with self.tx() as cx:
-            cx.execute(
-                "INSERT INTO wiki_pages"
-                " VALUES(:id,:project_id,:scope_id,:topic,:title,"
-                ":manual_notes,:created_at,:updated_at)",
-                item,
-            )
+            self.wiki.insert_page(cx, item)
             self._audit(
                 cx, project_id, "wiki_page", item["id"], "created", item
             )
@@ -1656,15 +1611,12 @@ class MemoryStore:
     def set_wiki_notes(
         self, page_id: str, manual_notes: str
     ) -> dict[str, Any]:
-        page = self._row("SELECT * FROM wiki_pages WHERE id=?", (page_id,))
+        page = self.wiki.get_page(page_id)
         if not page:
             raise KeyError("wiki page not found")
         ts = now()
         with self.tx() as cx:
-            cx.execute(
-                "UPDATE wiki_pages SET manual_notes=?,updated_at=? WHERE id=?",
-                (manual_notes, ts, page_id),
-            )
+            self.wiki.update_notes(cx, page_id, manual_notes, ts)
             result = {**page, "manual_notes": manual_notes, "updated_at": ts}
             self._audit(
                 cx,
@@ -1707,7 +1659,7 @@ class MemoryStore:
             "generate_wiki_revision", idempotency_key, request
         ):
             return hit
-        page = self._row("SELECT * FROM wiki_pages WHERE id=?", (page_id,))
+        page = self.wiki.get_page(page_id)
         if not page:
             raise KeyError("wiki page not found")
         if not question.strip():
@@ -1909,9 +1861,7 @@ class MemoryStore:
         return self.get_wiki_revision(revision_id)
 
     def get_wiki_revision(self, revision_id: str) -> dict[str, Any]:
-        row = self._row(
-            "SELECT * FROM wiki_revisions WHERE id=?", (revision_id,)
-        )
+        row = self.wiki.get_revision(revision_id)
         if not row:
             raise KeyError("wiki revision not found")
         citations = [
@@ -1927,9 +1877,7 @@ class MemoryStore:
     def lint_wiki_revision(self, revision_id: str) -> dict[str, Any]:
         """Surface evidence and lifecycle gaps in a Wiki revision."""
         revision = self.get_wiki_revision(revision_id)
-        page = self._row(
-            "SELECT * FROM wiki_pages WHERE id=?", (revision["page_id"],)
-        )
+        page = self.wiki.get_page(revision["page_id"])
         if not page:
             raise KeyError("wiki page not found")
         findings: list[dict[str, Any]] = []
@@ -1978,9 +1926,7 @@ class MemoryStore:
             )
 
         for memory_id in sorted(cited_memories):
-            memory = self._row(
-                "SELECT * FROM memories WHERE id=?", (memory_id,)
-            )
+            memory = self.memories.get(memory_id)
             exact_sources = 0
             indexed = 0
             if memory:
@@ -2068,7 +2014,7 @@ class MemoryStore:
         return finish_lint_result(revision, findings)
 
     def get_wiki_page(self, page_id: str) -> dict[str, Any]:
-        page = self._row("SELECT * FROM wiki_pages WHERE id=?", (page_id,))
+        page = self.wiki.get_page(page_id)
         if not page:
             raise KeyError("wiki page not found")
         page["contract_version"] = "topic-wiki/v1"
@@ -2320,9 +2266,7 @@ class MemoryStore:
 
     def render_wiki_revision(self, revision_id: str) -> dict[str, Any]:
         revision = self.get_wiki_revision(revision_id)
-        page = self._row(
-            "SELECT * FROM wiki_pages WHERE id=?", (revision["page_id"],)
-        )
+        page = self.wiki.get_page(revision["page_id"])
         return {
             "contract_version": "topic-wiki-markdown/v1",
             "revision_id": revision_id,
@@ -2858,25 +2802,14 @@ class MemoryStore:
         policy = self.get_policy(project_id)
         session = None
         if session_id:
-            session = self._row(
-                "SELECT project_id,started_at FROM sessions WHERE id=?",
-                (session_id,),
-            )
+            session = self.checkpoints.session_start(session_id)
             if not session:
                 raise KeyError("session not found")
             if session["project_id"] != project_id:
                 raise ValueError("session belongs to a different project")
-        latest = self._row(
-            "SELECT * FROM events WHERE project_id=? AND kind='checkpoint'"
-            " ORDER BY event_seq DESC LIMIT 1",
-            (project_id,),
-        )
-        cursor = self._row(
-            "SELECT next_seq-1 AS value FROM project_event_cursors WHERE"
-            " project_id=?",
-            (project_id,),
-        )
-        if not cursor:
+        latest = self.checkpoints.latest(project_id)
+        cursor = self.checkpoints.event_cursor(project_id)
+        if cursor is None:
             raise KeyError("project not found")
         current_repository = (
             self._repository_facts(repository_path)
@@ -2904,11 +2837,9 @@ class MemoryStore:
             )
         )
         baseline_cursor = latest["event_seq"] if latest else 0
-        durable_event_count = self.conn.execute(
-            "SELECT count(*) FROM events WHERE project_id=? AND event_seq>?"
-            " AND kind<>'checkpoint'",
-            (project_id, baseline_cursor),
-        ).fetchone()[0]
+        durable_event_count = self.checkpoints.durable_events_after(
+            project_id, baseline_cursor
+        )
         current_time = current_datetime()
         checkpoint_age = (
             int(
@@ -2932,7 +2863,7 @@ class MemoryStore:
         material_change = repository_changed or durable_event_count > 0
         recovery_hash = self._checkpoint_recovery_hash(
             project_id,
-            cursor["value"],
+            cursor,
             goal,
             completed or [],
             next_step,
@@ -2959,7 +2890,7 @@ class MemoryStore:
             "recovery_hash": recovery_hash,
             "suggested_idempotency_key": suggested_key,
             "latest_checkpoint_id": latest["id"] if latest else None,
-            "event_cursor": cursor["value"],
+            "event_cursor": cursor,
         }
 
     def _checkpoint_recovery_hash(
@@ -3271,7 +3202,7 @@ class MemoryStore:
         if hit := self._idem("upsert_memory", idempotency_key, request):
             return hit
         ts, mid = now(), memory_id or uid()
-        existing = self._row("SELECT * FROM memories WHERE id=?", (mid,))
+        existing = self.memories.get(mid)
         if memory_type not in TYPES or status not in STATUSES:
             raise ValueError("invalid memory type or status")
         resolved_visibility = visibility or (
@@ -4210,9 +4141,7 @@ class MemoryStore:
             raise ValueError(
                 "signal must be retrieved, used, helpful, or incorrect"
             )
-        memory = self._row(
-            "SELECT project_id FROM memories WHERE id=?", (memory_id,)
-        )
+        memory = self.memories.get(memory_id)
         if not memory:
             raise KeyError("memory not found")
         ts = now()
@@ -5004,9 +4933,7 @@ class MemoryStore:
         ]
 
     def get_policy(self, project_id: str) -> dict[str, Any]:
-        item = self._row(
-            "SELECT * FROM project_policies WHERE project_id=?", (project_id,)
-        )
+        item = self.maintenance.get_policy(project_id)
         if not item:
             raise KeyError("project not found")
         return item
@@ -5348,21 +5275,8 @@ class MemoryStore:
         """Return a bundle for offline audit-chain verification."""
         if not self._row("SELECT id FROM projects WHERE id=?", (project_id,)):
             raise KeyError("project not found")
-        checkpoints = [
-            dict(row)
-            for row in self.conn.execute(
-                "SELECT * FROM audit_checkpoints WHERE project_id=? ORDER BY"
-                " through_seq,id",
-                (project_id,),
-            )
-        ]
-        entries = [
-            dict(row)
-            for row in self.conn.execute(
-                "SELECT * FROM audit_log WHERE project_id=? ORDER BY seq",
-                (project_id,),
-            )
-        ]
+        checkpoints = self.maintenance.audit_checkpoints(project_id)
+        entries = self.maintenance.audit_entries(project_id)
         return serialize_audit_chain(project_id, checkpoints, entries)
 
     @staticmethod
