@@ -1210,160 +1210,25 @@ class MemoryStore:
         maintenance_interval_seconds: int | None = None,
         message_ttl_seconds: int | None = None,
     ) -> dict[str, Any]:
-        current = self.get_policy(project_id)
-        values = {
-            "max_context_chars": max_context_chars,
-            "max_context_items": max_context_items,
-            "audit_keep_entries": audit_keep_entries,
-            "terminal_memory_days": terminal_memory_days,
-            "checkpoint_soft_usage": checkpoint_soft_usage,
-            "checkpoint_hard_usage": checkpoint_hard_usage,
-            "checkpoint_elapsed_seconds": checkpoint_elapsed_seconds,
-            "checkpoint_event_count": checkpoint_event_count,
-            "checkpoint_max_age_seconds": checkpoint_max_age_seconds,
-            "checkpoint_cooldown_seconds": checkpoint_cooldown_seconds,
-            "checkpoint_hysteresis": checkpoint_hysteresis,
-            "maintenance_interval_seconds": maintenance_interval_seconds,
-            "message_ttl_seconds": message_ttl_seconds,
-        }
-        limits = {
-            "max_context_chars": (1000, 20000),
-            "max_context_items": (1, 50),
-            "audit_keep_entries": (100, 100000),
-            "terminal_memory_days": (1, 3650),
-            "checkpoint_soft_usage": (0, 1),
-            "checkpoint_hard_usage": (0, 1),
-            "checkpoint_elapsed_seconds": (60, 86400),
-            "checkpoint_event_count": (1, 10000),
-            "checkpoint_max_age_seconds": (60, 604800),
-        }
-        limits.update(
-            {
-                "checkpoint_cooldown_seconds": (0, 86400),
-                "checkpoint_hysteresis": (0, 0.5),
-                "message_ttl_seconds": (0, 2592000),
-            }
+        return self.maintenance.set_policy(
+            project_id,
+            max_context_chars,
+            max_context_items,
+            audit_keep_entries,
+            terminal_memory_days,
+            checkpoint_soft_usage,
+            checkpoint_hard_usage,
+            checkpoint_elapsed_seconds,
+            checkpoint_event_count,
+            checkpoint_max_age_seconds,
+            checkpoint_cooldown_seconds,
+            checkpoint_hysteresis,
+            maintenance_interval_seconds,
+            message_ttl_seconds,
         )
-        for key, value in values.items():
-            if value is not None:
-                if key == "maintenance_interval_seconds":
-                    if value != 0 and not 300 <= value <= 2592000:
-                        raise ValueError(f"{key} must be 0 or 300..2592000")
-                else:
-                    low, high = limits[key]
-                    if not low <= value <= high:
-                        raise ValueError(f"{key} must be {low}..{high}")
-                current[key] = value
-        if (
-            current["checkpoint_soft_usage"]
-            >= current["checkpoint_hard_usage"]
-        ):
-            raise ValueError(
-                "checkpoint_soft_usage must be less than checkpoint_hard_usage"
-            )
-        current["updated_at"] = now()
-        with self.tx() as cx:
-            cx.execute(
-                """UPDATE project_policies SET
-              max_context_chars=:max_context_chars,
-              max_context_items=:max_context_items,
-              audit_keep_entries=:audit_keep_entries,
-              terminal_memory_days=:terminal_memory_days,
-              checkpoint_soft_usage=:checkpoint_soft_usage,
-              checkpoint_hard_usage=:checkpoint_hard_usage,
-              checkpoint_elapsed_seconds=:checkpoint_elapsed_seconds,
-              checkpoint_event_count=:checkpoint_event_count,
-              checkpoint_max_age_seconds=:checkpoint_max_age_seconds,
-              checkpoint_cooldown_seconds=:checkpoint_cooldown_seconds,
-              checkpoint_hysteresis=:checkpoint_hysteresis,
-              maintenance_interval_seconds=:maintenance_interval_seconds,
-              message_ttl_seconds=:message_ttl_seconds,
-              updated_at=:updated_at WHERE project_id=:project_id""",
-                current,
-            )
-            self._audit(
-                cx, project_id, "policy", project_id, "updated", current
-            )
-        return current
 
     def search_health(self, project_id: str) -> dict[str, Any]:
-        if not self._row("SELECT id FROM projects WHERE id=?", (project_id,)):
-            raise KeyError("project not found")
-        memories = self.conn.execute(
-            "SELECT count(*) FROM memories WHERE project_id=?", (project_id,)
-        ).fetchone()[0]
-        indexed = self.conn.execute(
-            "SELECT count(*) FROM memories_fts f JOIN memories m ON"
-            " m.id=f.memory_id WHERE m.project_id=?",
-            (project_id,),
-        ).fetchone()[0]
-        missing = self.conn.execute(
-            "SELECT count(*) FROM memories m WHERE m.project_id=? AND NOT"
-            " EXISTS(SELECT 1 FROM memories_fts f WHERE f.memory_id=m.id)",
-            (project_id,),
-        ).fetchone()[0]
-        duplicate = self.conn.execute(
-            """SELECT count(*) FROM (SELECT f.memory_id
-          FROM memories_fts f JOIN memories m ON m.id=f.memory_id
-          WHERE m.project_id=? GROUP BY f.memory_id HAVING count(*)<>1)""",
-            (project_id,),
-        ).fetchone()[0]
-        orphan = self.conn.execute(
-            "SELECT count(*) FROM memories_fts f LEFT JOIN memories m ON"
-            " m.id=f.memory_id WHERE m.id IS NULL"
-        ).fetchone()[0]
-        embedding = {
-            "enabled": bool(self.embedding_provider),
-            "provider": self._provider_name(),
-            "indexed_rows": 0,
-            "missing": 0,
-            "stale": 0,
-        }
-        if self.embedding_provider:
-            embedding["indexed_rows"] = self.conn.execute(
-                """SELECT count(*) FROM memory_embeddings e
-              JOIN memories m ON m.id=e.memory_id
-              WHERE m.project_id=? AND e.provider=? AND e.dimensions=?""",
-                (
-                    project_id,
-                    self._provider_name(),
-                    self.embedding_provider.dimensions,
-                ),
-            ).fetchone()[0]
-            embedding["missing"] = memories - embedding["indexed_rows"]
-            for row in self.conn.execute(
-                """SELECT m.*,e.content_hash FROM memories m
-              JOIN memory_embeddings e ON e.memory_id=m.id
-              WHERE m.project_id=? AND e.provider=?""",
-                (project_id, self._provider_name()),
-            ):
-                tags = " ".join(json.loads(row["tags_json"]))
-                text = f"{row['title']}\n{row['content']}\n{tags}"
-                if (
-                    hashlib.sha256(text.encode()).hexdigest()
-                    != row["content_hash"]
-                ):
-                    embedding["stale"] += 1
-        ok = (
-            missing == 0
-            and duplicate == 0
-            and orphan == 0
-            and indexed == memories
-            and (
-                not self.embedding_provider
-                or (embedding["missing"] == 0 and embedding["stale"] == 0)
-            )
-        )
-        return {
-            "ok": ok,
-            "project_id": project_id,
-            "memories": memories,
-            "indexed_rows": indexed,
-            "missing": missing,
-            "duplicate_memory_ids": duplicate,
-            "orphan_rows": orphan,
-            "embeddings": embedding,
-        }
+        return self.maintenance.search_health(project_id)
 
     def get_source(self, event_id: str) -> dict[str, Any]:
         item = self.project_evidence.get_event(event_id)

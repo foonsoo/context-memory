@@ -45,5 +45,19 @@ class MaintenanceRepositoryTests(unittest.TestCase):
 
                 scheduled = store.maintain_scheduled(project["id"])
                 self.assertEqual(scheduled["reason"], "disabled")
+
+                with patch.object(
+                    store.maintenance,
+                    "set_policy",
+                    wraps=store.maintenance.set_policy,
+                ) as set_policy:
+                    policy = store.set_policy(
+                        project["id"], max_context_items=12
+                    )
+                self.assertEqual(set_policy.call_count, 1)
+                self.assertEqual(policy["max_context_items"], 12)
+
+                health = store.search_health(project["id"])
+                self.assertTrue(health["ok"])
             finally:
                 store.close()
