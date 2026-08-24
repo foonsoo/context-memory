@@ -469,11 +469,7 @@ class MemoryStore:
             "created_at": now(),
         }
         with self.tx() as cx:
-            cx.execute(
-                "INSERT INTO scopes"
-                " VALUES(:id,:project_id,:name,:path,:created_at)",
-                item,
-            )
+            self.project_evidence.insert_scope(cx, item)
             self._audit(cx, project_id, "scope", item["id"], "created", item)
         return item
 
@@ -562,10 +558,8 @@ class MemoryStore:
         metadata: dict | None = None,
     ) -> dict[str, Any]:
         if external_id:
-            hit = self._row(
-                "SELECT * FROM sessions WHERE project_id=? AND client=? AND"
-                " external_id=?",
-                (project_id, client, external_id),
+            hit = self.project_evidence.find_session(
+                project_id, client, external_id
             )
             if hit:
                 return hit
@@ -580,12 +574,7 @@ class MemoryStore:
             "metadata_json": canonical(metadata or {}),
         }
         with self.tx() as cx:
-            cx.execute(
-                "INSERT INTO sessions"
-                " VALUES(:id,:project_id,:scope_id,:client,:external_id,"
-                ":started_at,:ended_at,:metadata_json)",
-                item,
-            )
+            self.project_evidence.insert_session(cx, item)
             self._audit(cx, project_id, "session", item["id"], "started", item)
         return item
 
@@ -596,16 +585,11 @@ class MemoryStore:
         extract_candidates: bool = True,
     ) -> dict[str, Any]:
         with self.tx() as cx:
-            row = cx.execute(
-                "SELECT * FROM sessions WHERE id=?", (session_id,)
-            ).fetchone()
+            row = self.project_evidence.get_session(session_id)
             if not row:
                 raise KeyError("session not found")
             ended = row["ended_at"] or now()
-            cx.execute(
-                "UPDATE sessions SET ended_at=? WHERE id=?",
-                (ended, session_id),
-            )
+            self.project_evidence.set_session_ended(cx, session_id, ended)
             result = dict(row)
             result["ended_at"] = ended
             self._audit(
@@ -922,22 +906,17 @@ class MemoryStore:
         with self.tx() as cx:
             stored_metadata = dict(metadata or {})
             if kind == "message" and "expires_at" not in stored_metadata:
-                policy = cx.execute(
-                    "SELECT message_ttl_seconds FROM project_policies WHERE"
-                    " project_id=?",
-                    (project_id,),
-                ).fetchone()
-                if policy and policy["message_ttl_seconds"]:
+                ttl_seconds = self.project_evidence.message_ttl_seconds(
+                    cx, project_id
+                )
+                if ttl_seconds:
                     stored_metadata["expires_at"] = (
-                        current_datetime()
-                        + timedelta(seconds=policy["message_ttl_seconds"])
+                        current_datetime() + timedelta(seconds=ttl_seconds)
                     ).isoformat()
-            cursor = cx.execute(
-                "UPDATE project_event_cursors SET next_seq=next_seq+1 WHERE"
-                " project_id=? RETURNING next_seq-1",
-                (project_id,),
-            ).fetchone()
-            if not cursor:
+            event_seq = self.project_evidence.allocate_event_sequence(
+                cx, project_id
+            )
+            if event_seq is None:
                 raise KeyError("project not found")
             item = {
                 "id": uid(),
@@ -950,16 +929,9 @@ class MemoryStore:
                 "metadata_json": canonical(stored_metadata),
                 "content_hash": hashlib.sha256(content.encode()).hexdigest(),
                 "created_at": now(),
-                "event_seq": cursor[0],
+                "event_seq": event_seq,
             }
-            cx.execute(
-                """INSERT INTO events(id,project_id,scope_id,session_id,
-              kind,content,source_uri,metadata_json,content_hash,created_at,
-              event_seq) VALUES(:id,:project_id,:scope_id,:session_id,
-              :kind,:content,:source_uri,:metadata_json,:content_hash,
-              :created_at,:event_seq)""",
-                item,
-            )
+            self.project_evidence.insert_event(cx, item)
             self._audit(cx, project_id, "event", item["id"], "recorded", item)
             self._add_promotion_advisory(item)
             self._save_idem(cx, "record_event", idempotency_key, request, item)
