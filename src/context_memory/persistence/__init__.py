@@ -6,6 +6,7 @@ from .maintenance import MaintenanceRepository
 from .memory import MemoryRepository
 from .project_evidence import ProjectEvidenceRepository
 from .retrieval import RetrievalRepository
+from .review import ReviewRepository
 from .transfer import TransferRepository
 from .wiki import WikiRepository
 
@@ -16,6 +17,7 @@ __all__ = [
     "MemoryRepository",
     "ProjectEvidenceRepository",
     "RetrievalRepository",
+    "ReviewRepository",
     "TransferRepository",
     "WikiRepository",
 ]
