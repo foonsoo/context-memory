@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from context_memory.store import MemoryStore
 
@@ -23,5 +24,26 @@ class MaintenanceRepositoryTests(unittest.TestCase):
                 self.assertEqual(
                     store.maintenance.audit_checkpoints(project["id"]), []
                 )
+
+                with patch.object(
+                    store.maintenance,
+                    "maintain",
+                    wraps=store.maintenance.maintain,
+                ) as maintain:
+                    plan = store.maintain(project["id"])
+                maintain.assert_called_once_with(project["id"], False)
+                self.assertFalse(plan["apply"])
+
+                with patch.object(
+                    store.maintenance,
+                    "status",
+                    wraps=store.maintenance.status,
+                ) as status:
+                    result = store.maintenance_status(project["id"])
+                status.assert_called_once_with(project["id"])
+                self.assertEqual(result["counts"]["events"], 1)
+
+                scheduled = store.maintain_scheduled(project["id"])
+                self.assertEqual(scheduled["reason"], "disabled")
             finally:
                 store.close()

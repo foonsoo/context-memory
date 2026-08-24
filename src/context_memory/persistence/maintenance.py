@@ -1,14 +1,27 @@
 """Maintenance policy and audit persistence queries."""
 
 import sqlite3
-from typing import Any
+from datetime import datetime, timedelta
+from typing import Any, Callable
+
+from ..audit_serialization import build_audit_checkpoint
 
 
 class MaintenanceRepository:
-    """Own maintenance policy and audit-chain reads."""
+    """Own maintenance policy and audit-chain persistence."""
 
-    def __init__(self, connection: sqlite3.Connection):
-        self.connection = connection
+    def __init__(
+        self,
+        store: Any,
+        now: Callable[[], str],
+        uid: Callable[[], str],
+        current_datetime: Callable[[], datetime],
+    ):
+        self.store = store
+        self.connection: sqlite3.Connection = store.conn
+        self.now = now
+        self.uid = uid
+        self.current_datetime = current_datetime
 
     def get_policy(self, project_id: str) -> dict[str, Any] | None:
         row = self.connection.execute(
@@ -35,3 +48,208 @@ class MaintenanceRepository:
                 (project_id,),
             )
         ]
+
+    def maintain(self, project_id: str, apply: bool = False) -> dict[str, Any]:
+        """Bound state while preserving events and audit detail."""
+        policy = self.store.get_policy(project_id)
+        cutoff = (
+            self.current_datetime()
+            - timedelta(days=policy["terminal_memory_days"])
+        ).isoformat()
+        terminal = [
+            dict(row)
+            for row in self.connection.execute(
+                """SELECT * FROM memories WHERE project_id=?
+          AND status IN ('superseded','rejected','expired')
+          AND updated_at<? ORDER BY updated_at,id""",
+                (project_id, cutoff),
+            )
+        ]
+        audit_total = self.connection.execute(
+            "SELECT count(*) FROM audit_log WHERE project_id=?",
+            (project_id,),
+        ).fetchone()[0]
+        projected_total = audit_total + len(terminal)
+        prune_count = max(0, projected_total - policy["audit_keep_entries"])
+        plan = {
+            "project_id": project_id,
+            "apply": apply,
+            "policy": policy,
+            "terminal_cutoff": cutoff,
+            "terminal_memories": len(terminal),
+            "audit_entries": audit_total,
+            "audit_entries_to_checkpoint": prune_count,
+        }
+        if not apply:
+            return plan
+        checkpoint = None
+        with self.store.tx() as connection:
+            for memory in terminal:
+                sources = [
+                    row[0]
+                    for row in connection.execute(
+                        "SELECT event_id FROM memory_sources WHERE"
+                        " memory_id=? ORDER BY event_id",
+                        (memory["id"],),
+                    )
+                ]
+                self.store._audit(
+                    connection,
+                    project_id,
+                    "memory",
+                    memory["id"],
+                    "purged_terminal",
+                    {**memory, "source_event_ids": sources},
+                )
+                connection.execute(
+                    "DELETE FROM memories WHERE id=?", (memory["id"],)
+                )
+            total = connection.execute(
+                "SELECT count(*) FROM audit_log WHERE project_id=?",
+                (project_id,),
+            ).fetchone()[0]
+            prune_count = max(0, total - policy["audit_keep_entries"])
+            if prune_count:
+                rows = [
+                    dict(row)
+                    for row in connection.execute(
+                        "SELECT * FROM audit_log WHERE project_id=? ORDER BY"
+                        " seq LIMIT ?",
+                        (project_id, prune_count),
+                    )
+                ]
+                previous = connection.execute(
+                    "SELECT digest FROM audit_checkpoints WHERE project_id=?"
+                    " ORDER BY through_seq DESC LIMIT 1",
+                    (project_id,),
+                ).fetchone()
+                previous_digest = previous[0] if previous else None
+                checkpoint = build_audit_checkpoint(
+                    project_id,
+                    rows,
+                    previous_digest,
+                    checkpoint_id=self.uid(),
+                    created_at=self.now(),
+                )
+                connection.execute(
+                    "INSERT INTO audit_checkpoints"
+                    " VALUES(:id,:project_id,:from_seq,:through_seq,"
+                    ":entry_count,:previous_digest,:digest,:created_at)",
+                    checkpoint,
+                )
+                connection.execute(
+                    "UPDATE maintenance_control SET audit_prune_enabled=1"
+                    " WHERE id=1"
+                )
+                connection.execute(
+                    "DELETE FROM audit_log WHERE project_id=? AND seq<=?",
+                    (project_id, rows[-1]["seq"]),
+                )
+                connection.execute(
+                    "UPDATE maintenance_control SET audit_prune_enabled=0"
+                    " WHERE id=1"
+                )
+        return {
+            **plan,
+            "terminal_memories_purged": len(terminal),
+            "audit_entries_checkpointed": prune_count,
+            "checkpoint": checkpoint,
+        }
+
+    def status(self, project_id: str) -> dict[str, Any]:
+        policy = self.store.get_policy(project_id)
+        counts = {
+            "events": self._count("events", project_id),
+            "memories": self._count("memories", project_id),
+            "terminal_memories": self.connection.execute(
+                "SELECT count(*) FROM memories WHERE project_id=? AND"
+                " status IN ('superseded','rejected','expired')",
+                (project_id,),
+            ).fetchone()[0],
+            "audit_entries": self._count("audit_log", project_id),
+        }
+        checkpoints = [
+            dict(row)
+            for row in self.connection.execute(
+                "SELECT * FROM audit_checkpoints WHERE project_id=? ORDER BY"
+                " through_seq",
+                (project_id,),
+            )
+        ]
+        schedule = self.store._row(
+            "SELECT * FROM maintenance_runs WHERE project_id=?",
+            (project_id,),
+        )
+        return {
+            "project_id": project_id,
+            "policy": policy,
+            "counts": counts,
+            "audit_checkpoints": checkpoints,
+            "schedule": schedule,
+            "search": self.store.search_health(project_id),
+        }
+
+    def _count(self, table: str, project_id: str) -> int:
+        return self.connection.execute(
+            f"SELECT count(*) FROM {table} WHERE project_id=?",
+            (project_id,),
+        ).fetchone()[0]
+
+    def maintain_scheduled(self, project_id: str) -> dict[str, Any]:
+        """Run maintenance once when its persisted interval is due."""
+        policy = self.store.get_policy(project_id)
+        interval = policy["maintenance_interval_seconds"]
+        if not interval:
+            return {
+                "project_id": project_id,
+                "scheduled": True,
+                "ran": False,
+                "reason": "disabled",
+            }
+        timestamp = self.now()
+        with self.store.tx() as connection:
+            state = dict(
+                connection.execute(
+                    "SELECT * FROM maintenance_runs WHERE project_id=?",
+                    (project_id,),
+                ).fetchone()
+            )
+            baseline = state["last_completed_at"] or state["last_started_at"]
+            if baseline and datetime.fromisoformat(baseline) + timedelta(
+                seconds=interval
+            ) > datetime.fromisoformat(timestamp):
+                return {
+                    "project_id": project_id,
+                    "scheduled": True,
+                    "ran": False,
+                    "reason": "not_due",
+                    "next_due_at": (
+                        datetime.fromisoformat(baseline)
+                        + timedelta(seconds=interval)
+                    ).isoformat(),
+                }
+            connection.execute(
+                "UPDATE maintenance_runs SET last_started_at=?,"
+                "last_error=NULL WHERE project_id=?",
+                (timestamp, project_id),
+            )
+        try:
+            result = self.maintain(project_id, True)
+        except Exception as exc:
+            self.connection.execute(
+                "UPDATE maintenance_runs SET last_error=? WHERE project_id=?",
+                (str(exc), project_id),
+            )
+            raise
+        completed = self.now()
+        self.connection.execute(
+            "UPDATE maintenance_runs SET last_completed_at=?,"
+            "last_error=NULL WHERE project_id=?",
+            (completed, project_id),
+        )
+        return {
+            **result,
+            "scheduled": True,
+            "ran": True,
+            "completed_at": completed,
+        }

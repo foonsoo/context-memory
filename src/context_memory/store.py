@@ -16,7 +16,6 @@ from typing import Any, Iterator
 
 from . import retrieval, wiki_lint
 from .audit_serialization import (
-    build_audit_checkpoint,
     serialize_audit_chain,
     verify_audit_chain_bundle,
 )
@@ -108,7 +107,9 @@ class MemoryStore:
             self, now, uid, current_datetime
         )
         self.investigations = InvestigationRepository(self, now, uid)
-        self.maintenance = MaintenanceRepository(self.conn)
+        self.maintenance = MaintenanceRepository(
+            self, now, uid, current_datetime
+        )
         self.memories = MemoryRepository(self, now, uid)
         self.wiki = WikiRepository(self, now, uid, current_datetime)
         self.conn.execute("PRAGMA foreign_keys=ON")
@@ -3018,159 +3019,10 @@ class MemoryStore:
         return item
 
     def maintain(self, project_id: str, apply: bool = False) -> dict[str, Any]:
-        """Bound state while preserving events and audit detail."""
-        policy = self.get_policy(project_id)
-        cutoff = (
-            current_datetime() - timedelta(days=policy["terminal_memory_days"])
-        ).isoformat()
-        terminal = [
-            dict(row)
-            for row in self.conn.execute(
-                """SELECT * FROM memories WHERE project_id=?
-          AND status IN ('superseded','rejected','expired')
-          AND updated_at<? ORDER BY updated_at,id""",
-                (project_id, cutoff),
-            )
-        ]
-        audit_total = self.conn.execute(
-            "SELECT count(*) FROM audit_log WHERE project_id=?", (project_id,)
-        ).fetchone()[0]
-        # Purge audit records only after accounting for one purge audit
-        # entry
-        # per terminal memory.
-        projected_total = audit_total + len(terminal)
-        prune_count = max(0, projected_total - policy["audit_keep_entries"])
-        plan = {
-            "project_id": project_id,
-            "apply": apply,
-            "policy": policy,
-            "terminal_cutoff": cutoff,
-            "terminal_memories": len(terminal),
-            "audit_entries": audit_total,
-            "audit_entries_to_checkpoint": prune_count,
-        }
-        if not apply:
-            return plan
-        checkpoint = None
-        with self.tx() as cx:
-            for memory in terminal:
-                sources = [
-                    row[0]
-                    for row in cx.execute(
-                        "SELECT event_id FROM memory_sources WHERE memory_id=?"
-                        " ORDER BY event_id",
-                        (memory["id"],),
-                    )
-                ]
-                self._audit(
-                    cx,
-                    project_id,
-                    "memory",
-                    memory["id"],
-                    "purged_terminal",
-                    {**memory, "source_event_ids": sources},
-                )
-                cx.execute("DELETE FROM memories WHERE id=?", (memory["id"],))
-            total = cx.execute(
-                "SELECT count(*) FROM audit_log WHERE project_id=?",
-                (project_id,),
-            ).fetchone()[0]
-            prune_count = max(0, total - policy["audit_keep_entries"])
-            if prune_count:
-                rows = [
-                    dict(row)
-                    for row in cx.execute(
-                        "SELECT * FROM audit_log WHERE project_id=? ORDER BY"
-                        " seq LIMIT ?",
-                        (project_id, prune_count),
-                    )
-                ]
-                previous = cx.execute(
-                    "SELECT digest FROM audit_checkpoints WHERE project_id=?"
-                    " ORDER BY through_seq DESC LIMIT 1",
-                    (project_id,),
-                ).fetchone()
-                previous_digest = previous[0] if previous else None
-                checkpoint = build_audit_checkpoint(
-                    project_id,
-                    rows,
-                    previous_digest,
-                    checkpoint_id=uid(),
-                    created_at=now(),
-                )
-                cx.execute(
-                    "INSERT INTO audit_checkpoints"
-                    " VALUES(:id,:project_id,:from_seq,:through_seq,"
-                    ":entry_count,:previous_digest,:digest,:created_at)",
-                    checkpoint,
-                )
-                cx.execute(
-                    "UPDATE maintenance_control SET audit_prune_enabled=1"
-                    " WHERE id=1"
-                )
-                cx.execute(
-                    "DELETE FROM audit_log WHERE project_id=? AND seq<=?",
-                    (project_id, rows[-1]["seq"]),
-                )
-                cx.execute(
-                    "UPDATE maintenance_control SET audit_prune_enabled=0"
-                    " WHERE id=1"
-                )
-        return {
-            **plan,
-            "terminal_memories_purged": len(terminal),
-            "audit_entries_checkpointed": prune_count,
-            "checkpoint": checkpoint,
-        }
+        return self.maintenance.maintain(project_id, apply)
 
     def maintenance_status(self, project_id: str) -> dict[str, Any]:
-        policy = self.get_policy(project_id)
-        counts = {
-            "events": (
-                self.conn.execute(
-                    "SELECT count(*) FROM events WHERE project_id=?",
-                    (project_id,),
-                ).fetchone()[0]
-            ),
-            "memories": (
-                self.conn.execute(
-                    "SELECT count(*) FROM memories WHERE project_id=?",
-                    (project_id,),
-                ).fetchone()[0]
-            ),
-            "terminal_memories": (
-                self.conn.execute(
-                    "SELECT count(*) FROM memories WHERE project_id=? AND"
-                    " status IN ('superseded','rejected','expired')",
-                    (project_id,),
-                ).fetchone()[0]
-            ),
-            "audit_entries": (
-                self.conn.execute(
-                    "SELECT count(*) FROM audit_log WHERE project_id=?",
-                    (project_id,),
-                ).fetchone()[0]
-            ),
-        }
-        checkpoints = [
-            dict(row)
-            for row in self.conn.execute(
-                "SELECT * FROM audit_checkpoints WHERE project_id=? ORDER BY"
-                " through_seq",
-                (project_id,),
-            )
-        ]
-        schedule = self._row(
-            "SELECT * FROM maintenance_runs WHERE project_id=?", (project_id,)
-        )
-        return {
-            "project_id": project_id,
-            "policy": policy,
-            "counts": counts,
-            "audit_checkpoints": checkpoints,
-            "schedule": schedule,
-            "search": self.search_health(project_id),
-        }
+        return self.maintenance.status(project_id)
 
     def export_audit_chain(self, project_id: str) -> dict[str, Any]:
         """Return a bundle for offline audit-chain verification."""
@@ -3194,65 +3046,7 @@ class MemoryStore:
         return verify_audit_chain_bundle(bundle, expected_head_digest)
 
     def maintain_scheduled(self, project_id: str) -> dict[str, Any]:
-        """Run maintenance once when its persisted interval is due."""
-        policy = self.get_policy(project_id)
-        interval = policy["maintenance_interval_seconds"]
-        if not interval:
-            return {
-                "project_id": project_id,
-                "scheduled": True,
-                "ran": False,
-                "reason": "disabled",
-            }
-        ts = now()
-        with self.tx() as cx:
-            state = dict(
-                cx.execute(
-                    "SELECT * FROM maintenance_runs WHERE project_id=?",
-                    (project_id,),
-                ).fetchone()
-            )
-            baseline = state["last_completed_at"] or state["last_started_at"]
-            if baseline and datetime.fromisoformat(baseline) + timedelta(
-                seconds=interval
-            ) > datetime.fromisoformat(ts):
-                return {
-                    "project_id": project_id,
-                    "scheduled": True,
-                    "ran": False,
-                    "reason": "not_due",
-                    "next_due_at": (
-                        (
-                            datetime.fromisoformat(baseline)
-                            + timedelta(seconds=interval)
-                        ).isoformat()
-                    ),
-                }
-            cx.execute(
-                "UPDATE maintenance_runs SET last_started_at=?,last_error=NULL"
-                " WHERE project_id=?",
-                (ts, project_id),
-            )
-        try:
-            result = self.maintain(project_id, True)
-        except Exception as exc:
-            self.conn.execute(
-                "UPDATE maintenance_runs SET last_error=? WHERE project_id=?",
-                (str(exc), project_id),
-            )
-            raise
-        completed = now()
-        self.conn.execute(
-            "UPDATE maintenance_runs SET last_completed_at=?,last_error=NULL"
-            " WHERE project_id=?",
-            (completed, project_id),
-        )
-        return {
-            **result,
-            "scheduled": True,
-            "ran": True,
-            "completed_at": completed,
-        }
+        return self.maintenance.maintain_scheduled(project_id)
 
     def backup_to(
         self, output_path: str | Path, encryption_passphrase: str | None = None
