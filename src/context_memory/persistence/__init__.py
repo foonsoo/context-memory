@@ -5,6 +5,7 @@ from .investigation import InvestigationRepository
 from .maintenance import MaintenanceRepository
 from .memory import MemoryRepository
 from .project_evidence import ProjectEvidenceRepository
+from .transfer import TransferRepository
 from .wiki import WikiRepository
 
 __all__ = [
@@ -13,5 +14,6 @@ __all__ = [
     "MaintenanceRepository",
     "MemoryRepository",
     "ProjectEvidenceRepository",
+    "TransferRepository",
     "WikiRepository",
 ]
