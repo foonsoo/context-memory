@@ -17,6 +17,8 @@ uses semantic versioning for the public Python package and MCP/CLI contracts.
   to PyPI with build provenance.
 - A support and compatibility policy covering runtimes, MCP/CLI contracts,
   migrations, backups, deprecations, and failed-upgrade recovery.
+- A shared release verifier used by CI and publishing to enforce version,
+  archive-content, zero-runtime-dependency, and reproducible-build contracts.
 
 ### Changed
 

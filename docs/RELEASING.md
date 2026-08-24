@@ -20,7 +20,9 @@ guarantees are in [SUPPORT.md](SUPPORT.md).
    matrix and protocol declaration, and run the complete local verification
    matrix.
 2. Build twice with the same `SOURCE_DATE_EPOCH` and verify that the wheel and
-   source distribution hashes match. Inspect both archives before tagging.
+   source distribution hashes match. `scripts/verify_release.py` also verifies
+   source/package versions, required package and migration files, wheel metadata,
+   and the absence of unguarded runtime dependencies before tagging.
 3. Create an annotated tag exactly matching the package version, such as
    `v0.6.0`, and push the tag.
 4. Run the `Publish distributions` workflow for that tag. The workflow verifies

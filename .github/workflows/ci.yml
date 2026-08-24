@@ -45,12 +45,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"
-      - name: Build wheel
-        run: python -m pip wheel --no-deps --wheel-dir dist .
+      - name: Build reproducible distributions
+        run: |
+          python -m pip install build
+          epoch=$(git show -s --format=%ct HEAD)
+          SOURCE_DATE_EPOCH="$epoch" python -m build --outdir dist-one
+          SOURCE_DATE_EPOCH="$epoch" python -m build --outdir dist-two
+          python scripts/verify_release.py \
+            --dist-dir dist-one --compare-dist-dir dist-two
       - name: Verify installed wheel, empty workspace, and restart persistence
         run: |
           python -m venv wheel-test
-          wheel-test/bin/pip install --no-deps dist/*.whl
+          wheel-test/bin/pip install --no-deps dist-one/*.whl
           wheel-test/bin/python tests/installed_e2e.py
       - name: Verify official MCP SDK and multi-client interoperability
         run: |
@@ -59,4 +65,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: context-memory-wheel
-          path: dist/*.whl
+          path: dist-one/*
