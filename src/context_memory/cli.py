@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Callable
 
 from .contracts import PROMOTABLE_EVENT_KINDS, workflow_guide
 from .mcp import MCPServer
@@ -384,6 +385,394 @@ def doctor(store: MemoryStore) -> dict[str, object]:
     }
 
 
+CommandHandler = Callable[[MemoryStore, argparse.Namespace], object]
+
+
+def _event_command(store: MemoryStore, args: argparse.Namespace) -> object:
+    return store.record_event(
+        args.project_id,
+        args.kind,
+        args.content,
+        session_id=args.session_id,
+        idempotency_key=args.key,
+    )
+
+
+def _checkpoint_command(
+    store: MemoryStore, args: argparse.Namespace
+) -> object:
+    return store.create_checkpoint(
+        args.project_id,
+        args.mode,
+        args.reason,
+        args.goal,
+        args.key,
+        args.session_id,
+        args.scope_id,
+        args.completed,
+        args.next_step,
+        args.blocker,
+        args.source_event_cursor,
+        args.context_usage,
+        args.repository_path,
+        [json.loads(value) for value in args.test_result],
+        args.verified_event,
+        args.handoff_title,
+        args.handoff_content,
+        args.previous_handoff_memory_id,
+        args.commit,
+    )
+
+
+def _memory_command(store: MemoryStore, args: argparse.Namespace) -> object:
+    return store.upsert_memory(
+        args.project_id,
+        args.title,
+        args.content,
+        args.type,
+        args.status,
+        args.confidence,
+        args.importance,
+        source_event_ids=args.source,
+    )
+
+
+def _context_command(store: MemoryStore, args: argparse.Namespace) -> object:
+    return store.get_context(
+        args.project_id,
+        args.query,
+        args.budget,
+        event_cursor=args.event_cursor,
+        event_kinds=args.event_kind,
+        event_limit=args.event_limit,
+        event_char_budget=args.event_budget,
+    )
+
+
+COMMAND_HANDLERS: dict[str, CommandHandler] = {
+    "doctor": lambda store, args: doctor(store),
+    "project-create": lambda store, args: store.create_project(
+        args.slug, args.name, args.description
+    ),
+    "project-list": lambda store, args: store.list_projects(),
+    "event": _event_command,
+    "checkpoint": _checkpoint_command,
+    "checkpoint-evaluate": lambda store, args: store.evaluate_checkpoint(
+        args.project_id,
+        args.context_usage,
+        args.session_id,
+        args.repository_path,
+        args.goal,
+        args.completed,
+        args.next_step,
+        args.blocker,
+    ),
+    "events-since": lambda store, args: store.read_events_since(
+        args.project_id,
+        args.cursor,
+        args.kind,
+        args.scope_id,
+        args.limit,
+    ),
+    "event-poll": lambda store, args: store.poll_events(
+        args.project_id,
+        args.consumer_id,
+        args.kind,
+        args.scope_id,
+        args.limit,
+    ),
+    "event-ack": lambda store, args: store.acknowledge_events(
+        args.project_id,
+        args.consumer_id,
+        args.cursor,
+        args.kind,
+        args.scope_id,
+    ),
+    "memory": _memory_command,
+    "search": lambda store, args: store.search(
+        args.project_id, args.query, args.limit
+    ),
+    "context": _context_command,
+    "source": lambda store, args: store.get_source(args.event_id),
+    "repair": lambda store, args: store.rebuild_fts(args.project_id),
+    "status": lambda store, args: store.maintenance_status(args.project_id),
+}
+
+
+def _run_serve(
+    store: MemoryStore, args: argparse.Namespace, p: argparse.ArgumentParser
+) -> None:
+    token = args.token or os.environ.get("CONTEXT_MEMORY_TOKEN")
+    server = MCPServer(store, args.tool_profile)
+    if args.transport == "stdio":
+        server.serve_stdio()
+    else:
+        server.serve_http(args.host, args.port, token)
+
+
+def _run_init(
+    store: MemoryStore, args: argparse.Namespace, p: argparse.ArgumentParser
+) -> None:
+    clients = (
+        [x.strip() for x in args.clients.split(",") if x.strip()]
+        if args.clients
+        else [args.client or "generic"]
+    )
+    output(
+        init_workspaces(
+            store,
+            args.workspace,
+            clients,
+            args.launcher,
+            args.register,
+            args.package,
+        )
+    )
+
+
+def _run_export(
+    store: MemoryStore, args: argparse.Namespace, p: argparse.ArgumentParser
+) -> None:
+    destination = Path(args.output).expanduser().resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    records = store.export_project(args.project_id)
+    with destination.open("w", encoding="utf-8") as stream:
+        for record in records:
+            stream.write(
+                json.dumps(
+                    record,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                + "\n"
+            )
+    output(
+        {
+            "ok": True,
+            "project_id": args.project_id,
+            "output": str(destination),
+            "records": len(records),
+        }
+    )
+
+
+def _run_import(
+    store: MemoryStore, args: argparse.Namespace, p: argparse.ArgumentParser
+) -> None:
+    source_path = Path(args.input).expanduser().resolve()
+    records = [
+        json.loads(line)
+        for line in source_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    output({"ok": True, **store.import_project(records)})
+
+
+def _run_policy(
+    store: MemoryStore, args: argparse.Namespace, p: argparse.ArgumentParser
+) -> None:
+    changes = {
+        "max_context_chars": args.max_context_chars,
+        "max_context_items": args.max_context_items,
+        "audit_keep_entries": args.audit_keep_entries,
+        "terminal_memory_days": args.terminal_memory_days,
+        "checkpoint_soft_usage": args.checkpoint_soft_usage,
+        "checkpoint_hard_usage": args.checkpoint_hard_usage,
+        "checkpoint_elapsed_seconds": args.checkpoint_elapsed_seconds,
+        "checkpoint_event_count": args.checkpoint_event_count,
+        "checkpoint_max_age_seconds": args.checkpoint_max_age_seconds,
+        "checkpoint_cooldown_seconds": (args.checkpoint_cooldown_seconds),
+        "checkpoint_hysteresis": args.checkpoint_hysteresis,
+        "maintenance_interval_seconds": (args.maintenance_interval_seconds),
+        "message_ttl_seconds": args.message_ttl_seconds,
+    }
+    output(
+        store.set_policy(args.project_id, **changes)
+        if any(value is not None for value in changes.values())
+        else store.get_policy(args.project_id)
+    )
+
+
+def _run_maintain(
+    store: MemoryStore, args: argparse.Namespace, p: argparse.ArgumentParser
+) -> None:
+    if args.scheduled and not args.apply:
+        p.error("--scheduled requires --apply")
+    output(
+        store.maintain_scheduled(args.project_id)
+        if args.scheduled
+        else store.maintain(args.project_id, args.apply)
+    )
+
+
+def _run_audit_export(
+    store: MemoryStore, args: argparse.Namespace, p: argparse.ArgumentParser
+) -> None:
+    destination = Path(args.output).expanduser().resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    bundle = store.export_audit_chain(args.project_id)
+    destination.write_text(
+        json.dumps(
+            bundle,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    output(
+        {
+            "ok": True,
+            "project_id": args.project_id,
+            "output": str(destination),
+            "head_digest": bundle["head_digest"],
+            "checkpoints": len(bundle["checkpoints"]),
+            "audit_entries": len(bundle["audit_entries"]),
+        }
+    )
+
+
+def _run_audit_verify(
+    store: MemoryStore, args: argparse.Namespace, p: argparse.ArgumentParser
+) -> None:
+    source_path = Path(args.input).expanduser().resolve()
+    result = store.verify_audit_chain(
+        json.loads(source_path.read_text(encoding="utf-8")),
+        args.expected_head_digest,
+    )
+    output(result)
+    if not result["ok"]:
+        raise SystemExit(1)
+
+
+def _run_audit_anchor_sign(
+    store: MemoryStore, args: argparse.Namespace, p: argparse.ArgumentParser
+) -> None:
+    from .audit_anchor import create_anchor
+
+    source_path = Path(args.input).expanduser().resolve()
+    bundle = json.loads(source_path.read_text(encoding="utf-8"))
+    chain = store.verify_audit_chain(bundle)
+    if not chain["ok"] or not chain["head_digest"]:
+        p.error("audit bundle must contain a valid checkpoint chain")
+    secret = os.environ.get(args.private_key_env)
+    if secret is None:
+        p.error(
+            "private key environment variable is not set: "
+            f"{args.private_key_env}"
+        )
+    anchor = create_anchor(chain["project_id"], chain["head_digest"], secret)
+    destination = Path(args.output).expanduser().resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(
+        json.dumps(
+            anchor,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    output(
+        {
+            "ok": True,
+            "output": str(destination),
+            "project_id": anchor["project_id"],
+            "head_digest": anchor["head_digest"],
+            "public_key": anchor["public_key"],
+        }
+    )
+
+
+def _run_audit_anchor_verify(
+    store: MemoryStore, args: argparse.Namespace, p: argparse.ArgumentParser
+) -> None:
+    from .audit_anchor import verify_anchor
+
+    anchor = json.loads(
+        Path(args.input).expanduser().resolve().read_text(encoding="utf-8")
+    )
+    result = verify_anchor(
+        anchor, args.expected_project_id, args.expected_public_key
+    )
+    if result["ok"] and args.audit_bundle:
+        bundle = json.loads(
+            Path(args.audit_bundle)
+            .expanduser()
+            .resolve()
+            .read_text(encoding="utf-8")
+        )
+        chain = store.verify_audit_chain(bundle, result["head_digest"])
+        result["audit_chain"] = chain
+        if not chain["ok"] or chain["project_id"] != result["project_id"]:
+            result["ok"] = False
+            result["errors"].append(
+                "audit bundle does not match the signed anchor"
+            )
+    output(result)
+    if not result["ok"]:
+        raise SystemExit(1)
+
+
+def _run_backup(
+    store: MemoryStore, args: argparse.Namespace, p: argparse.ArgumentParser
+) -> None:
+    passphrase = (
+        os.environ.get(args.passphrase_env) if args.passphrase_env else None
+    )
+    if args.passphrase_env and passphrase is None:
+        p.error(
+            "passphrase environment variable is not set: "
+            f"{args.passphrase_env}"
+        )
+    output(store.backup_to(args.output, passphrase))
+
+
+def _run_backup_decrypt(
+    store: MemoryStore, args: argparse.Namespace, p: argparse.ArgumentParser
+) -> None:
+    passphrase = os.environ.get(args.passphrase_env)
+    if passphrase is None:
+        p.error(
+            "passphrase environment variable is not set: "
+            f"{args.passphrase_env}"
+        )
+    from .backup_crypto import decrypt_file
+
+    source, destination = (
+        Path(args.input).expanduser().resolve(),
+        Path(args.output).expanduser().resolve(),
+    )
+    destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    temporary = destination.with_name(f".{destination.name}.{os.getpid()}.tmp")
+    try:
+        result = decrypt_file(source, temporary, passphrase)
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+    output({**result, "input": str(source), "output": str(destination)})
+
+
+RUNTIME_COMMAND_HANDLERS = {
+    "serve": _run_serve,
+    "init": _run_init,
+    "export": _run_export,
+    "import": _run_import,
+    "policy": _run_policy,
+    "maintain": _run_maintain,
+    "audit-export": _run_audit_export,
+    "audit-verify": _run_audit_verify,
+    "audit-anchor-sign": _run_audit_anchor_sign,
+    "audit-anchor-verify": _run_audit_anchor_verify,
+    "backup": _run_backup,
+    "backup-decrypt": _run_backup_decrypt,
+}
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="context-memory", description="Local-first context memory"
@@ -708,354 +1097,11 @@ def main() -> None:
         return
     store = MemoryStore(args.db)
     try:
-        if args.command == "serve":
-            token = args.token or os.environ.get("CONTEXT_MEMORY_TOKEN")
-            server = MCPServer(store, args.tool_profile)
-            if args.transport == "stdio":
-                server.serve_stdio()
-            else:
-                server.serve_http(args.host, args.port, token)
-        elif args.command == "init":
-            clients = (
-                [x.strip() for x in args.clients.split(",") if x.strip()]
-                if args.clients
-                else [args.client or "generic"]
-            )
-            output(
-                init_workspaces(
-                    store,
-                    args.workspace,
-                    clients,
-                    args.launcher,
-                    args.register,
-                    args.package,
-                )
-            )
-        elif args.command == "doctor":
-            output(doctor(store))
-        elif args.command == "project-create":
-            output(
-                store.create_project(args.slug, args.name, args.description)
-            )
-        elif args.command == "project-list":
-            output(store.list_projects())
-        elif args.command == "event":
-            output(
-                store.record_event(
-                    args.project_id,
-                    args.kind,
-                    args.content,
-                    session_id=args.session_id,
-                    idempotency_key=args.key,
-                )
-            )
-        elif args.command == "checkpoint":
-            output(
-                store.create_checkpoint(
-                    args.project_id,
-                    args.mode,
-                    args.reason,
-                    args.goal,
-                    args.key,
-                    args.session_id,
-                    args.scope_id,
-                    args.completed,
-                    args.next_step,
-                    args.blocker,
-                    args.source_event_cursor,
-                    args.context_usage,
-                    args.repository_path,
-                    [json.loads(value) for value in args.test_result],
-                    args.verified_event,
-                    args.handoff_title,
-                    args.handoff_content,
-                    args.previous_handoff_memory_id,
-                    args.commit,
-                )
-            )
-        elif args.command == "checkpoint-evaluate":
-            output(
-                store.evaluate_checkpoint(
-                    args.project_id,
-                    args.context_usage,
-                    args.session_id,
-                    args.repository_path,
-                    args.goal,
-                    args.completed,
-                    args.next_step,
-                    args.blocker,
-                )
-            )
-        elif args.command == "events-since":
-            output(
-                store.read_events_since(
-                    args.project_id,
-                    args.cursor,
-                    args.kind,
-                    args.scope_id,
-                    args.limit,
-                )
-            )
-        elif args.command == "event-poll":
-            output(
-                store.poll_events(
-                    args.project_id,
-                    args.consumer_id,
-                    args.kind,
-                    args.scope_id,
-                    args.limit,
-                )
-            )
-        elif args.command == "event-ack":
-            output(
-                store.acknowledge_events(
-                    args.project_id,
-                    args.consumer_id,
-                    args.cursor,
-                    args.kind,
-                    args.scope_id,
-                )
-            )
-        elif args.command == "memory":
-            output(
-                store.upsert_memory(
-                    args.project_id,
-                    args.title,
-                    args.content,
-                    args.type,
-                    args.status,
-                    args.confidence,
-                    args.importance,
-                    source_event_ids=args.source,
-                )
-            )
-        elif args.command == "search":
-            output(store.search(args.project_id, args.query, args.limit))
-        elif args.command == "context":
-            output(
-                store.get_context(
-                    args.project_id,
-                    args.query,
-                    args.budget,
-                    event_cursor=args.event_cursor,
-                    event_kinds=args.event_kind,
-                    event_limit=args.event_limit,
-                    event_char_budget=args.event_budget,
-                )
-            )
-        elif args.command == "source":
-            output(store.get_source(args.event_id))
-        elif args.command == "export":
-            destination = Path(args.output).expanduser().resolve()
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            records = store.export_project(args.project_id)
-            with destination.open("w", encoding="utf-8") as stream:
-                for record in records:
-                    stream.write(
-                        json.dumps(
-                            record,
-                            ensure_ascii=False,
-                            sort_keys=True,
-                            separators=(",", ":"),
-                        )
-                        + "\n"
-                    )
-            output(
-                {
-                    "ok": True,
-                    "project_id": args.project_id,
-                    "output": str(destination),
-                    "records": len(records),
-                }
-            )
-        elif args.command == "import":
-            source_path = Path(args.input).expanduser().resolve()
-            records = [
-                json.loads(line)
-                for line in source_path.read_text(
-                    encoding="utf-8"
-                ).splitlines()
-                if line.strip()
-            ]
-            output({"ok": True, **store.import_project(records)})
-        elif args.command == "repair":
-            output(store.rebuild_fts(args.project_id))
-        elif args.command == "policy":
-            changes = {
-                "max_context_chars": args.max_context_chars,
-                "max_context_items": args.max_context_items,
-                "audit_keep_entries": args.audit_keep_entries,
-                "terminal_memory_days": args.terminal_memory_days,
-                "checkpoint_soft_usage": args.checkpoint_soft_usage,
-                "checkpoint_hard_usage": args.checkpoint_hard_usage,
-                "checkpoint_elapsed_seconds": args.checkpoint_elapsed_seconds,
-                "checkpoint_event_count": args.checkpoint_event_count,
-                "checkpoint_max_age_seconds": args.checkpoint_max_age_seconds,
-                "checkpoint_cooldown_seconds": (
-                    args.checkpoint_cooldown_seconds
-                ),
-                "checkpoint_hysteresis": args.checkpoint_hysteresis,
-                "maintenance_interval_seconds": (
-                    args.maintenance_interval_seconds
-                ),
-                "message_ttl_seconds": args.message_ttl_seconds,
-            }
-            output(
-                store.set_policy(args.project_id, **changes)
-                if any(value is not None for value in changes.values())
-                else store.get_policy(args.project_id)
-            )
-        elif args.command == "maintain":
-            if args.scheduled and not args.apply:
-                p.error("--scheduled requires --apply")
-            output(
-                store.maintain_scheduled(args.project_id)
-                if args.scheduled
-                else store.maintain(args.project_id, args.apply)
-            )
-        elif args.command == "status":
-            output(store.maintenance_status(args.project_id))
-        elif args.command == "audit-export":
-            destination = Path(args.output).expanduser().resolve()
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            bundle = store.export_audit_chain(args.project_id)
-            destination.write_text(
-                json.dumps(
-                    bundle,
-                    ensure_ascii=False,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                )
-                + "\n",
-                encoding="utf-8",
-            )
-            output(
-                {
-                    "ok": True,
-                    "project_id": args.project_id,
-                    "output": str(destination),
-                    "head_digest": bundle["head_digest"],
-                    "checkpoints": len(bundle["checkpoints"]),
-                    "audit_entries": len(bundle["audit_entries"]),
-                }
-            )
-        elif args.command == "audit-verify":
-            source_path = Path(args.input).expanduser().resolve()
-            result = store.verify_audit_chain(
-                json.loads(source_path.read_text(encoding="utf-8")),
-                args.expected_head_digest,
-            )
-            output(result)
-            if not result["ok"]:
-                raise SystemExit(1)
-        elif args.command == "audit-anchor-sign":
-            from .audit_anchor import create_anchor
-
-            source_path = Path(args.input).expanduser().resolve()
-            bundle = json.loads(source_path.read_text(encoding="utf-8"))
-            chain = store.verify_audit_chain(bundle)
-            if not chain["ok"] or not chain["head_digest"]:
-                p.error("audit bundle must contain a valid checkpoint chain")
-            secret = os.environ.get(args.private_key_env)
-            if secret is None:
-                p.error(
-                    "private key environment variable is not set: "
-                    f"{args.private_key_env}"
-                )
-            anchor = create_anchor(
-                chain["project_id"], chain["head_digest"], secret
-            )
-            destination = Path(args.output).expanduser().resolve()
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_text(
-                json.dumps(
-                    anchor,
-                    ensure_ascii=False,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                )
-                + "\n",
-                encoding="utf-8",
-            )
-            output(
-                {
-                    "ok": True,
-                    "output": str(destination),
-                    "project_id": anchor["project_id"],
-                    "head_digest": anchor["head_digest"],
-                    "public_key": anchor["public_key"],
-                }
-            )
-        elif args.command == "audit-anchor-verify":
-            from .audit_anchor import verify_anchor
-
-            anchor = json.loads(
-                Path(args.input)
-                .expanduser()
-                .resolve()
-                .read_text(encoding="utf-8")
-            )
-            result = verify_anchor(
-                anchor, args.expected_project_id, args.expected_public_key
-            )
-            if result["ok"] and args.audit_bundle:
-                bundle = json.loads(
-                    Path(args.audit_bundle)
-                    .expanduser()
-                    .resolve()
-                    .read_text(encoding="utf-8")
-                )
-                chain = store.verify_audit_chain(bundle, result["head_digest"])
-                result["audit_chain"] = chain
-                if (
-                    not chain["ok"]
-                    or chain["project_id"] != result["project_id"]
-                ):
-                    result["ok"] = False
-                    result["errors"].append(
-                        "audit bundle does not match the signed anchor"
-                    )
-            output(result)
-            if not result["ok"]:
-                raise SystemExit(1)
-        elif args.command == "backup":
-            passphrase = (
-                os.environ.get(args.passphrase_env)
-                if args.passphrase_env
-                else None
-            )
-            if args.passphrase_env and passphrase is None:
-                p.error(
-                    "passphrase environment variable is not set: "
-                    f"{args.passphrase_env}"
-                )
-            output(store.backup_to(args.output, passphrase))
-        elif args.command == "backup-decrypt":
-            passphrase = os.environ.get(args.passphrase_env)
-            if passphrase is None:
-                p.error(
-                    "passphrase environment variable is not set: "
-                    f"{args.passphrase_env}"
-                )
-            from .backup_crypto import decrypt_file
-
-            source, destination = (
-                Path(args.input).expanduser().resolve(),
-                Path(args.output).expanduser().resolve(),
-            )
-            destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-            temporary = destination.with_name(
-                f".{destination.name}.{os.getpid()}.tmp"
-            )
-            try:
-                result = decrypt_file(source, temporary, passphrase)
-                os.chmod(temporary, 0o600)
-                os.replace(temporary, destination)
-            finally:
-                temporary.unlink(missing_ok=True)
-            output(
-                {**result, "input": str(source), "output": str(destination)}
-            )
+        handler = COMMAND_HANDLERS.get(args.command)
+        if handler:
+            output(handler(store, args))
+        else:
+            RUNTIME_COMMAND_HANDLERS[args.command](store, args, p)
     finally:
         store.close()
 

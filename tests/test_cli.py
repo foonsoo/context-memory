@@ -1,3 +1,4 @@
+import argparse
 import tempfile
 import unittest
 import json
@@ -6,12 +7,30 @@ import subprocess
 import sys
 from pathlib import Path
 
+from context_memory import cli
 from context_memory.cli import doctor, init_workspace, init_workspaces, mcp_config
 from context_memory.store import MemoryStore
 from context_memory.contracts import PROMOTABLE_EVENT_KINDS, workflow_guide
 
 
 class CLITests(unittest.TestCase):
+    def test_command_registry_covers_every_runtime_command(self):
+        parser = cli.build_parser()
+        subparsers = next(
+            action
+            for action in parser._actions
+            if isinstance(action, argparse._SubParsersAction)
+        )
+
+        self.assertEqual(
+            set(subparsers.choices),
+            {
+                "migrate-db",
+                *cli.COMMAND_HANDLERS,
+                *cli.RUNTIME_COMMAND_HANDLERS,
+            },
+        )
+
     def test_portable_mcp_config(self):
         value = mcp_config("/tmp/example memory.db")
         self.assertEqual(value["type"], "stdio")
