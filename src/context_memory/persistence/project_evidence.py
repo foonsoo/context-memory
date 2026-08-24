@@ -1,10 +1,15 @@
 """Project and immutable-evidence persistence queries."""
 
+import hashlib
 import json
+import re
 import sqlite3
+import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable
 
+from ..retrieval import DISCOVERY_PROJECT_CANDIDATE_LIMIT
 from ..serialization import canonical
 
 
@@ -16,6 +21,7 @@ class ProjectEvidenceRepository:
         owner: Any,
         now: Callable[[], str] | None = None,
         current_datetime: Callable[[], datetime] | None = None,
+        uid: Callable[[], str] | None = None,
     ):
         self.store = None if isinstance(owner, sqlite3.Connection) else owner
         self.connection: sqlite3.Connection = (
@@ -25,6 +31,7 @@ class ProjectEvidenceRepository:
         self.current_datetime = current_datetime or (
             lambda: datetime.now(timezone.utc)
         )
+        self.uid = uid or (lambda: str(uuid.uuid4()))
 
     def project_exists(self, project_id: str) -> bool:
         row = self.connection.execute(
@@ -347,3 +354,336 @@ class ProjectEvidenceRepository:
                 item,
             )
         return item
+
+    def create_project(
+        self,
+        slug: str,
+        name: str | None = None,
+        description: str = "",
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        request = {"slug": slug, "name": name, "description": description}
+        if hit := self.store._idem("create_project", idempotency_key, request):
+            return hit
+        if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,62}", slug):
+            raise ValueError("invalid project slug")
+        item = {
+            "id": self.uid(),
+            "slug": slug,
+            "name": name or slug,
+            "description": description,
+            "created_at": self.now(),
+        }
+        with self.store.tx() as cx:
+            cx.execute(
+                "INSERT INTO projects"
+                " VALUES(:id,:slug,:name,:description,:created_at)",
+                item,
+            )
+            normalized_name = self._normalize_project_alias(
+                "name", item["name"]
+            )
+            cx.execute(
+                "INSERT INTO project_aliases VALUES(?,?,?,?,?,?)",
+                (
+                    item["id"],
+                    "name",
+                    item["name"],
+                    normalized_name,
+                    item["created_at"],
+                    item["created_at"],
+                ),
+            )
+            self.store._audit(
+                cx, item["id"], "project", item["id"], "created", item
+            )
+            self.store._save_idem(
+                cx, "create_project", idempotency_key, request, item
+            )
+        return item
+
+    @staticmethod
+    def _normalize_project_alias(kind: str, value: str) -> str:
+        value = value.strip()
+        if kind == "path":
+            return str(Path(value).expanduser().resolve())
+        return value.casefold()
+
+    def set_project_alias(
+        self, project_id: str, kind: str, value: str
+    ) -> dict[str, Any]:
+        if kind not in {"path", "name"}:
+            raise ValueError("invalid project alias kind")
+        if not self.store._row(
+            "SELECT id FROM projects WHERE id=?", (project_id,)
+        ):
+            raise KeyError("project not found")
+        normalized = self._normalize_project_alias(kind, value)
+        if not normalized:
+            raise ValueError("project alias cannot be empty")
+        ts = self.now()
+        item = {
+            "project_id": project_id,
+            "kind": kind,
+            "value": value,
+            "normalized": normalized,
+            "created_at": ts,
+            "updated_at": ts,
+        }
+        current = self.store._row(
+            "SELECT * FROM project_aliases WHERE project_id=? AND kind=? AND"
+            " normalized=?",
+            (project_id, kind, normalized),
+        )
+        if current and current["value"] == value:
+            return current
+        with self.store.tx() as cx:
+            existing = cx.execute(
+                "SELECT created_at FROM project_aliases WHERE project_id=? AND"
+                " kind=? AND normalized=?",
+                (project_id, kind, normalized),
+            ).fetchone()
+            if existing:
+                item["created_at"] = existing["created_at"]
+            cx.execute(
+                """INSERT INTO project_aliases(
+                project_id,kind,value,normalized,created_at,updated_at)
+              VALUES(:project_id,:kind,:value,:normalized,:created_at,
+                :updated_at)
+              ON CONFLICT(project_id,kind,normalized) DO UPDATE SET
+                value=excluded.value,updated_at=excluded.updated_at""",
+                item,
+            )
+            self.store._audit(
+                cx,
+                project_id,
+                "project_alias",
+                f"{kind}:{normalized}",
+                "updated" if existing else "created",
+                item,
+            )
+        return item
+
+    def _workspace_identities(self, path: str) -> dict[str, str]:
+        return {"path": path, "name": Path(path).name}
+
+    def _register_project_identities(
+        self, project_id: str, identities: dict[str, str]
+    ) -> None:
+        for kind, value in identities.items():
+            self.set_project_alias(project_id, kind, value)
+
+    def _related_project_ids(self, project_id: str) -> list[str]:
+        """Find projects sharing the hinted workspace name."""
+        rows = self.store.conn.execute(
+            """SELECT DISTINCT candidate.project_id
+          FROM project_aliases source JOIN project_aliases candidate
+            ON candidate.kind=source.kind
+            AND candidate.normalized=source.normalized
+          WHERE source.project_id=? AND candidate.project_id<>?
+            AND source.kind='name'
+          ORDER BY candidate.project_id""",
+            (project_id, project_id),
+        )
+        return list(dict.fromkeys(row["project_id"] for row in rows))
+
+    def _discovery_project_candidates(
+        self,
+        project_id: str,
+        query_tokens: list[str],
+        lexical: list[dict[str, Any]],
+    ) -> list[str]:
+        """Bound discovery using lexical or identity evidence."""
+        ordered: list[str] = []
+
+        def add(candidate_id: str) -> None:
+            if candidate_id != project_id and candidate_id not in ordered:
+                ordered.append(candidate_id)
+
+        for memory in lexical:
+            if memory["visibility"] == "project":
+                add(memory["project_id"])
+        for candidate_id in self._related_project_ids(project_id):
+            add(candidate_id)
+        # Registry identity matching is the fallback when memory FTS
+        # supplied no
+        # project evidence. Avoid an alias join on the common lexical
+        # path.
+        if (
+            not lexical
+            and query_tokens
+            and len(ordered) < DISCOVERY_PROJECT_CANDIDATE_LIMIT
+        ):
+            clauses = []
+            args: list[Any] = []
+            for token in query_tokens:
+                pattern = f"%{token}%"
+                clauses.append(
+                    "(lower(p.slug) LIKE ? OR lower(p.name) LIKE ? OR"
+                    " lower(COALESCE(p.description,'')) LIKE ? OR"
+                    " lower(a.normalized) LIKE ?)"
+                )
+                args.extend([pattern] * 4)
+            rows = self.store.conn.execute(
+                f"""SELECT DISTINCT p.id FROM projects p
+              LEFT JOIN project_aliases a ON a.project_id=p.id
+              WHERE p.id<>? AND ({" OR ".join(clauses)})
+              ORDER BY p.id LIMIT ?""",
+                [project_id, *args, DISCOVERY_PROJECT_CANDIDATE_LIMIT + 1],
+            )
+            for row in rows:
+                add(row["id"])
+        return ordered[:DISCOVERY_PROJECT_CANDIDATE_LIMIT]
+
+    def create_scope(
+        self, project_id: str, name: str, path: str | None = None
+    ) -> dict[str, Any]:
+        item = {
+            "id": self.uid(),
+            "project_id": project_id,
+            "name": name,
+            "path": path,
+            "created_at": self.now(),
+        }
+        with self.store.tx() as cx:
+            self.insert_scope(cx, item)
+            self.store._audit(
+                cx, project_id, "scope", item["id"], "created", item
+            )
+        return item
+
+    def resolve_project(self, cwd: str) -> dict[str, Any]:
+        """Resolve a workspace by path, then repository identity."""
+        path = str(Path(cwd).expanduser().resolve())
+        identities = self._workspace_identities(path)
+        row = self.store.conn.execute(
+            """SELECT p.*, s.id AS scope_id FROM scopes s
+          JOIN projects p ON p.id=s.project_id WHERE s.path=?""",
+            (path,),
+        ).fetchone()
+        if row:
+            item = dict(row)
+            scope_id = item.pop("scope_id")
+            self._register_project_identities(item["id"], identities)
+            return {"project": item, "scope_id": scope_id, "created": False}
+        # A repository name resolves ownership only when it identifies
+        # one project.
+        # Ambiguous names remain separate and are handled by retrieval
+        # discovery.
+        for kind in ("name",):
+            if kind not in identities:
+                continue
+            normalized = self._normalize_project_alias(kind, identities[kind])
+            matches = list(
+                self.store.conn.execute(
+                    "SELECT DISTINCT project_id FROM project_aliases WHERE"
+                    " kind=? AND normalized=?",
+                    (kind, normalized),
+                )
+            )
+            if len(matches) != 1:
+                continue
+            project = self.store._row(
+                "SELECT * FROM projects WHERE id=?",
+                (matches[0]["project_id"],),
+            )
+            path_digest = hashlib.sha256(path.encode()).hexdigest()[:12]
+            scope = self.create_scope(
+                project["id"],
+                f"__workspace__:{path_digest}",
+                path,
+            )
+            self._register_project_identities(project["id"], identities)
+            return {
+                "project": project,
+                "scope_id": scope["id"],
+                "created": False,
+                "matched_by": kind,
+            }
+        base = (
+            re.sub(r"[^a-z0-9._-]+", "-", Path(path).name.lower()).strip("-._")
+            or "workspace"
+        )
+        slug = base[:54]
+        existing = self.store._row(
+            "SELECT * FROM projects WHERE slug=?", (slug,)
+        )
+        if existing:
+            has_root = self.store.conn.execute(
+                "SELECT 1 FROM scopes WHERE project_id=? AND path IS NOT NULL",
+                (existing["id"],),
+            ).fetchone()
+            if not has_root:
+                scope = self.create_scope(existing["id"], "__root__", path)
+                return {
+                    "project": existing,
+                    "scope_id": scope["id"],
+                    "created": False,
+                }
+            slug = f"{slug}-{hashlib.sha256(path.encode()).hexdigest()[:8]}"
+        project = self.create_project(
+            slug,
+            Path(path).name,
+            f"Automatically mapped from agent workspace: {path}",
+        )
+        scope = self.create_scope(project["id"], "__root__", path)
+        self._register_project_identities(project["id"], identities)
+        return {"project": project, "scope_id": scope["id"], "created": True}
+
+    def start_session(
+        self,
+        project_id: str,
+        client: str = "codex",
+        scope_id: str | None = None,
+        external_id: str | None = None,
+        metadata: dict | None = None,
+    ) -> dict[str, Any]:
+        if external_id:
+            hit = self.find_session(project_id, client, external_id)
+            if hit:
+                return hit
+        item = {
+            "id": self.uid(),
+            "project_id": project_id,
+            "scope_id": scope_id,
+            "client": client,
+            "external_id": external_id,
+            "started_at": self.now(),
+            "ended_at": None,
+            "metadata_json": canonical(metadata or {}),
+        }
+        with self.store.tx() as cx:
+            self.insert_session(cx, item)
+            self.store._audit(
+                cx, project_id, "session", item["id"], "started", item
+            )
+        return item
+
+    def end_session(
+        self,
+        session_id: str,
+        summary: str | None = None,
+        extract_candidates: bool = True,
+    ) -> dict[str, Any]:
+        with self.store.tx() as cx:
+            row = self.get_session(session_id)
+            if not row:
+                raise KeyError("session not found")
+            ended = row["ended_at"] or self.now()
+            self.set_session_ended(cx, session_id, ended)
+            result = dict(row)
+            result["ended_at"] = ended
+            self.store._audit(
+                cx,
+                row["project_id"],
+                "session",
+                session_id,
+                "ended",
+                {"summary": summary, **result},
+            )
+        result["review"] = (
+            self.store.extract_session_candidates(session_id)
+            if extract_candidates
+            else {"created": [], "conflicts": []}
+        )
+        return result

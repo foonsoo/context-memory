@@ -68,7 +68,9 @@ class ProjectEvidenceRepositoryTests(unittest.TestCase):
             self.repository.list_project_aliases("p1")[0]["value"],
             "Alpha",
         )
-        self.assertEqual(self.repository.get_event("e1")["content"], "evidence")
+        self.assertEqual(
+            self.repository.get_event("e1")["content"], "evidence"
+        )
         self.assertIsNone(self.repository.get_event("missing"))
         self.assertEqual(
             [
@@ -155,6 +157,38 @@ class ProjectEvidenceRepositoryTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     receipt["acknowledged_cursor"], delivered["next_cursor"]
+                )
+            finally:
+                store.close()
+
+    def test_facade_delegates_workspace_and_session_lifecycle(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace = Path(temporary) / "workspace"
+            workspace.mkdir()
+            store = MemoryStore(Path(temporary) / "memory.db")
+            try:
+                with patch.object(
+                    store.project_evidence,
+                    "resolve_project",
+                    wraps=store.project_evidence.resolve_project,
+                ) as resolve:
+                    resolved = store.resolve_project(str(workspace))
+                resolve.assert_called_once_with(str(workspace))
+
+                session = store.start_session(
+                    resolved["project"]["id"],
+                    scope_id=resolved["scope_id"],
+                    external_id="session",
+                )
+                ended = store.end_session(
+                    session["id"], extract_candidates=False
+                )
+                self.assertIsNotNone(ended["ended_at"])
+                self.assertEqual(
+                    store.list_project_aliases(resolved["project"]["id"])[0][
+                        "project_id"
+                    ],
+                    resolved["project"]["id"],
                 )
             finally:
                 store.close()
