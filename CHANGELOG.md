@@ -5,6 +5,8 @@ uses semantic versioning for the public Python package and MCP/CLI contracts.
 
 ## Unreleased
 
+## [0.6.1] - 2026-08-25
+
 ### Added
 
 - Decision Brief retrieval, research provenance, topic Wiki revisions,
@@ -19,6 +21,8 @@ uses semantic versioning for the public Python package and MCP/CLI contracts.
   migrations, backups, deprecations, and failed-upgrade recovery.
 - A shared release verifier used by CI and publishing to enforce version,
   archive-content, zero-runtime-dependency, and reproducible-build contracts.
+- Release builds write both distribution sets outside the source tree so the
+  second sdist cannot recursively capture the first build output.
 
 ### Changed
 
@@ -30,4 +34,5 @@ uses semantic versioning for the public Python package and MCP/CLI contracts.
 - Context Memory remains local-first. The default database is not encrypted;
   users should not record secrets or credentials.
 
-[Unreleased]: https://github.com/foonsoo/context-memory/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/foonsoo/context-memory/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/foonsoo/context-memory/releases/tag/v0.6.1

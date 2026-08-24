@@ -56,6 +56,25 @@ class ReleaseVerificationTests(unittest.TestCase):
                     archive.addfile(info, io.BytesIO(data))
             verify_sdist(sdist, "0.6.0")
 
+    def test_sdist_rejects_nested_distribution_outputs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            sdist = Path(tmp) / "release.tar.gz"
+            with tarfile.open(sdist, "w:gz") as archive:
+                for name in (
+                    "pyproject.toml",
+                    "src/context_memory/__init__.py",
+                    "scripts/verify_release.py",
+                    "migrations/001_initial.sql",
+                    "migrations/016_source_reinspection_requests.sql",
+                    "dist-one/context_memory-0.6.0.tar.gz",
+                ):
+                    payload = b"content"
+                    info = tarfile.TarInfo(f"context_memory-0.6.0/{name}")
+                    info.size = len(payload)
+                    archive.addfile(info, io.BytesIO(payload))
+            with self.assertRaisesRegex(ValueError, "nested distributions"):
+                verify_sdist(sdist, "0.6.0")
+
     def test_reproducible_hashes(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

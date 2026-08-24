@@ -42,22 +42,23 @@ jobs:
         run: |
           python -m pip install build
           epoch=$(git show -s --format=%ct HEAD)
-          SOURCE_DATE_EPOCH="$epoch" python -m build --outdir dist-one
-          SOURCE_DATE_EPOCH="$epoch" python -m build --outdir dist-two
+          SOURCE_DATE_EPOCH="$epoch" python -m build --outdir "$RUNNER_TEMP/dist-one"
+          SOURCE_DATE_EPOCH="$epoch" python -m build --outdir "$RUNNER_TEMP/dist-two"
           python scripts/verify_release.py --tag "$RELEASE_TAG" \
-            --dist-dir dist-one --compare-dist-dir dist-two
+            --dist-dir "$RUNNER_TEMP/dist-one" \
+            --compare-dist-dir "$RUNNER_TEMP/dist-two"
       - name: Verify wheel installation
         run: |
           python -m venv release-test
-          release-test/bin/pip install --no-deps dist-one/*.whl
+          release-test/bin/pip install --no-deps "$RUNNER_TEMP"/dist-one/*.whl
           release-test/bin/python tests/installed_e2e.py
       - uses: actions/attest-build-provenance@v2
         with:
-          subject-path: dist-one/*
+          subject-path: ${{ runner.temp }}/dist-one/*
       - uses: actions/upload-artifact@v4
         with:
           name: release-distributions
-          path: dist-one/*
+          path: ${{ runner.temp }}/dist-one/*
           if-no-files-found: error
           retention-days: 7
 

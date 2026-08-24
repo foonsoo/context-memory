@@ -86,6 +86,16 @@ def verify_sdist(path: Path, version: str) -> None:
     missing = sorted(required - names)
     if missing:
         raise ValueError(f"sdist missing required files: {missing}")
+    nested_distributions = sorted(
+        name
+        for name in names
+        if name.startswith(prefix + "dist-")
+        or name.endswith((".whl", ".tar.gz"))
+    )
+    if nested_distributions:
+        raise ValueError(
+            f"sdist contains nested distributions: {nested_distributions}"
+        )
 
 
 def digest(path: Path) -> str:
