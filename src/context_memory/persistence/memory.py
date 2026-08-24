@@ -17,6 +17,13 @@ STATUSES = {
     "rejected",
 }
 TYPES = MEMORY_TYPES
+RELATIONS = {
+    "supersedes",
+    "disputes",
+    "supports",
+    "depends_on",
+    "related_to",
+}
 
 
 class MemoryRepository:
@@ -307,5 +314,259 @@ class MemoryRepository:
                 memory_id,
                 f"status:{status}",
                 {"note": note, **result},
+            )
+        return result
+
+    def set_search_aliases(
+        self, project_id: str, term: str, aliases: list[str]
+    ) -> dict[str, Any]:
+        normalized = term.strip().casefold()
+        values = sorted(
+            {value.strip().casefold() for value in aliases if value.strip()}
+            - {normalized}
+        )
+        if not normalized or not values:
+            raise ValueError(
+                "term and at least one distinct alias are required"
+            )
+        if not self.store._row(
+            "SELECT id FROM projects WHERE id=?", (project_id,)
+        ):
+            raise KeyError("project not found")
+        item = {
+            "project_id": project_id,
+            "term": normalized,
+            "aliases_json": canonical(values),
+            "updated_at": self.now(),
+        }
+        existing = self.store._row(
+            "SELECT created_at FROM search_aliases WHERE project_id=? AND"
+            " term=?",
+            (project_id, normalized),
+        )
+        item["created_at"] = (
+            existing["created_at"] if existing else item["updated_at"]
+        )
+        with self.store.tx() as connection:
+            connection.execute(
+                """INSERT INTO search_aliases(project_id,term,aliases_json,
+              created_at,updated_at) VALUES(:project_id,:term,
+              :aliases_json,:created_at,:updated_at)
+              ON CONFLICT(project_id,term) DO UPDATE SET
+              aliases_json=excluded.aliases_json,
+              updated_at=excluded.updated_at""",
+                item,
+            )
+            self.store._audit(
+                connection,
+                project_id,
+                "search_alias",
+                normalized,
+                "updated" if existing else "created",
+                item,
+            )
+        return {**item, "aliases": values}
+
+    def list_search_aliases(self, project_id: str) -> list[dict[str, Any]]:
+        rows = []
+        for row in self.connection.execute(
+            "SELECT * FROM search_aliases WHERE project_id=? ORDER BY term",
+            (project_id,),
+        ):
+            item = dict(row)
+            item["aliases"] = json.loads(item.pop("aliases_json"))
+            rows.append(item)
+        return rows
+
+    def create_relation(
+        self,
+        project_id: str,
+        from_memory_id: str,
+        to_memory_id: str,
+        relation: str,
+        note: str = "",
+    ) -> dict[str, Any]:
+        if relation not in RELATIONS:
+            raise ValueError("invalid relation")
+        if from_memory_id == to_memory_id:
+            raise ValueError("self relations are not allowed")
+        endpoints = list(
+            self.connection.execute(
+                "SELECT id,project_id FROM memories WHERE id IN (?,?)",
+                (from_memory_id, to_memory_id),
+            )
+        )
+        if len(endpoints) != 2 or any(
+            row["project_id"] != project_id for row in endpoints
+        ):
+            raise ValueError(
+                "relation endpoints must be memories in the same project"
+            )
+        item = {
+            "id": self.uid(),
+            "project_id": project_id,
+            "from_memory_id": from_memory_id,
+            "to_memory_id": to_memory_id,
+            "relation": relation,
+            "note": note,
+            "created_at": self.now(),
+        }
+        with self.store.tx() as connection:
+            connection.execute(
+                "INSERT INTO edges"
+                " VALUES(:id,:project_id,:from_memory_id,:to_memory_id,"
+                ":relation,:note,:created_at)",
+                item,
+            )
+            self.store._audit(
+                connection,
+                project_id,
+                "edge",
+                item["id"],
+                "created",
+                item,
+            )
+        return item
+
+    def traverse(
+        self,
+        project_id: str,
+        memory_id: str,
+        max_depth: int = 2,
+        direction: str = "both",
+        relations: list[str] | None = None,
+        statuses: list[str] | None = None,
+    ) -> dict[str, Any]:
+        if direction not in {"outgoing", "incoming", "both"}:
+            raise ValueError("invalid direction")
+        if not 1 <= max_depth <= 5:
+            raise ValueError("max_depth must be 1..5")
+        if relations and any(value not in RELATIONS for value in relations):
+            raise ValueError("invalid relation filter")
+        allowed_statuses = statuses or ["active", "disputed"]
+        start = self.store._row(
+            "SELECT * FROM memories WHERE id=? AND project_id=?",
+            (memory_id, project_id),
+        )
+        if not start:
+            raise KeyError("memory not found")
+        nodes = {memory_id: {**start, "depth": 0}}
+        selected_edges = []
+        frontier = {memory_id}
+        for depth in range(1, max_depth + 1):
+            next_frontier = set()
+            for current in frontier:
+                clauses = []
+                arguments = []
+                if direction in {"outgoing", "both"}:
+                    clauses.append("from_memory_id=?")
+                    arguments.append(current)
+                if direction in {"incoming", "both"}:
+                    clauses.append("to_memory_id=?")
+                    arguments.append(current)
+                sql = (
+                    "SELECT * FROM edges WHERE project_id=? AND ("
+                    + " OR ".join(clauses)
+                    + ")"
+                )
+                parameters = [project_id, *arguments]
+                if relations:
+                    sql += (
+                        " AND relation IN ("
+                        + ",".join("?" for _ in relations)
+                        + ")"
+                    )
+                    parameters.extend(relations)
+                for edge_row in self.connection.execute(sql, parameters):
+                    edge = dict(edge_row)
+                    other = (
+                        edge["to_memory_id"]
+                        if edge["from_memory_id"] == current
+                        else edge["from_memory_id"]
+                    )
+                    node = self.store._row(
+                        "SELECT * FROM memories WHERE id=? AND project_id=?",
+                        (other, project_id),
+                    )
+                    if not node or node["status"] not in allowed_statuses:
+                        continue
+                    if edge["id"] not in {
+                        item["id"] for item in selected_edges
+                    }:
+                        selected_edges.append(edge)
+                    if other not in nodes:
+                        nodes[other] = {**node, "depth": depth}
+                        next_frontier.add(other)
+            frontier = next_frontier
+            if not frontier:
+                break
+        return {
+            "start_memory_id": memory_id,
+            "max_depth": max_depth,
+            "direction": direction,
+            "nodes": sorted(
+                nodes.values(), key=lambda item: (item["depth"], item["id"])
+            ),
+            "edges": selected_edges,
+        }
+
+    def record_feedback(self, memory_id: str, signal: str) -> dict[str, Any]:
+        if signal not in {"retrieved", "used", "helpful", "incorrect"}:
+            raise ValueError(
+                "signal must be retrieved, used, helpful, or incorrect"
+            )
+        memory = self.get(memory_id)
+        if not memory:
+            raise KeyError("memory not found")
+        timestamp = self.now()
+        column = signal + "_count"
+        with self.store.tx() as connection:
+            connection.execute(
+                """INSERT OR IGNORE INTO memory_usage(
+                memory_id,updated_at) VALUES(?,?)""",
+                (memory_id, timestamp),
+            )
+            updates = f"{column}={column}+1,updated_at=?"
+            if signal == "retrieved":
+                updates += ",last_retrieved_at=?"
+            if signal == "used":
+                updates += ",last_used_at=?"
+            values: list[Any] = [timestamp]
+            if signal in {"retrieved", "used"}:
+                values.append(timestamp)
+            values.append(memory_id)
+            connection.execute(
+                f"UPDATE memory_usage SET {updates} WHERE memory_id=?",
+                values,
+            )
+            result = dict(
+                connection.execute(
+                    "SELECT * FROM memory_usage WHERE memory_id=?",
+                    (memory_id,),
+                ).fetchone()
+            )
+            delta = {
+                "used": 0.005,
+                "helpful": 0.02,
+                "incorrect": -0.05,
+            }.get(signal, 0.0)
+            if delta:
+                connection.execute(
+                    "UPDATE memories SET"
+                    " importance=max(0,min(1,importance+?)),updated_at=?"
+                    " WHERE id=?",
+                    (delta, timestamp, memory_id),
+                )
+                result["importance"] = connection.execute(
+                    "SELECT importance FROM memories WHERE id=?",
+                    (memory_id,),
+                ).fetchone()[0]
+            self.store._audit(
+                connection,
+                memory["project_id"],
+                "memory_feedback",
+                memory_id,
+                signal,
+                result,
             )
         return result

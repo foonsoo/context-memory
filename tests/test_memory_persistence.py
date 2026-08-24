@@ -63,5 +63,30 @@ class MemoryRepositoryTests(unittest.TestCase):
                     (memory["id"],),
                 ).fetchone()
                 self.assertEqual(embedding["memory_id"], memory["id"])
+
+                other = store.upsert_memory(
+                    project["id"], "Outcome", "Repository boundary held"
+                )
+                store.transition(other["id"], "active")
+                alias = store.set_search_aliases(
+                    project["id"], "repository", ["persistence"]
+                )
+                self.assertEqual(alias["aliases"], ["persistence"])
+                self.assertEqual(
+                    store.list_search_aliases(project["id"])[0]["term"],
+                    "repository",
+                )
+                relation = store.create_relation(
+                    project["id"],
+                    memory["id"],
+                    other["id"],
+                    "supports",
+                )
+                graph = store.traverse(project["id"], memory["id"])
+                self.assertEqual(graph["edges"][0]["id"], relation["id"])
+                feedback = store.record_memory_feedback(
+                    memory["id"], "helpful"
+                )
+                self.assertEqual(feedback["helpful_count"], 1)
             finally:
                 store.close()
