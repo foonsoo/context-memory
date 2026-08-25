@@ -178,7 +178,14 @@ Keep the current local-first, single-user stdio product and a possible hosted se
    pre-1.0 deprecation rules, forward-only migration contract, backup/restore
    compatibility, and a restore-forward failed-upgrade procedure. Hosted and
    multi-user service support remains explicitly outside this release line.
-3. **Add user-owned controls.** Provide a minimal review/control surface for onboarding, memory provenance inspection, approve/reject/correct/delete/export, storage status, backup/restore, and complete uninstall. This surface must call the same authoritative service layer and must not become a second writable Wiki store. A separate browsing UI for the local product remains evidence-gated; a hosted service cannot launch without these user controls.
+3. **Add user-owned controls — in progress.** The CLI now exposes the existing
+   authoritative review queue, approve/reject/supersede/dispute actions,
+   evidence-backed correction proposals, and explicit lifecycle transitions.
+   Existing commands cover onboarding, source-event inspection, project export,
+   storage status, and backup/decryption. Complete user erasure, restore, and
+   client-registration cleanup remain; they must not create a second writable
+   Wiki store. A separate browsing UI for the local product remains
+   evidence-gated; a hosted service cannot launch without these user controls.
 4. **Design hosted identity and isolation before remote access.** Add authenticated users, tenant/project authorization, session revocation, least-privilege service roles, rate limits, quotas, and tests that prevent cross-tenant search, export, event polling, and backup access. A single bearer token is not sufficient for an untrusted network.
 5. **Add transport and API production controls.** Put TLS and trusted-proxy handling at the deployment boundary; define request/body/time limits, pagination and cancellation, stable error codes, idempotency retention, CORS policy where applicable, and backward-compatible API versioning.
 6. **Add data governance and privacy operations.** Document collection purpose, retention defaults, user export and deletion, account/project erasure, backup expiry, regional/storage choices, incident handling, and handling of sensitive data. Evaluate secret/PII detection as a warning and policy layer without claiming perfect detection.

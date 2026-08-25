@@ -492,6 +492,25 @@ COMMAND_HANDLERS: dict[str, CommandHandler] = {
     ),
     "context": _context_command,
     "source": lambda store, args: store.get_source(args.event_id),
+    "review-list": lambda store, args: store.review_queue(args.project_id),
+    "review-action": lambda store, args: store.review_candidate(
+        args.memory_id,
+        args.action,
+        args.related_memory_id,
+        args.note,
+    ),
+    "memory-correct": lambda store, args: store.propose_correction(
+        args.project_id,
+        args.memory_id,
+        args.content,
+        args.title,
+    ),
+    "memory-transition": lambda store, args: store.transition(
+        args.memory_id,
+        args.status,
+        args.related_memory_id,
+        args.note,
+    ),
     "repair": lambda store, args: store.rebuild_fts(args.project_id),
     "status": lambda store, args: store.maintenance_status(args.project_id),
 }
@@ -939,6 +958,40 @@ def build_parser() -> argparse.ArgumentParser:
     context.add_argument("--event-budget", type=int, default=2000)
     source = sub.add_parser("source")
     source.add_argument("event_id")
+    review_list = sub.add_parser(
+        "review-list",
+        help="List proposed memories and actionable Wiki revisions",
+    )
+    review_list.add_argument("project_id")
+    review_action = sub.add_parser(
+        "review-action",
+        help="Approve or reject a candidate, or supersede/dispute a memory",
+    )
+    review_action.add_argument("memory_id")
+    review_action.add_argument(
+        "action", choices=["approve", "reject", "supersede", "dispute"]
+    )
+    review_action.add_argument("--related-memory-id")
+    review_action.add_argument("--note", default="")
+    memory_correct = sub.add_parser(
+        "memory-correct",
+        help="Create an evidence-backed proposed correction for review",
+    )
+    memory_correct.add_argument("project_id")
+    memory_correct.add_argument("memory_id")
+    memory_correct.add_argument("content")
+    memory_correct.add_argument("--title")
+    memory_transition = sub.add_parser(
+        "memory-transition",
+        help="Explicitly change a memory lifecycle status",
+    )
+    memory_transition.add_argument("memory_id")
+    memory_transition.add_argument(
+        "status",
+        choices=["active", "superseded", "disputed", "expired", "rejected"],
+    )
+    memory_transition.add_argument("--related-memory-id")
+    memory_transition.add_argument("--note", default="")
     export = sub.add_parser(
         "export", help="Export one project as deterministic JSON Lines"
     )

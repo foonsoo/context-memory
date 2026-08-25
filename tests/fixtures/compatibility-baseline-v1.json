@@ -54,7 +54,7 @@
   "cli": {
     "prog":"context-memory",
     "arguments":["db"],
-    "sha256":"ac684ecab8810d02700da4562f8f841717774865dd582b162e3eac79e471ec03",
+    "sha256":"63e2528c3a84a11f819373a81e9b62a8529e5cc63bf20de71453f3ccb9b62230",
     "commands":[
       {"name":"serve","arguments":["transport","host","port","token","tool_profile"],"sha256":"688c6b9d447aa41dfffb44bd0565f62f99b10b8e2f0164ce8f31df102753fa0c"},
       {"name":"init","arguments":["workspace","client","clients","launcher","package","register"],"sha256":"612e63b765a85a5f32968bd8c32a2756ff55bbef32086b5f0c04dab13f4a9ecd"},
@@ -71,6 +71,10 @@
       {"name":"search","arguments":["project_id","query","limit"],"sha256":"de9f25c17bc7472c8dfcce8a2b6bded9d4bcc7b7cd021cbd77b528de11a591e3"},
       {"name":"context","arguments":["project_id","query","budget","event_cursor","event_kind","event_limit","event_budget"],"sha256":"2f60cccf8876be103e1a643294ddcea417de938136013140b073480bf6b3eb0b"},
       {"name":"source","arguments":["event_id"],"sha256":"f28743176f730e78f4acd691ee7c395fff698d645720da9867f375b3442b4b8d"},
+      {"name":"review-list","arguments":["project_id"],"sha256":"a7c538685dba86edfab405a19d50d7e2f95f0ec6bac07139ae630a34be2815fa"},
+      {"name":"review-action","arguments":["memory_id","action","related_memory_id","note"],"sha256":"752137ee4bbfcf35304b5fbcf26ce42491d0548cdf29a0982462e70856229fc9"},
+      {"name":"memory-correct","arguments":["project_id","memory_id","content","title"],"sha256":"fed4e592c1676ea18aa79aa6e143df4301530efa746075c2f1907307d20c664e"},
+      {"name":"memory-transition","arguments":["memory_id","status","related_memory_id","note"],"sha256":"db84ba5722687876e7af096c6a19ec311da90dd569485ea58a327c637e205de0"},
       {"name":"export","arguments":["project_id","output"],"sha256":"6b314c1e21f26eec2f08aedf505414f0cfec00af6058c628b91f738f5335ee73"},
       {"name":"import","arguments":["input"],"sha256":"0827a0c4333886c66b52dee57f6ee966dc4c78603bb96f590d8949cbae3ceb4b"},
       {"name":"repair","arguments":["project_id"],"sha256":"defaf6563dd4fa4ab344b8733b1a2b66adf136ddd9137814f468d703b5d6d40c"},

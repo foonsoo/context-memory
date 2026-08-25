@@ -175,6 +175,95 @@ class CLITests(unittest.TestCase):
                                                   check=True, capture_output=True, text=True).stdout)
             self.assertEqual(evaluated["suppression"], "unchanged_recovery_state")
 
+    def test_user_owned_review_and_correction_commands(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary) / "memory.db"
+            store = MemoryStore(database)
+            try:
+                project = store.create_project("cli-user-controls")
+                event = store.record_event(
+                    project["id"], "fact", "The retention period is 30 days"
+                )
+                memory = store.upsert_memory(
+                    project["id"],
+                    "Retention",
+                    "The retention period is 30 days",
+                    "fact",
+                    "proposed",
+                    source_event_ids=[event["id"]],
+                )
+            finally:
+                store.close()
+
+            env = {
+                **os.environ,
+                "PYTHONPATH": str(Path(__file__).parents[1] / "src"),
+            }
+            base = [
+                sys.executable,
+                "-m",
+                "context_memory.cli",
+                "--db",
+                str(database),
+            ]
+
+            queued = subprocess.run(
+                base + ["review-list", project["id"]],
+                cwd=Path(__file__).parents[1],
+                env=env,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(json.loads(queued.stdout)[0]["id"], memory["id"])
+
+            approved = subprocess.run(
+                base + ["review-action", memory["id"], "approve"],
+                cwd=Path(__file__).parents[1],
+                env=env,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(json.loads(approved.stdout)["status"], "active")
+
+            corrected = subprocess.run(
+                base
+                + [
+                    "memory-correct",
+                    project["id"],
+                    memory["id"],
+                    "The retention period is 60 days",
+                    "--title",
+                    "Updated retention",
+                ],
+                cwd=Path(__file__).parents[1],
+                env=env,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            correction = json.loads(corrected.stdout)
+            self.assertEqual(correction["status"], "proposed")
+            self.assertEqual(correction["title"], "Updated retention")
+
+            rejected = subprocess.run(
+                base
+                + [
+                    "memory-transition",
+                    correction["id"],
+                    "rejected",
+                    "--note",
+                    "User declined this correction",
+                ],
+                cwd=Path(__file__).parents[1],
+                env=env,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(json.loads(rejected.stdout)["status"], "rejected")
+
     def test_audit_export_and_offline_verify_commands(self):
         with tempfile.TemporaryDirectory() as temporary:
             database = Path(temporary) / "memory.db"
