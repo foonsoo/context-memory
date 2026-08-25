@@ -52,6 +52,7 @@ jobs:
           python -m venv release-test
           release-test/bin/pip install --no-deps "$RUNNER_TEMP"/dist-one/*.whl
           release-test/bin/python tests/installed_e2e.py
+          release-test/bin/python tests/uninstall_e2e.py
       - uses: actions/attest-build-provenance@v2
         with:
           subject-path: ${{ runner.temp }}/dist-one/*
