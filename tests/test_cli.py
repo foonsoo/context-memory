@@ -5,10 +5,12 @@ import json
 import os
 import subprocess
 import sys
+from unittest import mock
 from pathlib import Path
 
 from context_memory import cli
 from context_memory.cli import (
+    cleanup_clients,
     doctor,
     erase_database,
     init_workspace,
@@ -116,6 +118,69 @@ class CLITests(unittest.TestCase):
                 self.assertEqual(result["clients"][1]["status"], "manual")
             finally:
                 store.close()
+
+    def test_client_cleanup_is_planned_by_default(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            cursor = root / "mcp.json"
+            cursor.write_text(
+                '{"mcpServers":{"context-memory":{"command":"cm"},'
+                '"keep":{"command":"other"}},"other":true}\n',
+                encoding="utf-8",
+            )
+            with mock.patch.object(
+                cli, "_client_command", return_value="/usr/bin/client"
+            ), mock.patch.object(subprocess, "run") as run:
+                result = cleanup_clients(
+                    ["claude-code", "codex", "cursor", "vscode"],
+                    root,
+                    False,
+                    cursor,
+                )
+            self.assertFalse(result["applied"])
+            self.assertFalse(result["restart_required"])
+            self.assertEqual(
+                [item["status"] for item in result["clients"]],
+                ["planned", "planned", "planned", "manual"],
+            )
+            run.assert_not_called()
+            saved = json.loads(cursor.read_text(encoding="utf-8"))
+            self.assertIn("context-memory", saved["mcpServers"])
+
+    def test_client_cleanup_removes_only_owned_registrations(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            cursor = root / "mcp.json"
+            cursor.write_text(
+                '{"mcpServers":{"context-memory":{"command":"cm"},'
+                '"keep":{"command":"other"}},"other":true}\n',
+                encoding="utf-8",
+            )
+            with mock.patch.object(
+                cli, "_client_command", return_value="/usr/bin/client"
+            ), mock.patch.object(subprocess, "run") as run:
+                result = cleanup_clients(
+                    ["claude-code", "codex", "cursor"],
+                    root,
+                    True,
+                    cursor,
+                )
+            self.assertTrue(result["restart_required"])
+            self.assertTrue(
+                all(item["removed"] for item in result["clients"])
+            )
+            self.assertEqual(
+                [call.args[0][1:] for call in run.call_args_list],
+                [
+                    ["mcp", "remove", "context-memory"],
+                    ["mcp", "remove", "context_memory"],
+                ],
+            )
+            saved = json.loads(cursor.read_text(encoding="utf-8"))
+            self.assertNotIn("context-memory", saved["mcpServers"])
+            self.assertEqual(saved["mcpServers"]["keep"]["command"], "other")
+            self.assertTrue(saved["other"])
+            self.assertTrue(cursor.with_suffix(".json.bak").exists())
 
     def test_init_prints_client_neutral_retrieval_workflow(self):
         with tempfile.TemporaryDirectory() as temp:

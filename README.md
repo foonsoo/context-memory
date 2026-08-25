@@ -63,6 +63,20 @@ uvx --from context-memory-mcp context-memory doctor
 
 `--register` is opt-in because it changes client configuration. Results are reported per client, so one missing client does not prevent other registrations. Claude Code uses user scope, Cursor is merged into `~/.cursor/mcp.json` with a backup, and VS Code uses its official `--add-mcp` CLI. Craft Agents remains a guided manual step because its documented sources are workspace-scoped. The older `--client NAME` form remains supported.
 
+Registration cleanup is also explicit and plans changes by default:
+
+```bash
+context-memory unregister --clients auto
+context-memory unregister --clients auto --apply
+```
+
+Claude Code and Codex use their MCP removal commands. Cursor removes only the
+`context-memory` entry from its global JSON and first creates a numbered backup.
+VS Code, Craft Agents, and generic clients return client-specific manual steps
+because their supported removal surfaces are interactive or workspace-owned.
+Restart clients after applied removals; cleanup does not erase the database or
+uninstall the package.
+
 ### Pin Git installs or avoid Git startup checks
 
 Do not put an unpinned `git+https://...` source in an MCP launch command. Package runners may resolve the remote branch whenever a client starts the server. Pin the full commit SHA for reproducible, fast startup:

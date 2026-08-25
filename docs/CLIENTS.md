@@ -8,6 +8,14 @@ All clients on one OS account should launch the same installed executable and th
 
 Run `context-memory init --launcher installed --clients claude-code,codex,cursor,vscode,craft --register` to register supported clients. Claude Code, Codex, and VS Code use their official CLIs. Cursor's global `~/.cursor/mcp.json` is merged atomically and backed up. Craft Agents is intentionally a guided workspace-source step. Generic MCP clients can use the JSON printed by `init`.
 
+Run `context-memory unregister --clients auto` to inspect the cleanup plan and
+add `--apply` to execute supported removals. Claude Code and Codex use their MCP
+removal commands. Cursor atomically removes only `context-memory` from the
+global MCP JSON after creating a numbered backup. VS Code returns the supported
+`MCP: List Servers` uninstall path; Craft Agents and generic clients return
+manual workspace/configuration steps. Restart affected clients afterward.
+Unregistration neither deletes the database nor removes the installed package.
+
 After upgrading the installed runtime, restart every long-running MCP client connection. A stdio server keeps the code and tool catalog loaded from process start, so replacing the installed package does not add new tools to an already-running connection. Finish in-flight work first; do not kill shared client processes indiscriminately.
 
 Every client must follow the same lifecycle, independently of hooks:

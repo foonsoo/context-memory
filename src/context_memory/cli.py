@@ -295,6 +295,182 @@ def _safe_register_client(
         }
 
 
+def _remove_cursor_global(
+    apply: bool, target: Path | None = None
+) -> dict[str, object]:
+    path = target or Path.home() / ".cursor" / "mcp.json"
+    result: dict[str, object] = {
+        "config_path": str(path),
+        "removed": False,
+    }
+    if not path.exists():
+        return {**result, "status": "not_registered"}
+    current = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(current, dict):
+        raise ValueError(f"Cursor MCP config must be a JSON object: {path}")
+    servers = current.get("mcpServers")
+    if not isinstance(servers, dict):
+        if servers is None:
+            return {**result, "status": "not_registered"}
+        raise ValueError(f"Cursor mcpServers must be a JSON object: {path}")
+    if "context-memory" not in servers:
+        return {**result, "status": "not_registered"}
+    if not apply:
+        return {**result, "status": "planned"}
+
+    backup = path.with_suffix(".json.bak")
+    index = 1
+    while backup.exists():
+        backup = path.with_suffix(f".json.bak.{index}")
+        index += 1
+    shutil.copy2(path, backup)
+    del servers["context-memory"]
+    fd, temporary = tempfile.mkstemp(
+        prefix=".mcp-", suffix=".json", dir=path.parent
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(current, stream, ensure_ascii=False, indent=2)
+            stream.write("\n")
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+    return {
+        **result,
+        "removed": True,
+        "status": "removed",
+        "backup": str(backup),
+    }
+
+
+def _unregister_client(
+    client: str,
+    root: str,
+    apply: bool,
+    cursor_config: Path | None = None,
+) -> dict[str, object]:
+    result: dict[str, object] = {
+        "client": client,
+        "detected": bool(_client_command(client)),
+        "removed": False,
+    }
+    if client == "claude-code":
+        remove_command = ["claude", "mcp", "remove", "context-memory"]
+    elif client == "codex":
+        remove_command = ["codex", "mcp", "remove", "context_memory"]
+    elif client == "cursor":
+        return {
+            **result,
+            **_remove_cursor_global(apply, cursor_config),
+        }
+    elif client == "vscode":
+        return {
+            **result,
+            "status": "manual",
+            "next_step": (
+                "In VS Code, run 'MCP: List Servers', select "
+                "context-memory, and choose Uninstall."
+            ),
+        }
+    elif client == "craft":
+        return {
+            **result,
+            "status": "manual",
+            "next_step": (
+                "Remove the context-memory workspace source and its "
+                "sources/context-memory/guide.md file in Craft Agents."
+            ),
+        }
+    elif client == "generic":
+        return {
+            **result,
+            "status": "manual",
+            "next_step": (
+                "Remove context-memory from the client's user-level MCP "
+                "server configuration."
+            ),
+        }
+    else:
+        raise ValueError(f"unsupported client: {client}")
+
+    result["remove_command"] = remove_command
+    if not apply:
+        return {**result, "status": "planned"}
+    executable = _client_command(client)
+    if not executable:
+        return {
+            **result,
+            "status": "unavailable",
+            "error": f"{client} executable was not found",
+        }
+    remove_command[0] = executable
+    try:
+        subprocess.run(
+            remove_command,
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        return {
+            **result,
+            "status": "failed",
+            "error": (exc.stderr or exc.stdout or str(exc)).strip(),
+        }
+    return {**result, "removed": True, "status": "removed"}
+
+
+def cleanup_clients(
+    clients: list[str],
+    root: str | Path,
+    apply: bool,
+    cursor_config: Path | None = None,
+) -> dict[str, object]:
+    """Plan or remove only Context Memory client registrations."""
+    expanded = (
+        ["claude-code", "codex", "cursor", "vscode", "craft"]
+        if clients == ["auto"]
+        else clients
+    )
+    if not expanded:
+        expanded = ["generic"]
+    supported = {
+        "generic",
+        "claude-code",
+        "codex",
+        "cursor",
+        "vscode",
+        "craft",
+    }
+    invalid = sorted(set(expanded) - supported)
+    if invalid:
+        raise ValueError("unsupported clients: " + ", ".join(invalid))
+    resolved_root = str(Path(root).expanduser().resolve())
+    results = []
+    for client in dict.fromkeys(expanded):
+        try:
+            item = _unregister_client(
+                client, resolved_root, apply, cursor_config
+            )
+        except Exception as exc:
+            item = {
+                "client": client,
+                "removed": False,
+                "status": "failed",
+                "error": str(exc),
+            }
+        results.append(item)
+    return {
+        "applied": apply,
+        "root": resolved_root,
+        "clients": results,
+        "restart_required": any(item["removed"] for item in results),
+    }
+
+
 def init_workspaces(
     store: MemoryStore,
     workspace: str,
@@ -695,6 +871,17 @@ def _run_init(
     )
 
 
+def _run_unregister(
+    store: MemoryStore, args: argparse.Namespace, p: argparse.ArgumentParser
+) -> None:
+    clients = (
+        [x.strip() for x in args.clients.split(",") if x.strip()]
+        if args.clients
+        else [args.client or "auto"]
+    )
+    output(cleanup_clients(clients, args.workspace, args.apply))
+
+
 def _run_export(
     store: MemoryStore, args: argparse.Namespace, p: argparse.ArgumentParser
 ) -> None:
@@ -925,6 +1112,7 @@ def _run_backup_decrypt(
 RUNTIME_COMMAND_HANDLERS = {
     "serve": _run_serve,
     "init": _run_init,
+    "unregister": _run_unregister,
     "export": _run_export,
     "import": _run_import,
     "policy": _run_policy,
@@ -997,6 +1185,36 @@ def build_parser() -> argparse.ArgumentParser:
         help="uvx package or git+ URL pinned to a full commit SHA",
     )
     init.add_argument("--register", action="store_true")
+    unregister = sub.add_parser(
+        "unregister",
+        help="Plan or remove Context Memory client registrations",
+    )
+    unregister.add_argument("--workspace", default=os.getcwd())
+    unregister_group = unregister.add_mutually_exclusive_group()
+    unregister_group.add_argument(
+        "--client",
+        choices=[
+            "generic",
+            "claude-code",
+            "codex",
+            "cursor",
+            "vscode",
+            "craft",
+        ],
+        help="Single client to clean up",
+    )
+    unregister_group.add_argument(
+        "--clients",
+        help=(
+            "Comma-separated clients or 'auto' "
+            "(claude-code,codex,cursor,vscode,craft)"
+        ),
+    )
+    unregister.add_argument(
+        "--apply",
+        action="store_true",
+        help="Apply removals; the default only prints the cleanup plan",
+    )
     sub.add_parser(
         "doctor", help="Check the database, FTS5, and local permissions"
     )

@@ -93,6 +93,8 @@ Complete local erasure requires an integrity-checked backup and exact resolved
 database-path confirmation through `erase-db`. Stop connected clients first.
 The command removes the authoritative database and its WAL sidecars, but client
 registration cleanup and package removal remain separate operations.
+Use `unregister --clients auto` to inspect registration cleanup and add
+`--apply` only after reviewing the plan. Restart affected clients afterward.
 
 ## Failed-upgrade recovery
 

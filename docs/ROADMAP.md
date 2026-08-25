@@ -25,9 +25,10 @@ P0 Decision Brief/evaluation, P1 Research-to-Decision provenance, P2 topic Wiki 
 P6 behavior-preserving compaction and maintainability passed its exit gate on
 2026-08-24. P7-1 release `v0.6.2` passed the reproducible build,
 installed-wheel, TestPyPI, production PyPI, and post-publication `uvx --from
-context-memory-mcp context-memory` gates on 2026-08-25. The next active local
-product priority is P7-3: add user-owned lifecycle controls without creating a
-second authoritative store.
+context-memory-mcp context-memory` gates on 2026-08-25. P7-3 user-owned
+lifecycle controls completed on 2026-08-25. The next active local product
+priority is P7-9: verify the complete non-developer user journey and its failure
+diagnostics.
 Hosted-service work in P7 remains conditional on choosing that product track.
 Neural embedding remains an optional evaluated adapter and is not part of the
 active implementation path because its measured latency cost did not justify
@@ -178,7 +179,7 @@ Keep the current local-first, single-user stdio product and a possible hosted se
    pre-1.0 deprecation rules, forward-only migration contract, backup/restore
    compatibility, and a restore-forward failed-upgrade procedure. Hosted and
    multi-user service support remains explicitly outside this release line.
-3. **Add user-owned controls — in progress.** The CLI now exposes the existing
+3. **Add user-owned controls — completed.** The CLI now exposes the existing
    authoritative review queue, approve/reject/supersede/dispute actions,
    evidence-backed correction proposals, and explicit lifecycle transitions.
    Existing commands cover onboarding, source-event inspection, project export,
@@ -187,7 +188,9 @@ Keep the current local-first, single-user stdio product and a possible hosted se
    authoritative database and its WAL sidecars are removed. Restore now verifies
    a snapshot before atomically installing it, and protects replacement with an
    integrity-checked backup plus exact path confirmation. Client-registration
-   cleanup remains; these controls must not create a second writable
+   cleanup now plans changes by default, automates Claude Code, Codex, and
+   backup-preserving Cursor removal, and provides supported manual routes for
+   VS Code, Craft Agents, and generic clients. These controls do not create a second writable
    Wiki store. A separate browsing UI for the local product remains
    evidence-gated; a hosted service cannot launch without these user controls.
 4. **Design hosted identity and isolation before remote access.** Add authenticated users, tenant/project authorization, session revocation, least-privilege service roles, rate limits, quotas, and tests that prevent cross-tenant search, export, event polling, and backup access. A single bearer token is not sufficient for an untrusted network.
