@@ -4,6 +4,11 @@ Context Memory has not published its first PyPI release yet. Until a release
 tag and the trusted-publishing workflow complete, install from a pinned commit
 or use the documented one-time source installation.
 
+Release candidate `v0.6.2` completed the reproducible build, installed-wheel,
+and TestPyPI installation jobs on 2026-08-25. Its production PyPI job was
+skipped, so the remaining release gate is an explicit production-enabled
+workflow run and environment approval followed by the PyPI `uvx` smoke test.
+
 ## Versioning and compatibility
 
 The package uses semantic versioning. A release candidate must preserve the

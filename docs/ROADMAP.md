@@ -23,9 +23,11 @@ External clients may read Confluence or another source with the user's existing 
 P0 Decision Brief/evaluation, P1 Research-to-Decision provenance, P2 topic Wiki revisions, P2.5 non-neural retrieval quality/latency, P3 Decision Wiki lint/review, P4 source revalidation, and the P5 navigation/export contracts are implemented. The active runtime was backed up and upgraded through Wiki migrations 13–16 on 2026-08-20. Two live Wiki review cycles produced actionable evidence and corresponding client-neutral fixes for omission noise, generation diagnostics, actionable queue ordering, historical terminal citations, and runtime-restart guidance. A third cycle on a fresh stdio connection verified the complete installed Wiki MCP surface and published the first lint-clean revision through the corrected queue. The first reader-side cycle exposed and resolved ambiguity between browse pages and exportable pages by adding explicit reader/renderability states and skipped-page counts. After deployment, a second cycle verified those fields plus real backlinks and linked Markdown across two published pages without finding additional friction.
 
 P6 behavior-preserving compaction and maintainability passed its exit gate on
-2026-08-24. The next active priority is P7-1: close the local distribution
-release gap before presenting `uvx --from context-memory-mcp context-memory`
-as an available install.
+2026-08-24. P7-1 release candidate `v0.6.2` passed the reproducible build,
+installed-wheel, and TestPyPI installation gates on 2026-08-25. The next active
+priority is the explicit production PyPI approval and post-publication `uvx
+--from context-memory-mcp context-memory` smoke test; the command must not be
+presented as an available install until those gates pass.
 Hosted-service work in P7 remains conditional on choosing that product track.
 Neural embedding remains an optional evaluated adapter and is not part of the
 active implementation path because its measured latency cost did not justify
@@ -169,7 +171,7 @@ Refactor only where the current implementation has measured maintenance cost. Pr
 
 Keep the current local-first, single-user stdio product and a possible hosted service as explicit product tracks. Do not weaken the local zero-runtime-dependency path to satisfy hosted deployment needs.
 
-1. **Close the release gap — in progress.** Reconcile the README's `uvx`/published-package instructions with the current absence of a release tag, add changelog and release policy, build reproducible wheels, test TestPyPI before PyPI, and publish signed/provenance-bearing artifacts only through an explicit release workflow.
+1. **Close the release gap — in progress.** The README/package-name reconciliation, changelog, release/support policies, reproducible artifacts, provenance workflow, and TestPyPI validation are complete for `v0.6.2`. Production PyPI approval, publication of the already verified workflow artifact, and the post-publication `uvx --from context-memory-mcp context-memory --help` smoke test remain. Publish signed/provenance-bearing artifacts only through the explicit release workflow.
 2. **Define support and compatibility policy — completed.** The local release
    policy now states the tested Python and OS tiers, capability-based SQLite
    requirement, MCP protocol/SDK baseline, compatibility fixture guarantees,
