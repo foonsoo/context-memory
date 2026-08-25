@@ -3,6 +3,7 @@ import tempfile
 import unittest
 import json
 import os
+import re
 import subprocess
 import sys
 from unittest import mock
@@ -234,7 +235,10 @@ class CLITests(unittest.TestCase):
             finally:
                 store.close()
 
-            with self.assertRaisesRegex(ValueError, "exactly match"):
+            with self.assertRaisesRegex(
+                ValueError,
+                rf"exactly match.*{re.escape(str(database.resolve()))}",
+            ):
                 erase_database(database, backup, "erase")
             self.assertTrue(database.exists())
             self.assertFalse(backup.exists())
@@ -281,7 +285,10 @@ class CLITests(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "use --replace"):
                 restore_database(source, destination)
-            with self.assertRaisesRegex(ValueError, "exactly match"):
+            with self.assertRaisesRegex(
+                ValueError,
+                rf"exactly match.*{re.escape(str(destination.resolve()))}",
+            ):
                 restore_database(
                     source,
                     destination,

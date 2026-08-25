@@ -569,7 +569,8 @@ def erase_database(
     backup_path = Path(backup).expanduser().resolve()
     if confirmation != str(database_path):
         raise ValueError(
-            "confirmation must exactly match the resolved database path"
+            "confirmation must exactly match the resolved database path: "
+            f"{database_path}"
         )
     if not database_path.is_file():
         raise FileNotFoundError(f"database does not exist: {database_path}")
@@ -610,7 +611,7 @@ def restore_database(
     backup_existing: str | Path | None = None,
     confirmation: str | None = None,
 ) -> dict[str, object]:
-    """Restore an integrity-checked snapshot to the authoritative path."""
+    """Restore a checked snapshot to the authoritative path."""
     source_path = Path(source).expanduser().resolve()
     database_path = Path(database).expanduser().resolve()
     if source_path == database_path:
@@ -631,7 +632,8 @@ def restore_database(
             raise ValueError("--replace requires --backup-existing")
         if confirmation != str(database_path):
             raise ValueError(
-                "confirmation must exactly match the resolved database path"
+                "confirmation must exactly match the resolved database path: "
+                f"{database_path}"
             )
     elif backup_existing is not None or confirmation is not None:
         raise ValueError(

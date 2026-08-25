@@ -201,10 +201,11 @@ Keep the current local-first, single-user stdio product and a possible hosted se
 9. **Finish the user journey — in progress.** The installed-wheel black-box
    gate now covers initialization and portable registration output, first useful
    memory creation and approval, next-session retrieval, evidence-backed
-   correction, source reinspection, backup/restore, post-restore diagnosis, and
-   registration-cleanup planning. Complete observed non-developer runs for
-   first installation, supported client registration, upgrade, data erasure,
-   and package uninstall; record and repair every repeated failure diagnostic.
+   correction, source reinspection, backup/restore, post-restore diagnosis,
+   registration-cleanup planning, guarded data erasure, and recovery from the
+   mandatory erasure backup. Complete observed non-developer runs for first
+   installation, supported client registration, upgrade, and package uninstall;
+   record and repair every repeated failure diagnostic.
 
 **Exit gate:** a new user can install or sign up, understand what is stored and why, complete the memory lifecycle, recover or delete their data, and receive a supported upgrade. Hosted deployment additionally passes tenant-isolation, authentication, load, failure-recovery, privacy, and observability gates.
 

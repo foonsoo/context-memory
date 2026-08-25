@@ -428,6 +428,71 @@ def main() -> None:
         ):
             raise AssertionError(cleanup_result)
 
+        erasure_backup = root / "backups" / "before-erasure.db"
+        refused_erasure = subprocess.run(
+            [
+                str(executable),
+                "--db",
+                str(restored),
+                "erase-db",
+                "--backup",
+                str(erasure_backup),
+                "--confirm",
+                "wrong-path",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if refused_erasure.returncode == 0:
+            raise AssertionError("erasure accepted an incorrect confirmation")
+        if str(restored.resolve()) not in refused_erasure.stderr:
+            raise AssertionError(refused_erasure.stderr)
+        if not restored.exists() or erasure_backup.exists():
+            raise AssertionError("refused erasure changed user data")
+
+        erased = subprocess.run(
+            [
+                str(executable),
+                "--db",
+                str(restored),
+                "erase-db",
+                "--backup",
+                str(erasure_backup),
+                "--confirm",
+                str(restored.resolve()),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        erased_result = json.loads(erased.stdout)
+        if restored.exists() or erased_result["erased"] is not True:
+            raise AssertionError(erased_result)
+        if erased_result["backup"]["integrity"] != "ok":
+            raise AssertionError(erased_result)
+
+        recovered = root / "recovered" / "memory.db"
+        subprocess.run(
+            [
+                str(executable),
+                "--db",
+                str(recovered),
+                "restore-db",
+                str(erasure_backup),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        recovered_doctor = subprocess.run(
+            [str(executable), "--db", str(recovered), "doctor"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        if not json.loads(recovered_doctor.stdout)["ok"]:
+            raise AssertionError(recovered_doctor.stdout)
+
 
 if __name__ == "__main__":
     main()
