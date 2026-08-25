@@ -42,12 +42,10 @@ If `init --register` reports a client as unavailable, install that client's CLI 
 
 ## Install
 
-### Published package (available after the first release)
+### Published package
 
-There is no PyPI release tag yet. Until the first trusted-publishing workflow
-completes, use the source installation above or a full-commit-pinned Git source
-below. After the first release, initialize the current folder without cloning
-the repository or managing a virtual environment:
+Release `0.6.2` is available from PyPI. Initialize the current folder without
+cloning the repository or managing a virtual environment:
 
 ```bash
 uvx --from context-memory-mcp context-memory init

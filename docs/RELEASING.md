@@ -1,13 +1,8 @@
 # Release policy
 
-Context Memory has not published its first PyPI release yet. Until a release
-tag and the trusted-publishing workflow complete, install from a pinned commit
-or use the documented one-time source installation.
-
-Release candidate `v0.6.2` completed the reproducible build, installed-wheel,
-and TestPyPI installation jobs on 2026-08-25. Its production PyPI job was
-skipped, so the remaining release gate is an explicit production-enabled
-workflow run and environment approval followed by the PyPI `uvx` smoke test.
+Context Memory `0.6.2` was published to PyPI through the trusted-publishing
+workflow on 2026-08-25. The same workflow artifact passed reproducible-build,
+installed-wheel, TestPyPI, production PyPI, and post-publication `uvx` gates.
 
 ## Versioning and compatibility
 
