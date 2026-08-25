@@ -248,6 +248,21 @@ CONTEXT_MEMORY_BACKUP_PASSPHRASE='...' context-memory backup-decrypt \
 
 The temporary consistent SQLite snapshot is deleted after encryption, and decryption authenticates the envelope before atomically replacing its output. Losing the passphrase makes the backup unrecoverable.
 
+To remove all locally stored Context Memory data, stop connected clients and
+run the complete-erasure command with an unencrypted recovery snapshot. The
+confirmation must exactly match the resolved `--db` path:
+
+```bash
+context-memory --db /absolute/path/memory.db erase-db \
+  --backup /secure/backups/context-memory-before-erasure.db \
+  --confirm /absolute/path/memory.db
+```
+
+The command first creates and verifies the snapshot, then removes the database
+and any `-wal`/`-shm` sidecars. It does not remove client registrations or the
+installed package. The returned backup path and SHA-256 digest are the recovery
+record; deleting that backup makes the erased data unrecoverable.
+
 ## Why an evidence ledger instead of a graph-first memory
 
 Context Memory does not claim that graphs are universally worse. Graph databases are useful for multi-hop relationship questions and entity traversal. They are a poor mandatory foundation when the common questions are “what did we decide?”, “is this still true?”, and “where did this claim come from?”.

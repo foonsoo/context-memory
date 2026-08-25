@@ -182,7 +182,9 @@ Keep the current local-first, single-user stdio product and a possible hosted se
    authoritative review queue, approve/reject/supersede/dispute actions,
    evidence-backed correction proposals, and explicit lifecycle transitions.
    Existing commands cover onboarding, source-event inspection, project export,
-   storage status, and backup/decryption. Complete user erasure, restore, and
+   storage status, and backup/decryption. Complete local erasure now requires
+   an integrity-checked backup and exact resolved-path confirmation before the
+   authoritative database and its WAL sidecars are removed. Restore and
    client-registration cleanup remain; they must not create a second writable
    Wiki store. A separate browsing UI for the local product remains
    evidence-gated; a hosted service cannot launch without these user controls.

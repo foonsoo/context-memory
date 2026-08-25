@@ -8,7 +8,13 @@ import sys
 from pathlib import Path
 
 from context_memory import cli
-from context_memory.cli import doctor, init_workspace, init_workspaces, mcp_config
+from context_memory.cli import (
+    doctor,
+    erase_database,
+    init_workspace,
+    init_workspaces,
+    mcp_config,
+)
 from context_memory.store import MemoryStore
 from context_memory.contracts import PROMOTABLE_EVENT_KINDS, workflow_guide
 
@@ -26,6 +32,7 @@ class CLITests(unittest.TestCase):
             set(subparsers.choices),
             {
                 "migrate-db",
+                "erase-db",
                 *cli.COMMAND_HANDLERS,
                 *cli.RUNTIME_COMMAND_HANDLERS,
             },
@@ -146,6 +153,43 @@ class CLITests(unittest.TestCase):
                 self.assertNotEqual(second.returncode, 0)
                 self.assertIn("destination exists", second.stderr)
             finally: store.close()
+
+    def test_complete_erasure_requires_exact_confirmation_and_backup(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary) / "data" / "memory.db"
+            backup = Path(temporary) / "backups" / "memory.db"
+            store = MemoryStore(database)
+            try:
+                project = store.create_project("erase-test")
+                store.record_event(
+                    project["id"], "fact", "Preserve this in the backup"
+                )
+            finally:
+                store.close()
+
+            with self.assertRaisesRegex(ValueError, "exactly match"):
+                erase_database(database, backup, "erase")
+            self.assertTrue(database.exists())
+            self.assertFalse(backup.exists())
+
+            result = erase_database(database, backup, str(database.resolve()))
+            self.assertTrue(result["erased"])
+            self.assertTrue(result["recoverable"])
+            self.assertFalse(database.exists())
+            self.assertTrue(backup.exists())
+
+            restored = MemoryStore(backup)
+            try:
+                self.assertEqual(
+                    restored.get_source(
+                        restored.read_events_since(project["id"])["events"][0][
+                            "id"
+                        ]
+                    )["content"],
+                    "Preserve this in the backup",
+                )
+            finally:
+                restored.close()
 
     def test_checkpoint_command_records_recovery_state(self):
         with tempfile.TemporaryDirectory() as temp:

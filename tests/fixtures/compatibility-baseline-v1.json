@@ -54,7 +54,7 @@
   "cli": {
     "prog":"context-memory",
     "arguments":["db"],
-    "sha256":"63e2528c3a84a11f819373a81e9b62a8529e5cc63bf20de71453f3ccb9b62230",
+    "sha256":"2eb96cb4bab2c54d23070f921a111387de144bcb4c40d764ffb59ef12b6cfa47",
     "commands":[
       {"name":"serve","arguments":["transport","host","port","token","tool_profile"],"sha256":"688c6b9d447aa41dfffb44bd0565f62f99b10b8e2f0164ce8f31df102753fa0c"},
       {"name":"init","arguments":["workspace","client","clients","launcher","package","register"],"sha256":"612e63b765a85a5f32968bd8c32a2756ff55bbef32086b5f0c04dab13f4a9ecd"},
@@ -87,7 +87,8 @@
       {"name":"audit-anchor-verify","arguments":["input","audit_bundle","expected_project_id","expected_public_key"],"sha256":"061e22a02d86c1a80d73043e8d7b988276622068632f82ceb663771890255411"},
       {"name":"backup","arguments":["output","passphrase_env"],"sha256":"b6458a90c1cb16b117f7c63adc7d2baf9f3bdfb3e85ff14d5d33a88d327c8457"},
       {"name":"backup-decrypt","arguments":["input","output","passphrase_env"],"sha256":"74f2b3d93ec7949db0be1873c71f6811b37baaa3dfe0469216f15a847fb09fc2"},
-      {"name":"migrate-db","arguments":["source","replace"],"sha256":"d4b8e2e036a234e75ced6c4a8440067b799b09b85cac9108c4346eeadb8aafe4"}
+      {"name":"migrate-db","arguments":["source","replace"],"sha256":"d4b8e2e036a234e75ced6c4a8440067b799b09b85cac9108c4346eeadb8aafe4"},
+      {"name":"erase-db","arguments":["backup","confirm"],"sha256":"4590a497e42a8a0d5e04bf49deebe1be085c6cecb4a0be182ba3e9820f66b499"}
     ]
   },
   "compact_context": {

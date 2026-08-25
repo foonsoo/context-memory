@@ -383,6 +383,49 @@ def doctor(store: MemoryStore) -> dict[str, object]:
     }
 
 
+def erase_database(
+    database: str | Path,
+    backup: str | Path,
+    confirmation: str,
+) -> dict[str, object]:
+    """Back up and remove the complete local authoritative database."""
+    database_path = Path(database).expanduser().resolve()
+    backup_path = Path(backup).expanduser().resolve()
+    if confirmation != str(database_path):
+        raise ValueError(
+            "confirmation must exactly match the resolved database path"
+        )
+    if not database_path.is_file():
+        raise FileNotFoundError(f"database does not exist: {database_path}")
+    if backup_path == database_path:
+        raise ValueError("backup output must differ from the live database")
+
+    store = MemoryStore(database_path)
+    try:
+        backup_result = store.backup_to(backup_path)
+    finally:
+        store.close()
+    if not backup_result["ok"] or backup_result["integrity"] != "ok":
+        raise RuntimeError("verified backup is required before erasure")
+
+    removed = []
+    for path in (
+        database_path,
+        database_path.with_name(database_path.name + "-wal"),
+        database_path.with_name(database_path.name + "-shm"),
+    ):
+        if path.exists():
+            path.unlink()
+            removed.append(str(path))
+    return {
+        "erased": True,
+        "database": str(database_path),
+        "removed": removed,
+        "backup": backup_result,
+        "recoverable": True,
+    }
+
+
 CommandHandler = Callable[[MemoryStore, argparse.Namespace], object]
 
 
@@ -1104,12 +1147,28 @@ def build_parser() -> argparse.ArgumentParser:
     )
     migrate.add_argument("source")
     migrate.add_argument("--replace", action="store_true")
+    erase = sub.add_parser(
+        "erase-db",
+        help="Back up and completely erase the local authoritative database",
+    )
+    erase.add_argument("--backup", required=True)
+    erase.add_argument(
+        "--confirm",
+        required=True,
+        help="Exact resolved database path to acknowledge complete erasure",
+    )
     return p
 
 
 def main() -> None:
     p = build_parser()
     args = p.parse_args()
+    if args.command == "erase-db":
+        try:
+            output(erase_database(args.db, args.backup, args.confirm))
+        except (FileNotFoundError, RuntimeError, ValueError) as exc:
+            p.error(str(exc))
+        return
     if args.command == "migrate-db":
         source = Path(args.source).expanduser().resolve()
         destination = Path(args.db).expanduser().resolve()

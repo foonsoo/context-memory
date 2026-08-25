@@ -84,6 +84,11 @@ a database snapshot and a project export when long-term recovery is important.
 Never restore by copying only the main file of a live WAL database. Never assume
 that a newer migrated database can be opened safely by an older package.
 
+Complete local erasure requires an integrity-checked backup and exact resolved
+database-path confirmation through `erase-db`. Stop connected clients first.
+The command removes the authoritative database and its WAL sidecars, but client
+registration cleanup and package removal remain separate operations.
+
 ## Failed-upgrade recovery
 
 If `doctor`, startup, or a normal lifecycle check fails after an upgrade:
