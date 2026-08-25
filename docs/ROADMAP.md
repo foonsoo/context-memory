@@ -184,8 +184,10 @@ Keep the current local-first, single-user stdio product and a possible hosted se
    Existing commands cover onboarding, source-event inspection, project export,
    storage status, and backup/decryption. Complete local erasure now requires
    an integrity-checked backup and exact resolved-path confirmation before the
-   authoritative database and its WAL sidecars are removed. Restore and
-   client-registration cleanup remain; they must not create a second writable
+   authoritative database and its WAL sidecars are removed. Restore now verifies
+   a snapshot before atomically installing it, and protects replacement with an
+   integrity-checked backup plus exact path confirmation. Client-registration
+   cleanup remains; these controls must not create a second writable
    Wiki store. A separate browsing UI for the local product remains
    evidence-gated; a hosted service cannot launch without these user controls.
 4. **Design hosted identity and isolation before remote access.** Add authenticated users, tenant/project authorization, session revocation, least-privilege service roles, rate limits, quotas, and tests that prevent cross-tenant search, export, event polling, and backup access. A single bearer token is not sufficient for an untrusted network.

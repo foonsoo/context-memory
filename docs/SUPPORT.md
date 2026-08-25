@@ -83,6 +83,11 @@ a database snapshot and a project export when long-term recovery is important.
 
 Never restore by copying only the main file of a live WAL database. Never assume
 that a newer migrated database can be opened safely by an older package.
+Use `restore-db` after stopping connected clients. Restoring to a new path checks
+the source before installing it. Replacing the authoritative path additionally
+requires an integrity-checked backup of the current database and exact resolved-
+path confirmation. Encrypted envelopes must be authenticated with
+`backup-decrypt` before restore.
 
 Complete local erasure requires an integrity-checked backup and exact resolved
 database-path confirmation through `erase-db`. Stop connected clients first.

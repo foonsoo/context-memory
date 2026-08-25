@@ -426,6 +426,111 @@ def erase_database(
     }
 
 
+def restore_database(
+    source: str | Path,
+    database: str | Path,
+    *,
+    replace: bool = False,
+    backup_existing: str | Path | None = None,
+    confirmation: str | None = None,
+) -> dict[str, object]:
+    """Restore an integrity-checked snapshot to the authoritative path."""
+    source_path = Path(source).expanduser().resolve()
+    database_path = Path(database).expanduser().resolve()
+    if source_path == database_path:
+        raise ValueError("restore source and destination must differ")
+    if not source_path.is_file():
+        raise FileNotFoundError(
+            f"restore source does not exist: {source_path}"
+        )
+    if database_path.exists() and not replace:
+        raise ValueError(
+            "restore destination exists; use --replace with an existing "
+            "database backup and exact path confirmation"
+        )
+    if replace:
+        if not database_path.is_file():
+            raise ValueError("--replace requires an existing database")
+        if backup_existing is None:
+            raise ValueError("--replace requires --backup-existing")
+        if confirmation != str(database_path):
+            raise ValueError(
+                "confirmation must exactly match the resolved database path"
+            )
+    elif backup_existing is not None or confirmation is not None:
+        raise ValueError(
+            "--backup-existing and --confirm are only valid with --replace"
+        )
+
+    database_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    temporary = database_path.with_name(
+        f".{database_path.name}.{os.getpid()}.restore.tmp"
+    )
+    try:
+        source_connection = sqlite3.connect(
+            f"{source_path.as_uri()}?mode=ro", uri=True
+        )
+        target_connection = sqlite3.connect(temporary)
+        try:
+            source_integrity = source_connection.execute(
+                "PRAGMA integrity_check"
+            ).fetchone()[0]
+            if source_integrity != "ok":
+                raise RuntimeError(
+                    "restore source integrity check failed: "
+                    f"{source_integrity}"
+                )
+            source_connection.backup(target_connection)
+            restored_integrity = target_connection.execute(
+                "PRAGMA integrity_check"
+            ).fetchone()[0]
+            if restored_integrity != "ok":
+                raise RuntimeError(
+                    "restored database integrity check failed: "
+                    f"{restored_integrity}"
+                )
+        finally:
+            target_connection.close()
+            source_connection.close()
+
+        preflight = MemoryStore(temporary)
+        try:
+            preflight_verification = doctor(preflight)
+        finally:
+            preflight.close()
+        if not preflight_verification["ok"]:
+            raise RuntimeError("restored database failed doctor verification")
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise
+
+    existing_backup = None
+    try:
+        if replace:
+            existing = MemoryStore(database_path)
+            try:
+                existing_backup = existing.backup_to(backup_existing)
+            finally:
+                existing.close()
+        os.chmod(temporary, 0o600)
+        for suffix in ("-wal", "-shm"):
+            database_path.with_name(database_path.name + suffix).unlink(
+                missing_ok=True
+            )
+        os.replace(temporary, database_path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+    return {
+        "restored": True,
+        "source": str(source_path),
+        "database": str(database_path),
+        "replaced": replace,
+        "previous_database_backup": existing_backup,
+        "verification": preflight_verification,
+    }
+
+
 CommandHandler = Callable[[MemoryStore, argparse.Namespace], object]
 
 
@@ -1157,6 +1262,17 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help="Exact resolved database path to acknowledge complete erasure",
     )
+    restore = sub.add_parser(
+        "restore-db",
+        help="Restore an integrity-checked SQLite snapshot",
+    )
+    restore.add_argument("source")
+    restore.add_argument("--replace", action="store_true")
+    restore.add_argument("--backup-existing")
+    restore.add_argument(
+        "--confirm",
+        help="Exact resolved database path required with --replace",
+    )
     return p
 
 
@@ -1167,6 +1283,25 @@ def main() -> None:
         try:
             output(erase_database(args.db, args.backup, args.confirm))
         except (FileNotFoundError, RuntimeError, ValueError) as exc:
+            p.error(str(exc))
+        return
+    if args.command == "restore-db":
+        try:
+            output(
+                restore_database(
+                    args.source,
+                    args.db,
+                    replace=args.replace,
+                    backup_existing=args.backup_existing,
+                    confirmation=args.confirm,
+                )
+            )
+        except (
+            FileNotFoundError,
+            RuntimeError,
+            sqlite3.DatabaseError,
+            ValueError,
+        ) as exc:
             p.error(str(exc))
         return
     if args.command == "migrate-db":

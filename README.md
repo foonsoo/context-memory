@@ -248,6 +248,28 @@ CONTEXT_MEMORY_BACKUP_PASSPHRASE='...' context-memory backup-decrypt \
 
 The temporary consistent SQLite snapshot is deleted after encryption, and decryption authenticates the envelope before atomically replacing its output. Losing the passphrase makes the backup unrecoverable.
 
+Restore a verified plain SQLite snapshot to a stopped client configuration. A
+new destination needs no confirmation:
+
+```bash
+context-memory --db /absolute/path/restored.db restore-db \
+  /secure/backups/context-memory-latest.db
+```
+
+Replacing an existing authoritative database requires both an integrity-checked
+backup of that database and exact resolved-path confirmation:
+
+```bash
+context-memory --db /absolute/path/memory.db restore-db \
+  /secure/backups/context-memory-latest.db --replace \
+  --backup-existing /secure/backups/memory-before-restore.db \
+  --confirm /absolute/path/memory.db
+```
+
+The source is opened read-only and checked before the destination changes. The
+restored database is installed atomically, migrated forward when necessary, and
+must pass `doctor`. Decrypt encrypted envelopes to a plain snapshot first.
+
 To remove all locally stored Context Memory data, stop connected clients and
 run the complete-erasure command with an unencrypted recovery snapshot. The
 confirmation must exactly match the resolved `--db` path:

@@ -14,6 +14,7 @@ from context_memory.cli import (
     init_workspace,
     init_workspaces,
     mcp_config,
+    restore_database,
 )
 from context_memory.store import MemoryStore
 from context_memory.contracts import PROMOTABLE_EVENT_KINDS, workflow_guide
@@ -33,6 +34,7 @@ class CLITests(unittest.TestCase):
             {
                 "migrate-db",
                 "erase-db",
+                "restore-db",
                 *cli.COMMAND_HANDLERS,
                 *cli.RUNTIME_COMMAND_HANDLERS,
             },
@@ -190,6 +192,70 @@ class CLITests(unittest.TestCase):
                 )
             finally:
                 restored.close()
+
+    def test_restore_database_verifies_source_and_protects_replacement(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "backup.db"
+            destination = root / "data" / "memory.db"
+            previous_backup = root / "backups" / "previous.db"
+
+            original = MemoryStore(root / "original.db")
+            try:
+                project = original.create_project("restored-project")
+                original.record_event(
+                    project["id"], "fact", "Restored evidence"
+                )
+                original.backup_to(source)
+            finally:
+                original.close()
+
+            first = restore_database(source, destination)
+            self.assertTrue(first["restored"])
+            self.assertTrue(first["verification"]["ok"])
+
+            with self.assertRaisesRegex(ValueError, "use --replace"):
+                restore_database(source, destination)
+            with self.assertRaisesRegex(ValueError, "exactly match"):
+                restore_database(
+                    source,
+                    destination,
+                    replace=True,
+                    backup_existing=previous_backup,
+                    confirmation="wrong",
+                )
+
+            replacement = MemoryStore(root / "replacement.db")
+            try:
+                replacement_project = replacement.create_project(
+                    "replacement-project"
+                )
+                replacement.backup_to(source)
+            finally:
+                replacement.close()
+            result = restore_database(
+                source,
+                destination,
+                replace=True,
+                backup_existing=previous_backup,
+                confirmation=str(destination.resolve()),
+            )
+            self.assertTrue(result["replaced"])
+            self.assertTrue(previous_backup.exists())
+
+            restored = MemoryStore(destination)
+            previous = MemoryStore(previous_backup)
+            try:
+                self.assertEqual(
+                    restored.list_projects()[0]["id"],
+                    replacement_project["id"],
+                )
+                self.assertEqual(
+                    previous.list_projects()[0]["id"], project["id"]
+                )
+            finally:
+                restored.close()
+                previous.close()
 
     def test_checkpoint_command_records_recovery_state(self):
         with tempfile.TemporaryDirectory() as temp:
