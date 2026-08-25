@@ -198,7 +198,13 @@ Keep the current local-first, single-user stdio product and a possible hosted se
 6. **Add data governance and privacy operations.** Document collection purpose, retention defaults, user export and deletion, account/project erasure, backup expiry, regional/storage choices, incident handling, and handling of sensitive data. Evaluate secret/PII detection as a warning and policy layer without claiming perfect detection.
 7. **Make operations observable and recoverable.** Add health/readiness endpoints, structured redacted logs, metrics for latency/errors/queue depth/database size, trace/request IDs, migration status, backup age, restore drills, disk-full behavior, and operator runbooks with alert thresholds.
 8. **Prove service behavior under load and failure.** Test concurrent readers/writers, process interruption, WAL growth, slow clients, malformed/oversized requests, migration rollback or forward recovery, backup restoration, and capacity limits. Define service-level objectives only after these measurements.
-9. **Finish the user journey.** Test first install, client registration, first useful memory, next-session retrieval, review/correction, source reinspection, backup/restore, upgrade, and uninstall with non-developer users. Add concise diagnostics and support documentation for every failed step.
+9. **Finish the user journey — in progress.** The installed-wheel black-box
+   gate now covers initialization and portable registration output, first useful
+   memory creation and approval, next-session retrieval, evidence-backed
+   correction, source reinspection, backup/restore, post-restore diagnosis, and
+   registration-cleanup planning. Complete observed non-developer runs for
+   first installation, supported client registration, upgrade, data erasure,
+   and package uninstall; record and repair every repeated failure diagnostic.
 
 **Exit gate:** a new user can install or sign up, understand what is stored and why, complete the memory lifecycle, recover or delete their data, and receive a supported upgrade. Hosted deployment additionally passes tenant-isolation, authentication, load, failure-recovery, privacy, and observability gates.
 
