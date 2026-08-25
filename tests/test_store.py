@@ -1455,7 +1455,8 @@ class StoreTests(unittest.TestCase):
         try:
             result = self.store.backup_to(envelope, "correct horse battery staple")
         except RuntimeError as exc:
-            self.assertIn("context-memory[crypto]", str(exc)); self.assertFalse(envelope.exists())
+            self.assertIn("context-memory-mcp[crypto]", str(exc))
+            self.assertFalse(envelope.exists())
             return
         from context_memory.backup_crypto import decrypt_file
         restored_path = Path(self.temp.name) / "restored.db"

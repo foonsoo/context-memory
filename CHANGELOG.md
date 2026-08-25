@@ -5,7 +5,7 @@ uses semantic versioning for the public Python package and MCP/CLI contracts.
 
 ## Unreleased
 
-## [0.6.1] - 2026-08-25
+## [0.6.2] - 2026-08-25
 
 ### Added
 
@@ -23,6 +23,9 @@ uses semantic versioning for the public Python package and MCP/CLI contracts.
   archive-content, zero-runtime-dependency, and reproducible-build contracts.
 - Release builds write both distribution sets outside the source tree so the
   second sdist cannot recursively capture the first build output.
+- The published distribution is named `context-memory-mcp` because PyPI's
+  protected-name rules reject `context-memory`; the `context-memory` command
+  and `context_memory` import package remain unchanged.
 
 ### Changed
 
@@ -34,5 +37,5 @@ uses semantic versioning for the public Python package and MCP/CLI contracts.
 - Context Memory remains local-first. The default database is not encrypted;
   users should not record secrets or credentials.
 
-[Unreleased]: https://github.com/foonsoo/context-memory/compare/v0.6.1...HEAD
-[0.6.1]: https://github.com/foonsoo/context-memory/releases/tag/v0.6.1
+[Unreleased]: https://github.com/foonsoo/context-memory/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/foonsoo/context-memory/releases/tag/v0.6.2

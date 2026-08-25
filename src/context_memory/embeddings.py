@@ -117,7 +117,7 @@ class SentenceTransformerEmbedding:
         except ImportError as exc:
             raise RuntimeError(
                 "neural embeddings require the optional 'neural' dependency; "
-                "install context-memory[neural]"
+                "install context-memory-mcp[neural]"
             ) from exc
         self.model_id = model.strip()
         self._model = SentenceTransformer(self.model_id, device=device)

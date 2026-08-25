@@ -50,16 +50,17 @@ below. After the first release, initialize the current folder without cloning
 the repository or managing a virtual environment:
 
 ```bash
-uvx context-memory init
+uvx --from context-memory-mcp context-memory init
 ```
 
 The command creates the local SQLite database, maps the current workspace to a stable project and scope, and prints portable stdio MCP JSON. No project UUID needs to be copied. Register the same database with several clients on this computer in one command:
 
 ```bash
-uvx context-memory init --clients claude-code,codex,cursor,vscode,craft --register
+uvx --from context-memory-mcp context-memory init \
+  --clients claude-code,codex,cursor,vscode,craft --register
 # Or register every detected supported client:
-uvx context-memory init --clients auto --register
-uvx context-memory doctor
+uvx --from context-memory-mcp context-memory init --clients auto --register
+uvx --from context-memory-mcp context-memory doctor
 ```
 
 `--register` is opt-in because it changes client configuration. Results are reported per client, so one missing client does not prevent other registrations. Claude Code uses user scope, Cursor is merged into `~/.cursor/mcp.json` with a backup, and VS Code uses its official `--add-mcp` CLI. Craft Agents remains a guided manual step because its documented sources are workspace-scoped. The older `--client NAME` form remains supported.
@@ -235,7 +236,7 @@ context-memory backup --output /secure/backups/context-memory-latest.db
 
 The command atomically replaces the destination using SQLite's Online Backup API, includes committed WAL data, sets the snapshot to mode `0600`, and returns its SHA-256 digest. Reusing a stable destination name lets rsync- or block-deduplicating backup systems transfer changed pages instead of treating every dated filename as unrelated. `search_health` and `repair` detect and restore FTS projection consistency; memory insert/update/delete triggers keep the projection synchronized during normal writes.
 
-Optional authenticated encryption uses an AES-256-GCM envelope with a scrypt-derived key. Install `context-memory[crypto]`, keep the passphrase out of argv, and name only the environment variable that contains it:
+Optional authenticated encryption uses an AES-256-GCM envelope with a scrypt-derived key. Install `context-memory-mcp[crypto]`, keep the passphrase out of argv, and name only the environment variable that contains it:
 
 ```bash
 CONTEXT_MEMORY_BACKUP_PASSPHRASE='...' context-memory backup \
@@ -275,7 +276,7 @@ context-memory --db ~/.local/share/context-memory/memory.db serve --transport st
 
 By default, search fuses FTS5 and local-similarity ranks and returns inspectable score components. `CONTEXT_MEMORY_EMBEDDINGS=local-hash` may still be set explicitly. Local-hash v2 uses a 1,024-dimension word/character projection with Hangul-only syllable bigrams for Korean spacing and particle variation. Reranking is limited to lexical candidates when they exist; vector-only fallback scans at most 1,000 deterministic candidates for 25 ms, and `retrieval.semantic_scan` reports the mode, limits, evaluated count, and truncation state. Cross-project fallback additionally limits local-hash to at most 12 projects supported by memory FTS, shared repository aliases, or project identity evidence, while global memories remain universally eligible. The local hash projection is useful for spelling, morphology, and overlapping wording; it is not a neural semantic model and does not replace explicit aliases for unrelated synonyms. Agents may call `memory_feedback` with `retrieved`, `used`, `helpful`, or `incorrect` to personalize later ranking. `observed_at` and `last_confirmed_at` keep discovery time separate from confirmation freshness.
 
-An experimental local neural adapter is explicit opt-in and never downloads a model during a default install. Install `context-memory[neural]`, then set `CONTEXT_MEMORY_EMBEDDINGS=neural` and `CONTEXT_MEMORY_EMBEDDING_MODEL` to a local path or an intentionally selected sentence-transformers model identifier. `CONTEXT_MEMORY_EMBEDDING_DEVICE` is optional. Use `PYTHONPATH=src python3 benchmarks/run_embedding_evaluation.py --model MODEL` to compare FTS-only, local-hash, and neural projections on the same disposable fixture before choosing it for personal data. Pass `--fixture private-judgments.json` to evaluate a private schema-v1 fixture containing `memories` (`key`, `title`, `content`) and `queries` (`query`, `relevant`, `category`). The report records fixture counts/source plus aggregate metrics and diagnostics; keep the input outside the repository.
+An experimental local neural adapter is explicit opt-in and never downloads a model during a default install. Install `context-memory-mcp[neural]`, then set `CONTEXT_MEMORY_EMBEDDINGS=neural` and `CONTEXT_MEMORY_EMBEDDING_MODEL` to a local path or an intentionally selected sentence-transformers model identifier. `CONTEXT_MEMORY_EMBEDDING_DEVICE` is optional. Use `PYTHONPATH=src python3 benchmarks/run_embedding_evaluation.py --model MODEL` to compare FTS-only, local-hash, and neural projections on the same disposable fixture before choosing it for personal data. Pass `--fixture private-judgments.json` to evaluate a private schema-v1 fixture containing `memories` (`key`, `title`, `content`) and `queries` (`query`, `relevant`, `category`). The report records fixture counts/source plus aggregate metrics and diagnostics; keep the input outside the repository.
 
 Feedback applies small bounded importance adjustments, and context assembly suppresses near-identical blocks. Memories default to project visibility; set `visibility=global` only for non-path-scoped user preferences or constraints that should be available to every project in the same local database.
 

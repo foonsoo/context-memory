@@ -12,8 +12,9 @@ from email.parser import Parser
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGE = "context-memory"
-WHEEL_PACKAGE = "context_memory"
+PACKAGE = "context-memory-mcp"
+DISTRIBUTION_STEM = "context_memory_mcp"
+IMPORT_PACKAGE = "context_memory"
 
 
 def source_version(root: Path = ROOT) -> str:
@@ -39,8 +40,8 @@ def verify_tag(tag: str, version: str) -> None:
 
 
 def _distributions(directory: Path, version: str) -> tuple[Path, Path]:
-    wheel = directory / f"{WHEEL_PACKAGE}-{version}-py3-none-any.whl"
-    sdist = directory / f"{WHEEL_PACKAGE}-{version}.tar.gz"
+    wheel = directory / f"{DISTRIBUTION_STEM}-{version}-py3-none-any.whl"
+    sdist = directory / f"{DISTRIBUTION_STEM}-{version}.tar.gz"
     actual = sorted(
         path.name for path in directory.iterdir() if path.is_file()
     )
@@ -53,9 +54,9 @@ def _distributions(directory: Path, version: str) -> tuple[Path, Path]:
 def verify_wheel(path: Path, version: str) -> None:
     with zipfile.ZipFile(path) as archive:
         names = set(archive.namelist())
-        metadata_name = f"{WHEEL_PACKAGE}-{version}.dist-info/METADATA"
+        metadata_name = f"{DISTRIBUTION_STEM}-{version}.dist-info/METADATA"
         required = {
-            f"{WHEEL_PACKAGE}/__init__.py",
+            f"{IMPORT_PACKAGE}/__init__.py",
             "migrations/001_initial.sql",
             "migrations/016_source_reinspection_requests.sql",
             metadata_name,
@@ -73,7 +74,7 @@ def verify_wheel(path: Path, version: str) -> None:
 
 
 def verify_sdist(path: Path, version: str) -> None:
-    prefix = f"{WHEEL_PACKAGE}-{version}/"
+    prefix = f"{DISTRIBUTION_STEM}-{version}/"
     with tarfile.open(path, "r:gz") as archive:
         names = set(archive.getnames())
     required = {

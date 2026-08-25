@@ -31,8 +31,8 @@ guarantees are in [SUPPORT.md](SUPPORT.md).
 5. Only after the TestPyPI installation passes, approve the protected `pypi`
    environment when the workflow was started with production publishing enabled.
    PyPI receives the same downloaded workflow artifact, not a rebuild.
-6. Create GitHub release notes from the changelog and verify `uvx
-   context-memory --help` against PyPI.
+6. Create GitHub release notes from the changelog and verify `uvx --from
+   context-memory-mcp context-memory --help` against PyPI.
 
 The `testpypi` and `pypi` GitHub environments must each be configured for PyPI
 trusted publishing. The `pypi` environment should require reviewer approval.

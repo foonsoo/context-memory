@@ -24,7 +24,8 @@ P0 Decision Brief/evaluation, P1 Research-to-Decision provenance, P2 topic Wiki 
 
 P6 behavior-preserving compaction and maintainability passed its exit gate on
 2026-08-24. The next active priority is P7-1: close the local distribution
-release gap before presenting `uvx context-memory` as an available install.
+release gap before presenting `uvx --from context-memory-mcp context-memory`
+as an available install.
 Hosted-service work in P7 remains conditional on choosing that product track.
 Neural embedding remains an optional evaluated adapter and is not part of the
 active implementation path because its measured latency cost did not justify

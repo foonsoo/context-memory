@@ -29,7 +29,9 @@ def output(value: object) -> None:
 
 
 def mcp_config(
-    db_path: str, launcher: str = "uvx", package: str = "context-memory"
+    db_path: str,
+    launcher: str = "uvx",
+    package: str = "context-memory-mcp",
 ) -> dict[str, object]:
     """Return a portable stdio MCP definition for common clients."""
     if launcher == "uvx":
@@ -40,11 +42,7 @@ def mcp_config(
                 "Git uvx sources must be pinned to a full 40-character "
                 "commit SHA"
             )
-        prefix = (
-            ["context-memory"]
-            if package == "context-memory"
-            else ["--from", package, "context-memory"]
-        )
+        prefix = ["--from", package, "context-memory"]
         command, args = (
             "uvx",
             [*prefix, "--db", db_path, "serve", "--transport", "stdio"],
@@ -303,7 +301,7 @@ def init_workspaces(
     clients: list[str],
     launcher: str,
     register: bool,
-    package: str = "context-memory",
+    package: str = "context-memory-mcp",
     cursor_config: Path | None = None,
 ) -> dict[str, object]:
     root = str(Path(workspace).expanduser().resolve())
@@ -828,7 +826,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     init.add_argument(
         "--package",
-        default="context-memory",
+        default="context-memory-mcp",
         help="uvx package or git+ URL pinned to a full commit SHA",
     )
     init.add_argument("--register", action="store_true")

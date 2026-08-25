@@ -35,7 +35,10 @@ class CLITests(unittest.TestCase):
         value = mcp_config("/tmp/example memory.db")
         self.assertEqual(value["type"], "stdio")
         self.assertEqual(value["command"], "uvx")
-        self.assertEqual(value["args"][:2], ["context-memory", "--db"])
+        self.assertEqual(
+            value["args"][:3],
+            ["--from", "context-memory-mcp", "context-memory"],
+        )
         pinned = mcp_config("/tmp/memory.db", package="git+https://github.com/example/context-memory.git@" + "a" * 40)
         self.assertEqual(pinned["args"][:2], ["--from", "git+https://github.com/example/context-memory.git@" + "a" * 40])
         with self.assertRaisesRegex(ValueError, "pinned"):

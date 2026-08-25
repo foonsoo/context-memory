@@ -26,7 +26,7 @@ class ReleaseVerificationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             wheel = Path(tmp) / "release.whl"
             metadata = (
-                "Name: context-memory\nVersion: 0.6.0\n"
+                "Name: context-memory-mcp\nVersion: 0.6.0\n"
                 'Requires-Dist: cryptography>=42; extra == "crypto"\n'
             )
             with zipfile.ZipFile(wheel, "w") as archive:
@@ -34,7 +34,7 @@ class ReleaseVerificationTests(unittest.TestCase):
                     "context_memory/__init__.py": "",
                     "migrations/001_initial.sql": "",
                     "migrations/016_source_reinspection_requests.sql": "",
-                    "context_memory-0.6.0.dist-info/METADATA": metadata,
+                    "context_memory_mcp-0.6.0.dist-info/METADATA": metadata,
                 }.items():
                     archive.writestr(name, content)
             verify_wheel(wheel, "0.6.0")
@@ -51,7 +51,9 @@ class ReleaseVerificationTests(unittest.TestCase):
                     "migrations/016_source_reinspection_requests.sql",
                 ):
                     data = b"fixture"
-                    info = tarfile.TarInfo(f"context_memory-0.6.0/{relative}")
+                    info = tarfile.TarInfo(
+                        f"context_memory_mcp-0.6.0/{relative}"
+                    )
                     info.size = len(data)
                     archive.addfile(info, io.BytesIO(data))
             verify_sdist(sdist, "0.6.0")
@@ -69,7 +71,9 @@ class ReleaseVerificationTests(unittest.TestCase):
                     "dist-one/context_memory-0.6.0.tar.gz",
                 ):
                     payload = b"content"
-                    info = tarfile.TarInfo(f"context_memory-0.6.0/{name}")
+                    info = tarfile.TarInfo(
+                        f"context_memory_mcp-0.6.0/{name}"
+                    )
                     info.size = len(payload)
                     archive.addfile(info, io.BytesIO(payload))
             with self.assertRaisesRegex(ValueError, "nested distributions"):

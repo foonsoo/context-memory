@@ -18,7 +18,7 @@ def _crypto() -> tuple[Any, Any, Any]:
     except ImportError as exc:
         raise RuntimeError(
             "audit signing requires the optional 'crypto' extra: "
-            "pip install 'context-memory[crypto]'"
+            "pip install 'context-memory-mcp[crypto]'"
         ) from exc
     return Ed25519PrivateKey, Ed25519PublicKey, InvalidSignature
 

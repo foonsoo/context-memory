@@ -85,7 +85,7 @@ jobs:
         run: |
           version="${RELEASE_TAG#v}"
           python -m pip install --index-url https://test.pypi.org/simple/ \
-            --no-deps "context-memory==$version"
+            --no-deps "context-memory-mcp==$version"
           context-memory --help
 
   pypi:

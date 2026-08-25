@@ -17,7 +17,7 @@ def _crypto() -> tuple[Any, Any]:
     except ImportError as exc:
         raise RuntimeError(
             "encrypted backups require the optional 'crypto' extra: "
-            "pip install 'context-memory[crypto]'"
+            "pip install 'context-memory-mcp[crypto]'"
         ) from exc
     return AESGCM, Scrypt
 
