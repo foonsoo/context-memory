@@ -212,6 +212,9 @@ Keep the current local-first, single-user stdio product and a possible hosted se
    supported-client registration is also exercised from an installed wheel:
    official Claude Code, Codex, and VS Code CLI calls, Cursor's merged config,
    explicit restart guidance, and startup through the emitted server command.
+   A first-install documentation review removed the obsolete pre-release
+   source-clone/virtual-environment path from the primary Quick Start; the
+   published `uvx` launcher is now the single default onboarding route.
    Complete observed non-developer runs for first installation, supported
    client registration, and upgrade; record and repair every repeated failure
    diagnostic.

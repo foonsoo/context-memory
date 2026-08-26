@@ -10,23 +10,22 @@ This MVP is usable now: Python 3.11+ (Python 3.14 recommended), SQLite with WAL/
 
 ## Quick start: one database, every MCP client
 
-Install one launcher, choose one database path, and register that exact pair with every client on the same computer. Until the first PyPI release, a stable source installation can be created with:
+Install the published package, choose one database path, and register that exact
+pair with every client on the same computer:
 
 ```bash
-git clone https://github.com/foonsoo/context-memory.git
-cd context-memory
-python3.14 -m venv ~/.local/share/context-memory/runtime
-~/.local/share/context-memory/runtime/bin/pip install --no-deps .
-chmod 700 ~/.local/share/context-memory
-
-~/.local/share/context-memory/runtime/bin/context-memory \
+uvx --from context-memory-mcp context-memory \
   --db ~/.local/share/context-memory/memory.db \
-  init --workspace "$PWD" --launcher installed \
+  init --workspace "$PWD" \
   --clients claude-code,codex,cursor,vscode,craft --register
 
-~/.local/share/context-memory/runtime/bin/context-memory \
+uvx --from context-memory-mcp context-memory \
   --db ~/.local/share/context-memory/memory.db doctor
 ```
+
+Use a cloned source checkout and dedicated virtual environment only when
+developing or testing unreleased changes; see
+[`docs/RELEASING.md`](docs/RELEASING.md) for that workflow.
 
 Restart each registered client. At the beginning of **every new task/session**, the agent should perform this client-neutral sequence:
 
