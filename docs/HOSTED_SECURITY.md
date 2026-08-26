@@ -57,10 +57,20 @@ or project exists. Security audit records may contain actor, session, tenant,
 action, decision, and request ID, but must exclude credentials and memory
 content.
 
+## Durable identity state
+
+`HostedIdentityStore` persists tenant-scoped actors, projects, sessions, role
+assignments, and project grants in a separate hosted control database. Composite
+foreign keys prevent a grant or session from joining roots across tenants.
+Request handling must load the session, its current roles, and its current
+grants on every request. Expired or revoked sessions load as inactive, so
+revocation takes effect on the next authorization check. Provisioning methods
+are an internal persistence primitive, not a remote administration API.
+
 ## Gate before remote access
 
-The pure policy kernel is only the first P7-4 slice. Remote access remains
-blocked until identity/session/grant persistence, tenant-constrained repository
-queries, revocation tests, privilege-administration rules, rate limits, quotas,
-and cross-tenant tests for search, export, event polling, and backup are all
-implemented. Transport and API production controls remain a separate P7-5 gate.
+The policy kernel and durable identity state are only initial P7-4 slices.
+Remote access remains blocked until tenant-constrained content repositories,
+privilege-administration rules, rate limits, quotas, and end-to-end cross-tenant
+tests for search, export, event polling, and backup are all implemented.
+Transport and API production controls remain a separate P7-5 gate.

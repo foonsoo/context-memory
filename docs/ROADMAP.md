@@ -196,14 +196,14 @@ Keep the current local-first, single-user stdio product and a possible hosted se
    Wiki store. A separate browsing UI for the local product remains
    evidence-gated; a hosted service cannot launch without these user controls.
 4. **Design hosted identity and isolation before remote access — in progress.**
-   The first slice defines a deny-by-default policy kernel and hosted security
-   contract: verified active sessions, exact tenant matching, explicit project
-   grants, and least-privilege human/service roles protect search, export, event
-   polling, and tenant backup. Cross-tenant and cross-project denial tests cover
-   every initial action. Remote access remains blocked pending durable
-   identity/session/grant storage, revocation enforcement, tenant-constrained
-   repositories, privilege administration, rate limits, and quotas. A single
-   bearer token is not sufficient for an untrusted network.
+   The first slices define a deny-by-default policy kernel, hosted security
+   contract, and separate durable control store for tenant-scoped actors,
+   projects, sessions, roles, and grants. Session expiry, revocation, current
+   roles, and current grants are enforced on each load. Cross-tenant and
+   cross-project denial tests cover every initial action. Remote access remains
+   blocked pending tenant-constrained content repositories, privilege
+   administration, rate limits, and quotas. A single bearer token is not
+   sufficient for an untrusted network.
 5. **Add transport and API production controls.** Put TLS and trusted-proxy handling at the deployment boundary; define request/body/time limits, pagination and cancellation, stable error codes, idempotency retention, CORS policy where applicable, and backward-compatible API versioning.
 6. **Add data governance and privacy operations.** Document collection purpose, retention defaults, user export and deletion, account/project erasure, backup expiry, regional/storage choices, incident handling, and handling of sensitive data. Evaluate secret/PII detection as a warning and policy layer without claiming perfect detection.
 7. **Make operations observable and recoverable.** Add health/readiness endpoints, structured redacted logs, metrics for latency/errors/queue depth/database size, trace/request IDs, migration status, backup age, restore drills, disk-full behavior, and operator runbooks with alert thresholds.
