@@ -221,6 +221,11 @@ Keep the current local-first, single-user stdio product and a possible hosted se
    Craft guidance. The current candidate's registration aggregation fix was
    verified against the same real detected-client mix and restores explicit
    restart and server-list verification instructions.
+   A separate documented-upgrade observation installed public 0.6.2, created
+   and integrity-checked the required pre-upgrade snapshot, installed the
+   candidate wheel, and preserved project identity. The release gate now also
+   restarts the upgraded stdio server, completes a normal bootstrap/event/
+   session-end lifecycle, and retains a fresh integrity-checked backup.
    Complete observed non-developer runs for first installation, supported
    client registration, and upgrade; record and repair every repeated failure
    diagnostic.

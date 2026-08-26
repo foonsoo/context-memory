@@ -22,6 +22,25 @@ def run(*arguments: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def request(
+    process: subprocess.Popen[str],
+    request_id: int,
+    method: str,
+    params: dict | None = None,
+) -> dict:
+    payload = {"jsonrpc": "2.0", "id": request_id, "method": method}
+    if params is not None:
+        payload["params"] = params
+    assert process.stdin is not None
+    assert process.stdout is not None
+    process.stdin.write(json.dumps(payload) + "\n")
+    process.stdin.flush()
+    response = json.loads(process.stdout.readline())
+    if "error" in response:
+        raise AssertionError(response["error"])
+    return response["result"]
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         raise SystemExit("usage: upgrade_e2e.py CURRENT_WHEEL")
@@ -48,6 +67,7 @@ def main() -> None:
         workspace.mkdir()
         database = root / "data" / "memory.db"
         backup = root / "backups" / "before-upgrade.db"
+        post_upgrade_backup = root / "backups" / "after-upgrade.db"
 
         initialized = run(
             str(executable),
@@ -98,6 +118,101 @@ def main() -> None:
             raise AssertionError("upgrade did not preserve project identity")
         if not backup.is_file():
             raise AssertionError("upgrade removed the pre-upgrade backup")
+
+        server = subprocess.Popen(
+            [
+                str(executable),
+                "--db",
+                str(database),
+                "serve",
+                "--transport",
+                "stdio",
+            ],
+            cwd=workspace,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            request(
+                server,
+                1,
+                "initialize",
+                {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": {
+                        "name": "upgrade-e2e",
+                        "version": "1",
+                    },
+                },
+            )
+            bootstrapped = request(
+                server,
+                2,
+                "tools/call",
+                {
+                    "name": "context_bootstrap",
+                    "arguments": {
+                        "cwd": str(workspace),
+                        "query": "verify the upgraded normal lifecycle",
+                        "client": "upgrade-e2e",
+                        "external_id": "post-upgrade-lifecycle",
+                        "response_format": "compact",
+                    },
+                },
+            )["structuredContent"]["result"]
+            event = request(
+                server,
+                3,
+                "tools/call",
+                {
+                    "name": "record_event",
+                    "arguments": {
+                        "project_id": project_id,
+                        "scope_id": bootstrapped["scope_id"],
+                        "session_id": bootstrapped["session"]["id"],
+                        "kind": "fact",
+                        "content": "normal lifecycle completed after upgrade",
+                    },
+                },
+            )["structuredContent"]["result"]
+            if not event["id"]:
+                raise AssertionError(event)
+            ended = request(
+                server,
+                4,
+                "tools/call",
+                {
+                    "name": "session_end",
+                    "arguments": {
+                        "session_id": bootstrapped["session"]["id"],
+                        "summary": "post-upgrade lifecycle passed",
+                        "extract_candidates": False,
+                    },
+                },
+            )["structuredContent"]["result"]
+            if not ended["ended_at"]:
+                raise AssertionError(ended)
+        finally:
+            server.terminate()
+            server.wait(timeout=5)
+
+        fresh_backup = json.loads(
+            run(
+                str(executable),
+                "--db",
+                str(database),
+                "backup",
+                "--output",
+                str(post_upgrade_backup),
+            ).stdout
+        )
+        if fresh_backup["integrity"] != "ok":
+            raise AssertionError(fresh_backup)
+        if not post_upgrade_backup.is_file():
+            raise AssertionError("post-upgrade backup was not retained")
 
 
 if __name__ == "__main__":
