@@ -63,6 +63,8 @@ jobs:
         run: |
           wheel-test/bin/pip install 'mcp==2.0.0'
           wheel-test/bin/python tests/official_sdk_e2e.py
+      - name: Verify upgrade from the latest published release
+        run: wheel-test/bin/python tests/upgrade_e2e.py "$RUNNER_TEMP"/dist-one/*.whl
       - name: Verify package removal preserves user data
         run: wheel-test/bin/python tests/uninstall_e2e.py
       - uses: actions/upload-artifact@v4
