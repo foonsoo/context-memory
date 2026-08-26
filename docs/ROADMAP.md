@@ -200,10 +200,12 @@ Keep the current local-first, single-user stdio product and a possible hosted se
    contract, and separate durable control store for tenant-scoped actors,
    projects, sessions, roles, and grants. Session expiry, revocation, current
    roles, and current grants are enforced on each load. Cross-tenant and
-   cross-project denial tests cover every initial action. Remote access remains
-   blocked pending tenant-constrained content repositories, privilege
-   administration, rate limits, and quotas. A single bearer token is not
-   sufficient for an untrusted network.
+   cross-project denial tests cover every initial action. A mandatory repository
+   gateway now authorizes before storage access and passes exact tenant/project
+   keys through a constrained interface; denials never probe storage. Remote
+   access remains blocked pending a concrete tenant-keyed content store,
+   privilege administration, rate limits, and quotas. A single bearer token is
+   not sufficient for an untrusted network.
 5. **Add transport and API production controls.** Put TLS and trusted-proxy handling at the deployment boundary; define request/body/time limits, pagination and cancellation, stable error codes, idempotency retention, CORS policy where applicable, and backward-compatible API versioning.
 6. **Add data governance and privacy operations.** Document collection purpose, retention defaults, user export and deletion, account/project erasure, backup expiry, regional/storage choices, incident handling, and handling of sensitive data. Evaluate secret/PII detection as a warning and policy layer without claiming perfect detection.
 7. **Make operations observable and recoverable.** Add health/readiness endpoints, structured redacted logs, metrics for latency/errors/queue depth/database size, trace/request IDs, migration status, backup age, restore drills, disk-full behavior, and operator runbooks with alert thresholds.

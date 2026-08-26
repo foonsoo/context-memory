@@ -69,8 +69,16 @@ are an internal persistence primitive, not a remote administration API.
 
 ## Gate before remote access
 
-The policy kernel and durable identity state are only initial P7-4 slices.
-Remote access remains blocked until tenant-constrained content repositories,
-privilege-administration rules, rate limits, quotas, and end-to-end cross-tenant
-tests for search, export, event polling, and backup are all implemented.
-Transport and API production controls remain a separate P7-5 gate.
+`HostedRepositoryGateway` is the mandatory boundary for protected content
+operations. It authorizes before invoking storage, never calls storage after a
+denial, and forwards the exact authorized tenant and project to a
+`TenantConstrainedRepository`. A hosted adapter must implement that interface
+with tenant predicates in the storage query itself; wrapping the local
+single-user `MemoryStore` or filtering a broad result afterward is forbidden.
+
+The policy kernel, durable identity state, and repository gateway are only
+initial P7-4 slices. Remote access remains blocked until a concrete
+tenant-keyed content store, privilege-administration rules, rate limits,
+quotas, and end-to-end cross-tenant tests for search, export, event polling,
+and backup are all implemented. Transport and API production controls remain
+a separate P7-5 gate.
