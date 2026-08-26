@@ -26,9 +26,11 @@ P6 behavior-preserving compaction and maintainability passed its exit gate on
 2026-08-24. P7-1 release `v0.6.2` passed the reproducible build,
 installed-wheel, TestPyPI, production PyPI, and post-publication `uvx --from
 context-memory-mcp context-memory` gates on 2026-08-25. P7-3 user-owned
-lifecycle controls completed on 2026-08-25. The next active local product
-priority is P7-9: verify the complete non-developer user journey and its failure
-diagnostics.
+lifecycle controls completed on 2026-08-25. P7-9 completed on 2026-08-26 after
+observed first-install, supported-client registration, and supported-upgrade
+runs passed alongside the reproducible installed-wheel lifecycle gates. No
+additional local product implementation is active; the next P7 implementation
+requires an explicit decision to pursue the hosted-service track.
 Hosted-service work in P7 remains conditional on choosing that product track.
 Neural embedding remains an optional evaluated adapter and is not part of the
 active implementation path because its measured latency cost did not justify
@@ -198,7 +200,7 @@ Keep the current local-first, single-user stdio product and a possible hosted se
 6. **Add data governance and privacy operations.** Document collection purpose, retention defaults, user export and deletion, account/project erasure, backup expiry, regional/storage choices, incident handling, and handling of sensitive data. Evaluate secret/PII detection as a warning and policy layer without claiming perfect detection.
 7. **Make operations observable and recoverable.** Add health/readiness endpoints, structured redacted logs, metrics for latency/errors/queue depth/database size, trace/request IDs, migration status, backup age, restore drills, disk-full behavior, and operator runbooks with alert thresholds.
 8. **Prove service behavior under load and failure.** Test concurrent readers/writers, process interruption, WAL growth, slow clients, malformed/oversized requests, migration rollback or forward recovery, backup restoration, and capacity limits. Define service-level objectives only after these measurements.
-9. **Finish the user journey — in progress.** The installed-wheel black-box
+9. **Finish the user journey — completed.** The installed-wheel black-box
    gate now covers initialization and portable registration output, first useful
    memory creation and approval, next-session retrieval, evidence-backed
    correction, source reinspection, backup/restore, post-restore diagnosis,
@@ -226,9 +228,10 @@ Keep the current local-first, single-user stdio product and a possible hosted se
    candidate wheel, and preserved project identity. The release gate now also
    restarts the upgraded stdio server, completes a normal bootstrap/event/
    session-end lifecycle, and retains a fresh integrity-checked backup.
-   Complete observed non-developer runs for first installation, supported
-   client registration, and upgrade; record and repair every repeated failure
-   diagnostic.
+   The observed first-install, supported-client registration, and upgrade runs
+   are complete. Their repeated failure diagnostic was repaired and retained in
+   the automated release gates, which now cover the complete local-product exit
+   journey including package removal with user data preserved.
 
 **Exit gate:** a new user can install or sign up, understand what is stored and why, complete the memory lifecycle, recover or delete their data, and receive a supported upgrade. Hosted deployment additionally passes tenant-isolation, authentication, load, failure-recovery, privacy, and observability gates.
 
