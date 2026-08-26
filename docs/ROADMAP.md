@@ -209,8 +209,11 @@ Keep the current local-first, single-user stdio product and a possible hosted se
    in place. The release gate also upgrades a database created by the latest
    published package after taking the required integrity-checked snapshot, then
    verifies diagnosis and project identity with the candidate wheel. Complete
-   observed non-developer runs for first installation, supported client
-   registration, and upgrade; record and repair every repeated failure
+   supported-client registration is also exercised from an installed wheel:
+   official Claude Code, Codex, and VS Code CLI calls, Cursor's merged config,
+   explicit restart guidance, and startup through the emitted server command.
+   Complete observed non-developer runs for first installation, supported
+   client registration, and upgrade; record and repair every repeated failure
    diagnostic.
 
 **Exit gate:** a new user can install or sign up, understand what is stored and why, complete the memory lifecycle, recover or delete their data, and receive a supported upgrade. Hosted deployment additionally passes tenant-isolation, authentication, load, failure-recovery, privacy, and observability gates.

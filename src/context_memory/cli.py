@@ -515,6 +515,13 @@ def init_workspaces(
             for client in dict.fromkeys(expanded)
         ],
     }
+    registered = any(item.get("registered") for item in result["clients"])
+    result["restart_required"] = registered
+    if registered:
+        result["next_step"] = (
+            "Restart every client reported as registered, then verify "
+            "context-memory in that client's MCP server list."
+        )
     return result
 
 

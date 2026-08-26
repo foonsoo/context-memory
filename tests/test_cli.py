@@ -100,6 +100,8 @@ class CLITests(unittest.TestCase):
                 self.assertIn("confirm", craft["next_step"])
                 registered = init_workspaces(store, str(root), ["cursor"], "installed", True, cursor_config=cursor)
                 self.assertTrue(registered["clients"][0]["registered"])
+                self.assertTrue(registered["restart_required"])
+                self.assertIn("Restart", registered["next_step"])
                 saved = __import__("json").loads(cursor.read_text(encoding="utf-8"))
                 self.assertEqual(saved["mcpServers"]["existing"]["command"], "keep")
                 self.assertEqual(saved["mcpServers"]["context-memory"]["command"], "context-memory")
