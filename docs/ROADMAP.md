@@ -215,6 +215,12 @@ Keep the current local-first, single-user stdio product and a possible hosted se
    A first-install documentation review removed the obsolete pre-release
    source-clone/virtual-environment path from the primary Quick Start; the
    published `uvx` launcher is now the single default onboarding route.
+   An isolated public-0.6.2 run then completed installation, initialization,
+   and diagnosis successfully, but reproduced missing top-level restart help
+   when automatic detection combined a registered Codex client with manual
+   Craft guidance. The current candidate's registration aggregation fix was
+   verified against the same real detected-client mix and restores explicit
+   restart and server-list verification instructions.
    Complete observed non-developer runs for first installation, supported
    client registration, and upgrade; record and repair every repeated failure
    diagnostic.
