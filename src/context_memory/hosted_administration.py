@@ -7,6 +7,7 @@ from types import MappingProxyType
 from typing import AbstractSet, Protocol
 
 from .hosted_authorization import HostedSession
+from .hosted_limits import HostedRateLimiter
 
 
 class HostedAdminAction(StrEnum):
@@ -120,11 +121,22 @@ class HostedAdministrationDeniedError(PermissionError):
         self.reason = reason
 
 
+class HostedAdministrationRateLimitError(RuntimeError):
+    def __init__(self, retry_after_seconds: int) -> None:
+        super().__init__("hosted administration rate limit exceeded")
+        self.retry_after_seconds = retry_after_seconds
+
+
 class HostedAdministrationGateway:
     """Authorize and audit privileged identity mutations."""
 
-    def __init__(self, store: HostedAdministrationStore) -> None:
+    def __init__(
+        self,
+        store: HostedAdministrationStore,
+        rate_limiter: HostedRateLimiter | None = None,
+    ) -> None:
         self.store = store
+        self.rate_limiter = rate_limiter
 
     def create_project(
         self,
@@ -324,6 +336,30 @@ class HostedAdministrationGateway:
     ):
         if not request_id:
             raise ValueError("request_id is required")
+        if (
+            self.rate_limiter is not None
+            and session is not None
+            and session.tenant_id
+            and session.actor_id
+        ):
+            rate = self.rate_limiter.consume(
+                session.tenant_id, session.actor_id, action.value
+            )
+            if not rate.allowed:
+                self.store.record_security_audit(
+                    tenant_id=session.tenant_id,
+                    actor_id=session.actor_id,
+                    session_id=session.session_id,
+                    action=action.value,
+                    decision="denied",
+                    reason="rate_limited",
+                    request_id=request_id,
+                    target_type=target_type,
+                    target_id=target_id,
+                )
+                raise HostedAdministrationRateLimitError(
+                    rate.retry_after_seconds
+                )
         decision = authorize_admin_action(session, tenant_id, action)
         audit_tenant = session.tenant_id if session else None
         audit = {

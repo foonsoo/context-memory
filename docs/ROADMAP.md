@@ -29,9 +29,12 @@ context-memory-mcp context-memory` gates on 2026-08-25. P7-3 user-owned
 lifecycle controls completed on 2026-08-25. P7-9 completed on 2026-08-26 after
 observed first-install, supported-client registration, and supported-upgrade
 runs passed alongside the reproducible installed-wheel lifecycle gates. No
-additional local product implementation is active; the next P7 implementation
-requires an explicit decision to pursue the hosted-service track.
-Hosted-service work in P7 remains conditional on choosing that product track.
+additional local product implementation is active. The hosted-service track
+was subsequently selected, and P7-4 completed its pre-transport identity,
+tenant isolation, privilege administration, rate-limit, quota, and
+gateway-to-store denial gates on 2026-08-31. P7-5 transport and API production
+controls are the next implementation priority; no remote endpoint is exposed
+yet.
 Neural embedding remains an optional evaluated adapter and is not part of the
 active implementation path because its measured latency cost did not justify
 making it the default.
@@ -195,7 +198,7 @@ Keep the current local-first, single-user stdio product and a possible hosted se
    VS Code, Craft Agents, and generic clients. These controls do not create a second writable
    Wiki store. A separate browsing UI for the local product remains
    evidence-gated; a hosted service cannot launch without these user controls.
-4. **Design hosted identity and isolation before remote access — in progress.**
+4. **Design hosted identity and isolation before remote access — completed.**
    The first slices define a deny-by-default policy kernel, hosted security
    contract, and separate durable control store for tenant-scoped actors,
    projects, sessions, roles, and grants. Session expiry, revocation, current
@@ -205,12 +208,24 @@ Keep the current local-first, single-user stdio product and a possible hosted se
    keys through a constrained interface; denials never probe storage. A
    separate concrete hosted content prototype now enforces tenant/project
    composite roots and tenant-keyed search, export, event polling, and backup,
-   including same-project-ID cross-tenant isolation tests. Remote access remains
-   blocked pending rate limits, quotas, and complete gateway-to-store denial
-   coverage. Privileged project/grant/session/actor administration now uses
+   including same-project-ID cross-tenant isolation tests. Persistent
+   tenant/actor/action rate limits now bound successful and denied gateway
+   requests, while transactional project/event/UTF-8-byte quotas bound hosted
+   content without sharing capacity across tenants. The real gateway/store
+   matrix denies cross-tenant search, export, event polling, and backup before
+   any foreign content read. Privileged project/grant/session/actor
+   administration uses
    explicit tenant-bound actions with attempted/result security auditing;
    service-role assignment requires a separate security-admin role. A single
    bearer token is not sufficient for an untrusted network.
+
+   **Exit result — passed 2026-08-31.** The policy, identity, administration,
+   limit, and content stores remain separate from the local product. Composite
+   tenant keys, current session/grant loading, explicit privileged actions,
+   pre-mutation audit entries, persistent rate buckets, transactional quotas,
+   and real-store denial tests cover the P7-4 boundary. Remote access remains
+   disabled; unauthenticated edge limiting, trusted transport, and API controls
+   belong to P7-5.
 5. **Add transport and API production controls.** Put TLS and trusted-proxy handling at the deployment boundary; define request/body/time limits, pagination and cancellation, stable error codes, idempotency retention, CORS policy where applicable, and backward-compatible API versioning.
 6. **Add data governance and privacy operations.** Document collection purpose, retention defaults, user export and deletion, account/project erasure, backup expiry, regional/storage choices, incident handling, and handling of sensitive data. Evaluate secret/PII detection as a warning and policy layer without claiming perfect detection.
 7. **Make operations observable and recoverable.** Add health/readiness endpoints, structured redacted logs, metrics for latency/errors/queue depth/database size, trace/request IDs, migration status, backup age, restore drills, disk-full behavior, and operator runbooks with alert thresholds.

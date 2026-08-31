@@ -2,7 +2,32 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from dataclasses import dataclass
 from pathlib import Path
+
+
+@dataclass(frozen=True)
+class HostedQuotaPolicy:
+    max_projects_per_tenant: int = 100
+    max_events_per_project: int = 100_000
+    max_event_bytes: int = 65_536
+    max_tenant_bytes: int = 104_857_600
+
+    def __post_init__(self) -> None:
+        values = (
+            self.max_projects_per_tenant,
+            self.max_events_per_project,
+            self.max_event_bytes,
+            self.max_tenant_bytes,
+        )
+        if any(value < 1 for value in values):
+            raise ValueError("quota values must be positive")
+
+
+class HostedQuotaExceededError(RuntimeError):
+    def __init__(self, reason: str) -> None:
+        super().__init__("hosted content quota exceeded")
+        self.reason = reason
 
 
 class HostedContentStore:
@@ -14,8 +39,11 @@ class HostedContentStore:
     composite foreign keys.
     """
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(
+        self, path: str | Path, quota: HostedQuotaPolicy | None = None
+    ) -> None:
         self.path = Path(path)
+        self.quota = quota or HostedQuotaPolicy()
         self.connection = sqlite3.connect(self.path)
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA foreign_keys = ON")
@@ -63,13 +91,28 @@ class HostedContentStore:
         self.connection.commit()
 
     def provision_project(self, tenant_id: str, project_id: str) -> None:
-        self.connection.execute(
-            """
-            INSERT INTO hosted_content_projects(tenant_id, project_id)
-            VALUES(?, ?)
-            """,
-            (tenant_id, project_id),
-        )
+        self.connection.execute("BEGIN IMMEDIATE")
+        try:
+            row = self.connection.execute(
+                """
+                SELECT COUNT(*) AS project_count
+                FROM hosted_content_projects
+                WHERE tenant_id = ?
+                """,
+                (tenant_id,),
+            ).fetchone()
+            if int(row["project_count"]) >= self.quota.max_projects_per_tenant:
+                raise HostedQuotaExceededError("tenant_project_limit")
+            self.connection.execute(
+                """
+                INSERT INTO hosted_content_projects(tenant_id, project_id)
+                VALUES(?, ?)
+                """,
+                (tenant_id, project_id),
+            )
+        except Exception:
+            self.connection.rollback()
+            raise
         self.connection.commit()
 
     def record_event(
@@ -79,15 +122,36 @@ class HostedContentStore:
         kind: str,
         content: str,
     ) -> dict[str, object]:
-        with self.connection:
+        content_bytes = len(content.encode("utf-8"))
+        if content_bytes > self.quota.max_event_bytes:
+            raise HostedQuotaExceededError("event_byte_limit")
+        self.connection.execute("BEGIN IMMEDIATE")
+        try:
             row = self.connection.execute(
                 """
-                SELECT COALESCE(MAX(event_seq), 0) + 1 AS next_seq
+                SELECT COALESCE(MAX(event_seq), 0) + 1 AS next_seq,
+                       COUNT(*) AS event_count
                 FROM hosted_content_events
                 WHERE tenant_id = ? AND project_id = ?
                 """,
                 (tenant_id, project_id),
             ).fetchone()
+            if int(row["event_count"]) >= self.quota.max_events_per_project:
+                raise HostedQuotaExceededError("project_event_limit")
+            usage = self.connection.execute(
+                """
+                SELECT COALESCE(SUM(length(CAST(content AS BLOB))), 0)
+                         AS byte_count
+                FROM hosted_content_events
+                WHERE tenant_id = ?
+                """,
+                (tenant_id,),
+            ).fetchone()
+            if (
+                int(usage["byte_count"]) + content_bytes
+                > self.quota.max_tenant_bytes
+            ):
+                raise HostedQuotaExceededError("tenant_byte_limit")
             event_seq = int(row["next_seq"])
             self.connection.execute(
                 """
@@ -97,6 +161,10 @@ class HostedContentStore:
                 """,
                 (tenant_id, project_id, event_seq, kind, content),
             )
+        except Exception:
+            self.connection.rollback()
+            raise
+        self.connection.commit()
         return {
             "tenant_id": tenant_id,
             "project_id": project_id,

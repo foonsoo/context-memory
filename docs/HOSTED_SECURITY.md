@@ -62,6 +62,22 @@ credential, token, or memory content. Actor deletion removes that actor's
 sessions, roles, and grants in one transaction without deleting security audit
 history.
 
+## Rate limits and content quotas
+
+`HostedRateLimiter` persists fixed-window counters by tenant, actor, and named
+action. Repository and administration gateways consume a counter before
+authorization so repeated cross-tenant or unprivileged probes are bounded as
+well as successful requests. Throttled administration attempts receive a
+security-audit entry. A deployment edge remains responsible for IP/client
+limits on requests that have no verified tenant and actor identity.
+
+`HostedContentStore` enforces positive configured limits for projects per
+tenant, events per project, UTF-8 bytes per event, and aggregate event bytes per
+tenant. Project and event checks run inside immediate write transactions, so a
+concurrent request cannot pass a stale quota check. Stable quota reasons do not
+disclose another tenant's usage, and one tenant exhausting a bucket or quota
+does not consume another tenant's capacity.
+
 ## Persistence and request requirements
 
 A hosted persistence schema must put `tenant_id` on every authoritative root
@@ -103,6 +119,7 @@ cross-tenant roots, and regression tests reuse the same project ID in two
 tenants to prove read isolation. It is not a wrapper around the local
 single-user store.
 
-Remote access remains blocked until rate limits, quotas, and complete
-gateway-to-store end-to-end denial tests are implemented. Transport and API
-production controls remain a separate P7-5 gate.
+The gateway-to-store matrix now verifies that cross-tenant search, export,
+event polling, and backup are denied against the real content store. Remote
+access remains blocked because deployment-level unauthenticated traffic limits,
+trusted transport, and API production controls are a separate P7-5 gate.

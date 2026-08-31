@@ -8,6 +8,7 @@ from .hosted_authorization import (
     HostedSession,
     authorize_hosted_action,
 )
+from .hosted_limits import HostedRateLimiter
 
 
 class TenantConstrainedRepository(Protocol):
@@ -34,11 +35,24 @@ class HostedRepositoryDeniedError(PermissionError):
         self.reason = reason
 
 
+class HostedRepositoryRateLimitError(RuntimeError):
+    """Stable throttling result without repository-state disclosure."""
+
+    def __init__(self, retry_after_seconds: int) -> None:
+        super().__init__("hosted repository rate limit exceeded")
+        self.retry_after_seconds = retry_after_seconds
+
+
 class HostedRepositoryGateway:
     """Authorize exact tenant-scoped repository calls."""
 
-    def __init__(self, repository: TenantConstrainedRepository) -> None:
+    def __init__(
+        self,
+        repository: TenantConstrainedRepository,
+        rate_limiter: HostedRateLimiter | None = None,
+    ) -> None:
         self.repository = repository
+        self.rate_limiter = rate_limiter
 
     def search(
         self,
@@ -47,6 +61,7 @@ class HostedRepositoryGateway:
         project_id: str,
         query: str,
     ) -> object:
+        self._consume(session, HostedAction.SEARCH)
         self._require(
             session,
             HostedResource(tenant_id, project_id),
@@ -60,6 +75,7 @@ class HostedRepositoryGateway:
         tenant_id: str,
         project_id: str,
     ) -> object:
+        self._consume(session, HostedAction.EXPORT)
         self._require(
             session,
             HostedResource(tenant_id, project_id),
@@ -74,6 +90,7 @@ class HostedRepositoryGateway:
         project_id: str,
         cursor: int | None = None,
     ) -> object:
+        self._consume(session, HostedAction.EVENT_POLL)
         self._require(
             session,
             HostedResource(tenant_id, project_id),
@@ -84,6 +101,7 @@ class HostedRepositoryGateway:
     def backup_tenant(
         self, session: HostedSession | None, tenant_id: str
     ) -> object:
+        self._consume(session, HostedAction.BACKUP)
         self._require(
             session,
             HostedResource(tenant_id),
@@ -100,3 +118,16 @@ class HostedRepositoryGateway:
         decision = authorize_hosted_action(session, resource, action)
         if not decision.allowed:
             raise HostedRepositoryDeniedError(decision.reason)
+
+    def _consume(
+        self, session: HostedSession | None, action: HostedAction
+    ) -> None:
+        if self.rate_limiter is None:
+            return
+        if session is None or not session.tenant_id or not session.actor_id:
+            return
+        decision = self.rate_limiter.consume(
+            session.tenant_id, session.actor_id, action.value
+        )
+        if not decision.allowed:
+            raise HostedRepositoryRateLimitError(decision.retry_after_seconds)
