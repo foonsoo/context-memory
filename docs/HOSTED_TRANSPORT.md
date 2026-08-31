@@ -14,6 +14,16 @@ transport policy before invoking `HostedRepositoryGateway` or
 `HostedAdministrationGateway`, converts opaque event cursors at the boundary,
 and emits stable response envelopes without exposing authorization reasons.
 
+`HostedHTTPServer` is the dependency-injected socket boundary. It maps only the
+versioned hosted routes, requires a bounded `Content-Length`, rejects oversized
+bodies before reading them, applies a socket read deadline, and obtains a
+server-verified session from the configured resolver. The resolver owns
+credential verification; bearer values are never passed to a repository,
+audit row, or response. Request handlers monitor the connection while adapter
+work runs and cancel the matching active context when the peer disconnects.
+The threaded server uses daemon request threads and supports bounded graceful
+shutdown.
+
 ## Deployment trust boundary
 
 TLS terminates at the service process or a specifically configured reverse
@@ -68,13 +78,17 @@ mutation and replay response commit, a late deadline or disconnect may hide the
 response from that client but a retry returns the stored result instead of
 executing a second mutation.
 
-## Remaining P7-5 integration gate
+## P7-5 verification boundary
 
-The policy primitives and concrete adapter are dependency-free and tested, but
-no public hosted listener exists yet. Direct adapter tests cover trusted-proxy
-TLS resolution, CORS/version metadata, oversized and malformed bodies,
-cross-tenant denial, cursor isolation, persistent mutation replay, deadline
-expiry, and disconnect cancellation. Before P7-5 can pass, a deployment-shaped
-listener test must prove socket-level body/read deadlines, disconnect
-propagation, trusted proxy/TLS configuration, and graceful shutdown. P7-4
-authorization remains mandatory after all transport checks.
+The policy primitives, adapter, and listener are dependency-free and tested.
+Direct adapter tests cover trusted-proxy TLS resolution, CORS/version metadata,
+cross-tenant denial, cursor isolation, persistent mutation replay, and execution
+deadlines. Real-socket tests cover verified-session injection, exact CORS
+preflight, oversized rejection before body upload, malformed JSON, slow-body
+read timeout, disconnect cancellation, and graceful shutdown.
+
+The listener is intentionally not exposed through the local CLI or installed
+as an internet service. P7-6 privacy/governance, P7-7 operations, and P7-8
+load/failure gates must pass before deployment. Production wiring must provide
+request-safe database handles or a bounded connection pool; sharing a default
+thread-bound SQLite connection across handler threads is not supported.

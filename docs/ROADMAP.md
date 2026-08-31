@@ -226,7 +226,7 @@ Keep the current local-first, single-user stdio product and a possible hosted se
    and real-store denial tests cover the P7-4 boundary. Remote access remains
    disabled; unauthenticated edge limiting, trusted transport, and API controls
    belong to P7-5.
-5. **Add transport and API production controls — in progress.** The first
+5. **Add transport and API production controls — completed.** The first
    transport-neutral slice defines exact trusted-proxy/TLS resolution,
    allowlisted CORS and explicit API-version checks, body and cooperative
    deadline/cancellation limits, stable error envelopes, tenant/route-bound
@@ -236,9 +236,19 @@ Keep the current local-first, single-user stdio product and a possible hosted se
    service endpoints. A concrete pre-authenticated adapter now applies the
    policy to P7-4 repository and administration gateways end to end, including
    opaque event cursors, cross-tenant denial, mutation replay, deadline expiry,
-   and active-request disconnect cancellation. A deployment-shaped listener
-   test for socket-level read limits, TLS/proxy configuration, disconnects, and
-   graceful shutdown remains before this item can pass.
+   and active-request disconnect cancellation. A dependency-injected hosted
+   listener now requires bounded content length, enforces socket read timeout,
+   maps only versioned routes, obtains a server-verified session, monitors peer
+   disconnects, supports exact CORS preflight, and shuts down cleanly. Real
+   socket tests cover trusted-proxy TLS metadata, verified/denied sessions,
+   oversized and malformed requests, slow bodies, disconnect cancellation, and
+   shutdown. The listener is not exposed through the local CLI or deployed;
+   P7-6 through P7-8 remain mandatory before remote service launch.
+
+   **Exit result — passed 2026-08-31.** Every named P7-5 control has an
+   executable policy or socket-level regression. Existing stdio and localhost
+   HTTP compatibility snapshots remain unchanged, and the default package adds
+   no runtime dependency.
 6. **Add data governance and privacy operations.** Document collection purpose, retention defaults, user export and deletion, account/project erasure, backup expiry, regional/storage choices, incident handling, and handling of sensitive data. Evaluate secret/PII detection as a warning and policy layer without claiming perfect detection.
 7. **Make operations observable and recoverable.** Add health/readiness endpoints, structured redacted logs, metrics for latency/errors/queue depth/database size, trace/request IDs, migration status, backup age, restore drills, disk-full behavior, and operator runbooks with alert thresholds.
 8. **Prove service behavior under load and failure.** Test concurrent readers/writers, process interruption, WAL growth, slow clients, malformed/oversized requests, migration rollback or forward recovery, backup restoration, and capacity limits. Define service-level objectives only after these measurements.
