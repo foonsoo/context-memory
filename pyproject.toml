@@ -55,6 +55,7 @@ include = [
   "src/context_memory/hosted_administration.py",
   "src/context_memory/hosted_authorization.py",
   "src/context_memory/hosted_content.py",
+  "src/context_memory/hosted_governance.py",
   "src/context_memory/hosted_identity.py",
   "src/context_memory/hosted_limits.py",
   "src/context_memory/hosted_http.py",

@@ -3,7 +3,13 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 @dataclass(frozen=True)
@@ -40,10 +46,14 @@ class HostedContentStore:
     """
 
     def __init__(
-        self, path: str | Path, quota: HostedQuotaPolicy | None = None
+        self,
+        path: str | Path,
+        quota: HostedQuotaPolicy | None = None,
+        clock: Callable[[], datetime] = _utc_now,
     ) -> None:
         self.path = Path(path)
         self.quota = quota or HostedQuotaPolicy()
+        self.clock = clock
         self.connection = sqlite3.connect(self.path)
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA foreign_keys = ON")
@@ -71,6 +81,7 @@ class HostedContentStore:
               event_seq INTEGER NOT NULL,
               kind TEXT NOT NULL,
               content TEXT NOT NULL,
+              created_at TEXT NOT NULL,
               PRIMARY KEY(tenant_id, project_id, event_seq),
               FOREIGN KEY(tenant_id, project_id)
                 REFERENCES hosted_content_projects(tenant_id, project_id)
@@ -81,6 +92,20 @@ class HostedContentStore:
               );
             """
         )
+        columns = {
+            row["name"]
+            for row in self.connection.execute(
+                "PRAGMA table_info(hosted_content_events)"
+            )
+        }
+        if "created_at" not in columns:
+            self.connection.execute(
+                "ALTER TABLE hosted_content_events ADD COLUMN created_at TEXT"
+            )
+            self.connection.execute(
+                "UPDATE hosted_content_events SET created_at = ?",
+                (self.clock().isoformat(),),
+            )
         self.connection.commit()
 
     def provision_tenant(self, tenant_id: str) -> None:
@@ -123,6 +148,7 @@ class HostedContentStore:
         content: str,
     ) -> dict[str, object]:
         content_bytes = len(content.encode("utf-8"))
+        created_at = self.clock().isoformat()
         if content_bytes > self.quota.max_event_bytes:
             raise HostedQuotaExceededError("event_byte_limit")
         self.connection.execute("BEGIN IMMEDIATE")
@@ -156,10 +182,17 @@ class HostedContentStore:
             self.connection.execute(
                 """
                 INSERT INTO hosted_content_events(
-                  tenant_id, project_id, event_seq, kind, content
-                ) VALUES(?, ?, ?, ?, ?)
+                  tenant_id, project_id, event_seq, kind, content, created_at
+                ) VALUES(?, ?, ?, ?, ?, ?)
                 """,
-                (tenant_id, project_id, event_seq, kind, content),
+                (
+                    tenant_id,
+                    project_id,
+                    event_seq,
+                    kind,
+                    content,
+                    created_at,
+                ),
             )
         except Exception:
             self.connection.rollback()
@@ -171,6 +204,7 @@ class HostedContentStore:
             "event_seq": event_seq,
             "kind": kind,
             "content": content,
+            "created_at": created_at,
         }
 
     def search(
@@ -178,7 +212,7 @@ class HostedContentStore:
     ) -> list[dict[str, object]]:
         rows = self.connection.execute(
             """
-            SELECT event_seq, kind, content
+            SELECT event_seq, kind, content, created_at
             FROM hosted_content_events
             WHERE tenant_id = ? AND project_id = ?
               AND instr(lower(content), lower(?)) > 0
@@ -208,7 +242,7 @@ class HostedContentStore:
             }
         rows = self.connection.execute(
             """
-            SELECT event_seq, kind, content
+            SELECT event_seq, kind, content, created_at
             FROM hosted_content_events
             WHERE tenant_id = ? AND project_id = ?
             ORDER BY event_seq
@@ -232,7 +266,7 @@ class HostedContentStore:
         effective_cursor = cursor or 0
         rows = self.connection.execute(
             """
-            SELECT event_seq, kind, content
+            SELECT event_seq, kind, content, created_at
             FROM hosted_content_events
             WHERE tenant_id = ? AND project_id = ? AND event_seq > ?
             ORDER BY event_seq
@@ -272,6 +306,61 @@ class HostedContentStore:
             separators=(",", ":"),
         ).encode()
 
+    def purge_events_before(self, tenant_id: str, cutoff: datetime) -> int:
+        cursor = self.connection.execute(
+            """
+            DELETE FROM hosted_content_events
+            WHERE tenant_id = ? AND created_at < ?
+            """,
+            (tenant_id, cutoff.isoformat()),
+        )
+        self.connection.commit()
+        return cursor.rowcount
+
+    def erase_project(self, tenant_id: str, project_id: str) -> bool:
+        self.connection.execute("BEGIN IMMEDIATE")
+        try:
+            self.connection.execute(
+                """
+                DELETE FROM hosted_content_events
+                WHERE tenant_id = ? AND project_id = ?
+                """,
+                (tenant_id, project_id),
+            )
+            cursor = self.connection.execute(
+                """
+                DELETE FROM hosted_content_projects
+                WHERE tenant_id = ? AND project_id = ?
+                """,
+                (tenant_id, project_id),
+            )
+        except Exception:
+            self.connection.rollback()
+            raise
+        self.connection.commit()
+        return cursor.rowcount == 1
+
+    def erase_tenant(self, tenant_id: str) -> bool:
+        self.connection.execute("BEGIN IMMEDIATE")
+        try:
+            self.connection.execute(
+                "DELETE FROM hosted_content_events WHERE tenant_id = ?",
+                (tenant_id,),
+            )
+            self.connection.execute(
+                "DELETE FROM hosted_content_projects WHERE tenant_id = ?",
+                (tenant_id,),
+            )
+            cursor = self.connection.execute(
+                "DELETE FROM hosted_content_tenants WHERE tenant_id = ?",
+                (tenant_id,),
+            )
+        except Exception:
+            self.connection.rollback()
+            raise
+        self.connection.commit()
+        return cursor.rowcount == 1
+
     @staticmethod
     def _event(
         tenant_id: str, project_id: str, row: sqlite3.Row
@@ -282,4 +371,5 @@ class HostedContentStore:
             "event_seq": int(row["event_seq"]),
             "kind": row["kind"],
             "content": row["content"],
+            "created_at": row["created_at"],
         }

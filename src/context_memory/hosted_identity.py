@@ -267,6 +267,120 @@ class HostedIdentityStore:
         ).fetchall()
         return [dict(row) for row in rows]
 
+    def export_actor(self, tenant_id: str, actor_id: str) -> dict[str, object]:
+        actor = self.conn.execute(
+            """
+            SELECT actor_id FROM hosted_actors
+            WHERE tenant_id = ? AND actor_id = ?
+            """,
+            (tenant_id, actor_id),
+        ).fetchone()
+        if actor is None:
+            return {
+                "tenant_id": tenant_id,
+                "actor_id": actor_id,
+                "exists": False,
+            }
+        roles = self.conn.execute(
+            """
+            SELECT role FROM hosted_role_assignments
+            WHERE tenant_id = ? AND actor_id = ? ORDER BY role
+            """,
+            (tenant_id, actor_id),
+        ).fetchall()
+        grants = self.conn.execute(
+            """
+            SELECT project_id FROM hosted_project_grants
+            WHERE tenant_id = ? AND actor_id = ? ORDER BY project_id
+            """,
+            (tenant_id, actor_id),
+        ).fetchall()
+        sessions = self.conn.execute(
+            """
+            SELECT session_id, expires_at, revoked_at FROM hosted_sessions
+            WHERE tenant_id = ? AND actor_id = ? ORDER BY session_id
+            """,
+            (tenant_id, actor_id),
+        ).fetchall()
+        return {
+            "tenant_id": tenant_id,
+            "actor_id": actor_id,
+            "exists": True,
+            "roles": [row["role"] for row in roles],
+            "project_ids": [row["project_id"] for row in grants],
+            "sessions": [dict(row) for row in sessions],
+        }
+
+    def erase_actor(self, tenant_id: str, actor_id: str) -> bool:
+        erased = self.delete_actor(tenant_id, actor_id)
+        self.conn.execute(
+            """
+            DELETE FROM hosted_security_audit
+            WHERE tenant_id = ? AND (
+              actor_id = ? OR target_id = ? OR target_id LIKE ?
+            )
+            """,
+            (tenant_id, actor_id, actor_id, f"{actor_id}:%"),
+        )
+        return erased
+
+    def erase_project(self, tenant_id: str, project_id: str) -> bool:
+        self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            self.conn.execute(
+                """
+                DELETE FROM hosted_project_grants
+                WHERE tenant_id = ? AND project_id = ?
+                """,
+                (tenant_id, project_id),
+            )
+            cursor = self.conn.execute(
+                """
+                DELETE FROM hosted_projects
+                WHERE tenant_id = ? AND project_id = ?
+                """,
+                (tenant_id, project_id),
+            )
+            self.conn.execute(
+                """
+                DELETE FROM hosted_security_audit
+                WHERE tenant_id = ? AND (
+                  target_id = ? OR target_id LIKE ?
+                )
+                """,
+                (tenant_id, project_id, f"%:{project_id}"),
+            )
+        except Exception:
+            self.conn.rollback()
+            raise
+        self.conn.commit()
+        return cursor.rowcount == 1
+
+    def erase_tenant(self, tenant_id: str) -> bool:
+        self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            for table in (
+                "hosted_project_grants",
+                "hosted_role_assignments",
+                "hosted_sessions",
+                "hosted_projects",
+                "hosted_actors",
+                "hosted_security_audit",
+            ):
+                self.conn.execute(
+                    f"DELETE FROM {table} WHERE tenant_id = ?",
+                    (tenant_id,),
+                )
+            cursor = self.conn.execute(
+                "DELETE FROM hosted_tenants WHERE tenant_id = ?",
+                (tenant_id,),
+            )
+        except Exception:
+            self.conn.rollback()
+            raise
+        self.conn.commit()
+        return cursor.rowcount == 1
+
     def load_session(
         self, tenant_id: str, session_id: str
     ) -> HostedSession | None:

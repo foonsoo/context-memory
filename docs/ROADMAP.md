@@ -249,7 +249,23 @@ Keep the current local-first, single-user stdio product and a possible hosted se
    executable policy or socket-level regression. Existing stdio and localhost
    HTTP compatibility snapshots remain unchanged, and the default package adds
    no runtime dependency.
-6. **Add data governance and privacy operations.** Document collection purpose, retention defaults, user export and deletion, account/project erasure, backup expiry, regional/storage choices, incident handling, and handling of sensitive data. Evaluate secret/PII detection as a warning and policy layer without claiming perfect detection.
+6. **Add data governance and privacy operations — completed.** A required
+   hosted policy now declares collection purpose, event and backup retention,
+   storage region/class, and incident ownership. Tenant-scoped actor/project
+   export and resumable account, project, and tenant erasure coordinate the
+   separate content and identity stores through an idempotent durable journal.
+   Completed receipts retain hashes rather than raw subject or idempotency
+   identifiers. The backup registry exposes expiry and records deletion only
+   after external storage confirmation. Best-effort secret/PII-shaped detection
+   is explicitly non-blocking, never echoes matches, and never claims complete
+   detection. `docs/HOSTED_GOVERNANCE.md` defines the purpose, lifecycle,
+   regional choices, operational responsibilities, and incident runbook.
+
+   **Exit result — passed 2026-08-31.** Regression tests cover tenant-isolated
+   retention/export, warning-only sensitive-data handling, backup expiry,
+   actor deletion without shared-content loss, interruption and retry between
+   content and identity deletion, and tenant erasure without raw receipt
+   identifiers. Remote deployment remains disabled pending P7-7 and P7-8.
 7. **Make operations observable and recoverable.** Add health/readiness endpoints, structured redacted logs, metrics for latency/errors/queue depth/database size, trace/request IDs, migration status, backup age, restore drills, disk-full behavior, and operator runbooks with alert thresholds.
 8. **Prove service behavior under load and failure.** Test concurrent readers/writers, process interruption, WAL growth, slow clients, malformed/oversized requests, migration rollback or forward recovery, backup restoration, and capacity limits. Define service-level objectives only after these measurements.
 9. **Finish the user journey — completed.** The installed-wheel black-box
