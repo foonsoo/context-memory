@@ -31,6 +31,7 @@ class HostedAPIErrorCode(StrEnum):
     INVALID_CURSOR = "invalid_cursor"
     REQUEST_CANCELLED = "request_cancelled"
     RATE_LIMITED = "rate_limited"
+    STORAGE_EXHAUSTED = "storage_exhausted"
     UNSUPPORTED_API_VERSION = "unsupported_api_version"
 
 

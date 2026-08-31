@@ -266,7 +266,27 @@ Keep the current local-first, single-user stdio product and a possible hosted se
    actor deletion without shared-content loss, interruption and retry between
    content and identity deletion, and tenant erasure without raw receipt
    identifiers. Remote deployment remains disabled pending P7-7 and P7-8.
-7. **Make operations observable and recoverable.** Add health/readiness endpoints, structured redacted logs, metrics for latency/errors/queue depth/database size, trace/request IDs, migration status, backup age, restore drills, disk-full behavior, and operator runbooks with alert thresholds.
+7. **Make operations observable and recoverable — completed.** The hosted
+   listener now exposes narrow unauthenticated liveness and dependency-aware
+   readiness responses without disclosing dependency details. An internal
+   dependency-free operations monitor checks the configured migration ID,
+   read-only SQLite integrity and required tables, and confirmed backup age.
+   It records bounded metrics for request status, coarse errors, latency,
+   active-request depth, database bytes, and backup age. Every API response
+   carries validated/generated request and trace IDs. Structured request and
+   listener logs use an allowlist that excludes peers, credentials, tenant and
+   resource identifiers, content, paths, SQL, and exception text; telemetry
+   failure cannot change request behavior. Storage exhaustion maps to a stable
+   non-disclosing 507 response, and an isolated SQLite online-backup restore
+   drill verifies integrity and required schema without replacing live data.
+   `docs/HOSTED_OPERATIONS.md` defines exposure boundaries, initial alert
+   thresholds, migration/disk-full handling, and backup/restore evidence.
+
+   **Exit result — passed 2026-08-31.** Socket and unit regressions cover
+   healthy and failed readiness, migration/schema/backup probes, redacted logs,
+   request/trace correlation, metrics, telemetry failure, storage exhaustion,
+   and successful/failed restore drills. The listener remains undeployed;
+   concurrency, interruption, WAL, recovery, and capacity proof belong to P7-8.
 8. **Prove service behavior under load and failure.** Test concurrent readers/writers, process interruption, WAL growth, slow clients, malformed/oversized requests, migration rollback or forward recovery, backup restoration, and capacity limits. Define service-level objectives only after these measurements.
 9. **Finish the user journey — completed.** The installed-wheel black-box
    gate now covers initialization and portable registration output, first useful

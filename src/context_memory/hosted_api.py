@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from dataclasses import dataclass
 from threading import Lock
 from typing import Any, Callable, Mapping
@@ -11,6 +12,10 @@ from .hosted_administration import (
     HostedAdministrationRateLimitError,
 )
 from .hosted_authorization import HostedSession
+from .hosted_operations import (
+    HostedStorageExhaustedError,
+    translate_storage_error,
+)
 from .hosted_repository import (
     HostedRepositoryDeniedError,
     HostedRepositoryGateway,
@@ -160,6 +165,25 @@ class HostedAPIAdapter:
                 HostedAPIErrorCode.INVALID_REQUEST,
                 400,
                 "request is malformed",
+                version,
+                origin,
+            )
+        except (OSError, sqlite3.OperationalError) as exc:
+            translated = translate_storage_error(exc)
+            if isinstance(translated, HostedStorageExhaustedError):
+                return self._error_response(
+                    request,
+                    HostedAPIErrorCode.STORAGE_EXHAUSTED,
+                    507,
+                    "hosted storage capacity is exhausted",
+                    version,
+                    origin,
+                )
+            return self._error_response(
+                request,
+                HostedAPIErrorCode.INTERNAL_ERROR,
+                500,
+                "internal server error",
                 version,
                 origin,
             )

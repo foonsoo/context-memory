@@ -1,13 +1,16 @@
 import http.client
 import json
 import socket
+import tempfile
 import threading
 import time
 import unittest
+from datetime import datetime, timedelta, timezone
 
 from context_memory.hosted_api import HostedAPIAdapter
 from context_memory.hosted_authorization import HostedSession
 from context_memory.hosted_http import HostedHTTPServer
+from context_memory.hosted_operations import HostedOperationsMonitor
 from context_memory.hosted_repository import HostedRepositoryGateway
 from context_memory.hosted_transport import (
     HostedCursorCodec,
@@ -73,7 +76,15 @@ def session():
 
 class HostedHTTPServerTests(unittest.TestCase):
     def setUp(self):
+        self.tempdir = tempfile.TemporaryDirectory()
         self.repository = FakeRepository()
+        self.logs = []
+        now = datetime(2026, 8, 31, tzinfo=timezone.utc)
+        self.operations = HostedOperationsMonitor(
+            backup_completed_at=lambda: now - timedelta(hours=1),
+            clock=lambda: now,
+            log_sink=self.logs.append,
+        )
         policy = HostedTransportPolicy(
             max_body_bytes=128,
             request_timeout_seconds=1,
@@ -103,6 +114,7 @@ class HostedHTTPServerTests(unittest.TestCase):
             self.adapter,
             resolve,
             read_timeout_seconds=0.1,
+            operations=self.operations,
         )
         self.thread = threading.Thread(
             target=self.server.serve_forever, daemon=True
@@ -115,6 +127,7 @@ class HostedHTTPServerTests(unittest.TestCase):
         self.server.shutdown()
         self.server.server_close()
         self.thread.join(timeout=2)
+        self.tempdir.cleanup()
 
     def _request(self, method, path, body=b"", headers=None):
         connection = http.client.HTTPConnection(
@@ -150,6 +163,7 @@ class HostedHTTPServerTests(unittest.TestCase):
             "tenant-a:project-a:decision",
         )
         self.assertEqual(headers["X-Request-ID"], "network-request")
+        self.assertTrue(headers["X-Trace-ID"])
         self.assertEqual(
             headers["Access-Control-Allow-Origin"],
             "https://app.example",
@@ -165,6 +179,29 @@ class HostedHTTPServerTests(unittest.TestCase):
         self.assertEqual(
             json.loads(denied[2])["error"]["code"], "access_denied"
         )
+        metrics = self.operations.metrics_snapshot()
+        self.assertEqual(metrics["requests"]["search:200"], 1)
+        self.assertEqual(metrics["requests"]["search:403"], 1)
+        self.assertNotIn("tenant-a", json.dumps(self.logs))
+
+    def test_health_and_readiness_are_narrow_and_unauthenticated(self):
+        health = self._request(
+            "GET", "/healthz", headers={"Authorization": ""}
+        )
+        self.assertEqual(health[0], 200)
+        self.assertEqual(json.loads(health[2]), {"status": "ok"})
+        ready = self._request("GET", "/readyz", headers={"Authorization": ""})
+        self.assertEqual(ready[0], 200)
+        self.assertEqual(json.loads(ready[2]), {"status": "ready"})
+        self.assertNotIn("checks", json.loads(ready[2]))
+        self.operations.backup_completed_at = lambda: datetime(
+            2026, 8, 29, tzinfo=timezone.utc
+        )
+        unavailable = self._request(
+            "GET", "/readyz", headers={"Authorization": ""}
+        )
+        self.assertEqual(unavailable[0], 503)
+        self.assertEqual(json.loads(unavailable[2]), {"status": "not_ready"})
 
     def test_oversized_and_malformed_bodies_are_stable(self):
         connection = http.client.HTTPConnection(

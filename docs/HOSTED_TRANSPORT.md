@@ -92,3 +92,7 @@ as an internet service. P7-6 privacy/governance, P7-7 operations, and P7-8
 load/failure gates must pass before deployment. Production wiring must provide
 request-safe database handles or a bounded connection pool; sharing a default
 thread-bound SQLite connection across handler threads is not supported.
+
+P7-7 adds narrow unauthenticated `/healthz` and `/readyz` probes plus internal
+redacted telemetry. Their detailed dependency results and metrics are operator
+data and are not exposed by the public listener. See `HOSTED_OPERATIONS.md`.

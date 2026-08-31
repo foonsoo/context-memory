@@ -58,6 +58,7 @@ include = [
   "src/context_memory/hosted_governance.py",
   "src/context_memory/hosted_identity.py",
   "src/context_memory/hosted_limits.py",
+  "src/context_memory/hosted_operations.py",
   "src/context_memory/hosted_http.py",
   "src/context_memory/hosted_repository.py",
   "src/context_memory/hosted_transport.py",

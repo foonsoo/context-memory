@@ -13,6 +13,7 @@ from urllib.parse import unquote, urlsplit
 
 from .hosted_api import HostedAPIAdapter, HostedAPIRequest, HostedAPIResponse
 from .hosted_authorization import HostedSession
+from .hosted_operations import HostedOperationsMonitor
 from .hosted_transport import HostedAPIError, HostedAPIErrorCode
 
 SessionResolver = Callable[[Mapping[str, str], str], HostedSession | None]
@@ -32,6 +33,7 @@ class HostedHTTPServer(ThreadingHTTPServer):
         *,
         read_timeout_seconds: float = 5.0,
         connection_secure: bool = False,
+        operations: HostedOperationsMonitor | None = None,
     ) -> None:
         if read_timeout_seconds <= 0:
             raise ValueError("read timeout must be positive")
@@ -39,7 +41,15 @@ class HostedHTTPServer(ThreadingHTTPServer):
         self.session_resolver = session_resolver
         self.read_timeout_seconds = read_timeout_seconds
         self.connection_secure = connection_secure
+        self.operations = operations or HostedOperationsMonitor()
         super().__init__(server_address, HostedHTTPRequestHandler)
+
+    def handle_error(
+        self, request: object, client_address: tuple[str, int]
+    ) -> None:
+        # BaseServer prints raw tracebacks to stderr. Hosted listeners
+        # record a bounded class without paths, peers, or payloads.
+        self.operations.record_listener_error()
 
 
 class HostedHTTPRequestHandler(BaseHTTPRequestHandler):
@@ -84,6 +94,39 @@ class HostedHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_PUT(self) -> None:
         self._handle_request("PUT")
 
+    def do_GET(self) -> None:
+        request_id = self._request_id()
+        trace_id = self._trace_id()
+        self._response_trace_id = trace_id
+        if self.path == "/healthz":
+            self._write(
+                HostedAPIResponse(
+                    200,
+                    self.server.operations.liveness(),
+                    {"X-Request-ID": request_id},
+                )
+            )
+            return
+        if self.path == "/readyz":
+            result = self.server.operations.readiness()
+            status = 200 if result["status"] == "ready" else 503
+            self._write(
+                HostedAPIResponse(
+                    status,
+                    {"status": result["status"]},
+                    {"X-Request-ID": request_id},
+                )
+            )
+            return
+        self._write_error(
+            HostedAPIError(
+                HostedAPIErrorCode.INVALID_REQUEST,
+                404,
+                "hosted API route was not found",
+            ),
+            request_id,
+        )
+
     def do_OPTIONS(self) -> None:
         request_id = self._request_id()
         try:
@@ -108,6 +151,7 @@ class HostedHTTPRequestHandler(BaseHTTPRequestHandler):
                 "idempotency-key",
                 "x-context-memory-api-version",
                 "x-request-id",
+                "x-trace-id",
             }
             values = {
                 value.strip().lower()
@@ -159,8 +203,16 @@ class HostedHTTPRequestHandler(BaseHTTPRequestHandler):
 
     def _handle_request(self, method: str) -> None:
         request_id = self._request_id()
+        trace_id = self._trace_id()
+        self._response_trace_id = trace_id
+        operation = "unmatched"
+        started: float | None = None
+        self._last_response_status = 500
         try:
             tenant_id, project_id, operation = self._route(method, self.path)
+            started = self.server.operations.request_started(
+                request_id, trace_id, operation
+            )
             length = self._content_length()
             self.server.adapter.policy.validate_body_length(length)
             body = self.rfile.read(length)
@@ -204,6 +256,18 @@ class HostedHTTPRequestHandler(BaseHTTPRequestHandler):
                     "internal server error",
                 ),
                 request_id,
+            )
+        finally:
+            if started is None:
+                started = self.server.operations.request_started(
+                    request_id, trace_id, operation
+                )
+            self.server.operations.request_finished(
+                request_id,
+                trace_id,
+                operation,
+                self._last_response_status,
+                started,
             )
 
     def _run_adapter(self, request: HostedAPIRequest) -> HostedAPIResponse:
@@ -268,7 +332,24 @@ class HostedHTTPRequestHandler(BaseHTTPRequestHandler):
 
     def _request_id(self) -> str:
         value = self.headers.get("X-Request-ID")
-        return value if value and len(value) <= 128 else str(uuid.uuid4())
+        return self._correlation_id(value)
+
+    def _trace_id(self) -> str:
+        return self._correlation_id(self.headers.get("X-Trace-ID"))
+
+    @staticmethod
+    def _correlation_id(value: str | None) -> str:
+        if (
+            value
+            and len(value) <= 128
+            and value.isascii()
+            and all(
+                character.isalnum() or character in "-_."
+                for character in value
+            )
+        ):
+            return value
+        return str(uuid.uuid4())
 
     def _headers(self) -> dict[str, str]:
         return {name.lower(): value for name, value in self.headers.items()}
@@ -291,6 +372,7 @@ class HostedHTTPRequestHandler(BaseHTTPRequestHandler):
         )
 
     def _write(self, response: HostedAPIResponse) -> None:
+        self._last_response_status = response.status
         body = (
             b""
             if response.status == 204
@@ -302,6 +384,14 @@ class HostedHTTPRequestHandler(BaseHTTPRequestHandler):
             self.send_response(response.status)
             for name, value in response.headers.items():
                 self.send_header(name, value)
+            trace_id = getattr(self, "_response_trace_id", None)
+            if trace_id:
+                self.send_header("X-Trace-ID", trace_id)
+                if "Access-Control-Allow-Origin" in response.headers:
+                    self.send_header(
+                        "Access-Control-Expose-Headers",
+                        "X-Request-ID, X-Trace-ID",
+                    )
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             if body:

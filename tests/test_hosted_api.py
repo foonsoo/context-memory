@@ -1,4 +1,5 @@
 import json
+import sqlite3
 import tempfile
 import threading
 import unittest
@@ -91,6 +92,21 @@ class HostedAPIAdapterTests(unittest.TestCase):
             self.idempotency,
             context_factory,
         )
+
+    def test_disk_full_is_stable_and_does_not_disclose_database_path(self):
+        class FullRepository:
+            def search(self, tenant_id, project_id, query):
+                raise sqlite3.OperationalError(
+                    "database or disk is full: /private/tenant-a.db"
+                )
+
+        adapter = self._adapter(FullRepository())
+        response = adapter.handle(
+            self._request("search", {"query": "decision"})
+        )
+        self.assertEqual(response.status, 507)
+        self.assertEqual(response.body["error"]["code"], "storage_exhausted")
+        self.assertNotIn("/private", json.dumps(response.body))
 
     @staticmethod
     def _request(
