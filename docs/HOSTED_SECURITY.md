@@ -77,8 +77,13 @@ with tenant predicates in the storage query itself; wrapping the local
 single-user `MemoryStore` or filtering a broad result afterward is forbidden.
 
 The policy kernel, durable identity state, and repository gateway are only
-initial P7-4 slices. Remote access remains blocked until a concrete
-tenant-keyed content store, privilege-administration rules, rate limits,
-quotas, and end-to-end cross-tenant tests for search, export, event polling,
-and backup are all implemented. Transport and API production controls remain
-a separate P7-5 gate.
+initial P7-4 slices. `HostedContentStore` now supplies a separate concrete
+tenant-keyed SQLite prototype for search, export, event polling, and tenant
+backup. Every project query carries both keys, composite foreign keys prevent
+cross-tenant roots, and regression tests reuse the same project ID in two
+tenants to prove read isolation. It is not a wrapper around the local
+single-user store.
+
+Remote access remains blocked until privilege-administration rules, rate
+limits, quotas, and gateway-to-store end-to-end denial tests are implemented.
+Transport and API production controls remain a separate P7-5 gate.

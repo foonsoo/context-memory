@@ -52,6 +52,7 @@ include = [
   "src/context_memory/embeddings.py",
   "src/context_memory/hooks.py",
   "src/context_memory/hosted_authorization.py",
+  "src/context_memory/hosted_content.py",
   "src/context_memory/hosted_identity.py",
   "src/context_memory/hosted_repository.py",
   "src/context_memory/mcp.py",
