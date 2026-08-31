@@ -40,8 +40,27 @@ least-privilege roles and do not inherit human administrator permissions.
 
 Project creation, grant administration, session issuance/revocation, account
 deletion, and service-role assignment are intentionally not implied by this
-matrix. They require separate privileged actions and audit contracts before any
-remote endpoint is exposed.
+matrix. `tenant_admin` may perform the first four only through explicit
+administration actions. Service-role assignment additionally requires the
+separate `tenant_security_admin` role; ordinary tenant administrators cannot
+grant service access.
+
+## Privileged administration and audit
+
+`HostedAdministrationGateway` is the mandatory boundary for tenant identity
+mutations. It rejects inactive, incomplete, cross-tenant, and unprivileged
+sessions before invoking the identity store. Project creation, project grants,
+session revocation, and actor deletion require their own named action rather
+than inheriting a content permission. Service-role assignment accepts only the
+bounded `service_reader` role and requires `tenant_security_admin`.
+
+Every denied request is audited. Authorized mutations durably record an
+`attempted` entry before touching identity state and then an `allowed` or
+`failed` result. Audit rows contain only tenant, actor, session, action,
+decision, stable reason, request ID, and target identity; they contain no
+credential, token, or memory content. Actor deletion removes that actor's
+sessions, roles, and grants in one transaction without deleting security audit
+history.
 
 ## Persistence and request requirements
 
@@ -84,6 +103,6 @@ cross-tenant roots, and regression tests reuse the same project ID in two
 tenants to prove read isolation. It is not a wrapper around the local
 single-user store.
 
-Remote access remains blocked until privilege-administration rules, rate
-limits, quotas, and gateway-to-store end-to-end denial tests are implemented.
-Transport and API production controls remain a separate P7-5 gate.
+Remote access remains blocked until rate limits, quotas, and complete
+gateway-to-store end-to-end denial tests are implemented. Transport and API
+production controls remain a separate P7-5 gate.

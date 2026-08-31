@@ -71,6 +71,21 @@ class HostedIdentityStore:
               FOREIGN KEY(tenant_id, project_id)
                 REFERENCES hosted_projects(tenant_id, project_id)
             );
+            CREATE TABLE IF NOT EXISTS hosted_security_audit(
+              audit_seq INTEGER PRIMARY KEY AUTOINCREMENT,
+              tenant_id TEXT,
+              actor_id TEXT,
+              session_id TEXT,
+              action TEXT NOT NULL,
+              decision TEXT NOT NULL,
+              reason TEXT NOT NULL,
+              request_id TEXT NOT NULL,
+              target_type TEXT NOT NULL,
+              target_id TEXT NOT NULL,
+              created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS hosted_security_audit_request
+              ON hosted_security_audit(request_id, audit_seq);
             """
         )
 
@@ -116,6 +131,28 @@ class HostedIdentityStore:
             (tenant_id, actor_id, project_id),
         )
 
+    def revoke_project_grant(
+        self, tenant_id: str, actor_id: str, project_id: str
+    ) -> bool:
+        cursor = self.conn.execute(
+            """
+            DELETE FROM hosted_project_grants
+            WHERE tenant_id = ? AND actor_id = ? AND project_id = ?
+            """,
+            (tenant_id, actor_id, project_id),
+        )
+        return cursor.rowcount == 1
+
+    def revoke_role(self, tenant_id: str, actor_id: str, role: str) -> bool:
+        cursor = self.conn.execute(
+            """
+            DELETE FROM hosted_role_assignments
+            WHERE tenant_id = ? AND actor_id = ? AND role = ?
+            """,
+            (tenant_id, actor_id, role),
+        )
+        return cursor.rowcount == 1
+
     def issue_session(
         self,
         tenant_id: str,
@@ -141,6 +178,91 @@ class HostedIdentityStore:
             (self.clock().isoformat(), tenant_id, session_id),
         )
         return cursor.rowcount == 1
+
+    def delete_actor(self, tenant_id: str, actor_id: str) -> bool:
+        self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            self.conn.execute(
+                """
+                DELETE FROM hosted_project_grants
+                WHERE tenant_id = ? AND actor_id = ?
+                """,
+                (tenant_id, actor_id),
+            )
+            self.conn.execute(
+                """
+                DELETE FROM hosted_role_assignments
+                WHERE tenant_id = ? AND actor_id = ?
+                """,
+                (tenant_id, actor_id),
+            )
+            self.conn.execute(
+                """
+                DELETE FROM hosted_sessions
+                WHERE tenant_id = ? AND actor_id = ?
+                """,
+                (tenant_id, actor_id),
+            )
+            cursor = self.conn.execute(
+                """
+                DELETE FROM hosted_actors
+                WHERE tenant_id = ? AND actor_id = ?
+                """,
+                (tenant_id, actor_id),
+            )
+        except Exception:
+            self.conn.rollback()
+            raise
+        self.conn.commit()
+        return cursor.rowcount == 1
+
+    def record_security_audit(
+        self,
+        *,
+        tenant_id: str | None,
+        actor_id: str | None,
+        session_id: str | None,
+        action: str,
+        decision: str,
+        reason: str,
+        request_id: str,
+        target_type: str,
+        target_id: str,
+    ) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO hosted_security_audit(
+              tenant_id, actor_id, session_id, action, decision, reason,
+              request_id, target_type, target_id, created_at
+            ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                tenant_id,
+                actor_id,
+                session_id,
+                action,
+                decision,
+                reason,
+                request_id,
+                target_type,
+                target_id,
+                self.clock().isoformat(),
+            ),
+        )
+
+    def list_security_audit(self, request_id: str) -> list[dict[str, object]]:
+        rows = self.conn.execute(
+            """
+            SELECT audit_seq, tenant_id, actor_id, session_id, action,
+                   decision, reason, request_id, target_type, target_id,
+                   created_at
+            FROM hosted_security_audit
+            WHERE request_id = ?
+            ORDER BY audit_seq
+            """,
+            (request_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
 
     def load_session(
         self, tenant_id: str, session_id: str

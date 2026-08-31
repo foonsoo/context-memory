@@ -206,9 +206,11 @@ Keep the current local-first, single-user stdio product and a possible hosted se
    separate concrete hosted content prototype now enforces tenant/project
    composite roots and tenant-keyed search, export, event polling, and backup,
    including same-project-ID cross-tenant isolation tests. Remote access remains
-   blocked pending privilege administration, rate limits, quotas, and complete
-   gateway-to-store denial coverage. A single bearer token is not sufficient
-   for an untrusted network.
+   blocked pending rate limits, quotas, and complete gateway-to-store denial
+   coverage. Privileged project/grant/session/actor administration now uses
+   explicit tenant-bound actions with attempted/result security auditing;
+   service-role assignment requires a separate security-admin role. A single
+   bearer token is not sufficient for an untrusted network.
 5. **Add transport and API production controls.** Put TLS and trusted-proxy handling at the deployment boundary; define request/body/time limits, pagination and cancellation, stable error codes, idempotency retention, CORS policy where applicable, and backward-compatible API versioning.
 6. **Add data governance and privacy operations.** Document collection purpose, retention defaults, user export and deletion, account/project erasure, backup expiry, regional/storage choices, incident handling, and handling of sensitive data. Evaluate secret/PII detection as a warning and policy layer without claiming perfect detection.
 7. **Make operations observable and recoverable.** Add health/readiness endpoints, structured redacted logs, metrics for latency/errors/queue depth/database size, trace/request IDs, migration status, backup age, restore drills, disk-full behavior, and operator runbooks with alert thresholds.
