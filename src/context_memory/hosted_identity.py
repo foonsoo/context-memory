@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import datetime, timezone
+from functools import wraps
 from pathlib import Path
+from threading import RLock
 from typing import Callable
 
 from .hosted_authorization import HostedSession
@@ -10,6 +12,15 @@ from .hosted_authorization import HostedSession
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _serialized(method):
+    @wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+
+    return wrapper
 
 
 class HostedIdentityStore:
@@ -23,7 +34,10 @@ class HostedIdentityStore:
         self.path = Path(db_path).expanduser().resolve()
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.clock = clock
-        self.conn = sqlite3.connect(self.path, isolation_level=None)
+        self._lock = RLock()
+        self.conn = sqlite3.connect(
+            self.path, isolation_level=None, check_same_thread=False
+        )
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.executescript(
@@ -89,21 +103,25 @@ class HostedIdentityStore:
             """
         )
 
+    @_serialized
     def close(self) -> None:
         self.conn.close()
 
+    @_serialized
     def provision_tenant(self, tenant_id: str) -> None:
         self.conn.execute(
             "INSERT INTO hosted_tenants(tenant_id) VALUES(?)",
             (tenant_id,),
         )
 
+    @_serialized
     def provision_actor(self, tenant_id: str, actor_id: str) -> None:
         self.conn.execute(
             "INSERT INTO hosted_actors(tenant_id, actor_id) VALUES(?, ?)",
             (tenant_id, actor_id),
         )
 
+    @_serialized
     def provision_project(self, tenant_id: str, project_id: str) -> None:
         self.conn.execute(
             """
@@ -113,6 +131,7 @@ class HostedIdentityStore:
             (tenant_id, project_id),
         )
 
+    @_serialized
     def assign_role(self, tenant_id: str, actor_id: str, role: str) -> None:
         self.conn.execute(
             """
@@ -122,6 +141,7 @@ class HostedIdentityStore:
             (tenant_id, actor_id, role),
         )
 
+    @_serialized
     def grant_project(
         self, tenant_id: str, actor_id: str, project_id: str
     ) -> None:
@@ -134,6 +154,7 @@ class HostedIdentityStore:
             (tenant_id, actor_id, project_id),
         )
 
+    @_serialized
     def revoke_project_grant(
         self, tenant_id: str, actor_id: str, project_id: str
     ) -> bool:
@@ -146,6 +167,7 @@ class HostedIdentityStore:
         )
         return cursor.rowcount == 1
 
+    @_serialized
     def revoke_role(self, tenant_id: str, actor_id: str, role: str) -> bool:
         cursor = self.conn.execute(
             """
@@ -156,6 +178,7 @@ class HostedIdentityStore:
         )
         return cursor.rowcount == 1
 
+    @_serialized
     def issue_session(
         self,
         tenant_id: str,
@@ -172,6 +195,7 @@ class HostedIdentityStore:
             (tenant_id, session_id, actor_id, expires_at.isoformat()),
         )
 
+    @_serialized
     def revoke_session(self, tenant_id: str, session_id: str) -> bool:
         cursor = self.conn.execute(
             """
@@ -182,6 +206,7 @@ class HostedIdentityStore:
         )
         return cursor.rowcount == 1
 
+    @_serialized
     def delete_actor(self, tenant_id: str, actor_id: str) -> bool:
         self.conn.execute("BEGIN IMMEDIATE")
         try:
@@ -219,6 +244,7 @@ class HostedIdentityStore:
         self.conn.commit()
         return cursor.rowcount == 1
 
+    @_serialized
     def record_security_audit(
         self,
         *,
@@ -253,6 +279,7 @@ class HostedIdentityStore:
             ),
         )
 
+    @_serialized
     def list_security_audit(self, request_id: str) -> list[dict[str, object]]:
         rows = self.conn.execute(
             """
@@ -267,6 +294,7 @@ class HostedIdentityStore:
         ).fetchall()
         return [dict(row) for row in rows]
 
+    @_serialized
     def export_actor(self, tenant_id: str, actor_id: str) -> dict[str, object]:
         actor = self.conn.execute(
             """
@@ -311,6 +339,7 @@ class HostedIdentityStore:
             "sessions": [dict(row) for row in sessions],
         }
 
+    @_serialized
     def erase_actor(self, tenant_id: str, actor_id: str) -> bool:
         erased = self.delete_actor(tenant_id, actor_id)
         self.conn.execute(
@@ -324,6 +353,7 @@ class HostedIdentityStore:
         )
         return erased
 
+    @_serialized
     def erase_project(self, tenant_id: str, project_id: str) -> bool:
         self.conn.execute("BEGIN IMMEDIATE")
         try:
@@ -356,6 +386,7 @@ class HostedIdentityStore:
         self.conn.commit()
         return cursor.rowcount == 1
 
+    @_serialized
     def erase_tenant(self, tenant_id: str) -> bool:
         self.conn.execute("BEGIN IMMEDIATE")
         try:
@@ -381,6 +412,7 @@ class HostedIdentityStore:
         self.conn.commit()
         return cursor.rowcount == 1
 
+    @_serialized
     def load_session(
         self, tenant_id: str, session_id: str
     ) -> HostedSession | None:

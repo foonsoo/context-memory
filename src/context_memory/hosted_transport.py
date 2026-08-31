@@ -9,13 +9,23 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
+from functools import wraps
 from pathlib import Path
-from threading import Event
+from threading import Event, RLock
 from typing import Any, Callable
 
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _serialized(method):
+    @wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+
+    return wrapper
 
 
 class HostedAPIErrorCode(StrEnum):
@@ -287,7 +297,10 @@ class HostedIdempotencyStore:
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.retention_seconds = retention_seconds
         self.clock = clock
-        self.connection = sqlite3.connect(self.path, isolation_level=None)
+        self._lock = RLock()
+        self.connection = sqlite3.connect(
+            self.path, isolation_level=None, check_same_thread=False
+        )
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA busy_timeout=5000")
         self.connection.execute(
@@ -305,9 +318,11 @@ class HostedIdempotencyStore:
             """
         )
 
+    @_serialized
     def close(self) -> None:
         self.connection.close()
 
+    @_serialized
     def claim(
         self,
         tenant_id: str,
@@ -373,6 +388,7 @@ class HostedIdempotencyStore:
             "replay", json.loads(row["response_json"])
         )
 
+    @_serialized
     def complete(
         self,
         tenant_id: str,
@@ -407,6 +423,7 @@ class HostedIdempotencyStore:
                 "idempotency claim is missing or already completed",
             )
 
+    @_serialized
     def abandon(
         self,
         tenant_id: str,

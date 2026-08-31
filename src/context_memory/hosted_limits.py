@@ -3,12 +3,23 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from functools import wraps
 from pathlib import Path
+from threading import RLock
 from typing import Callable
 
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _serialized(method):
+    @wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+
+    return wrapper
 
 
 @dataclass(frozen=True)
@@ -41,7 +52,10 @@ class HostedRateLimiter:
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.policy = policy or HostedRateLimitPolicy()
         self.clock = clock
-        self.connection = sqlite3.connect(self.path, isolation_level=None)
+        self._lock = RLock()
+        self.connection = sqlite3.connect(
+            self.path, isolation_level=None, check_same_thread=False
+        )
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA busy_timeout=5000")
         self.connection.execute(
@@ -57,9 +71,11 @@ class HostedRateLimiter:
             """
         )
 
+    @_serialized
     def close(self) -> None:
         self.connection.close()
 
+    @_serialized
     def consume(
         self, tenant_id: str, actor_id: str, action: str
     ) -> HostedRateLimitDecision:

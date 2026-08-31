@@ -50,17 +50,45 @@ class HostedContentStore:
         path: str | Path,
         quota: HostedQuotaPolicy | None = None,
         clock: Callable[[], datetime] = _utc_now,
+        *,
+        wal_autocheckpoint_pages: int = 1000,
+        migrate: bool = True,
     ) -> None:
+        if wal_autocheckpoint_pages < 1:
+            raise ValueError("WAL autocheckpoint pages must be positive")
         self.path = Path(path)
         self.quota = quota or HostedQuotaPolicy()
         self.clock = clock
         self.connection = sqlite3.connect(self.path)
         self.connection.row_factory = sqlite3.Row
+        self.connection.execute("PRAGMA busy_timeout = 5000")
+        self.connection.execute("PRAGMA journal_mode = WAL")
+        self.connection.execute("PRAGMA synchronous = NORMAL")
+        self.connection.execute(
+            f"PRAGMA wal_autocheckpoint = {wal_autocheckpoint_pages}"
+        )
         self.connection.execute("PRAGMA foreign_keys = ON")
-        self._migrate()
+        if migrate:
+            try:
+                self._migrate()
+            except Exception:
+                self.connection.close()
+                raise
 
     def close(self) -> None:
         self.connection.close()
+
+    def checkpoint_wal(self, mode: str = "PASSIVE") -> dict[str, int]:
+        if mode not in {"PASSIVE", "FULL", "RESTART", "TRUNCATE"}:
+            raise ValueError("unsupported WAL checkpoint mode")
+        row = self.connection.execute(
+            f"PRAGMA wal_checkpoint({mode})"
+        ).fetchone()
+        return {
+            "busy": int(row[0]),
+            "log_pages": int(row[1]),
+            "checkpointed_pages": int(row[2]),
+        }
 
     def _migrate(self) -> None:
         self.connection.executescript(
@@ -98,14 +126,23 @@ class HostedContentStore:
                 "PRAGMA table_info(hosted_content_events)"
             )
         }
-        if "created_at" not in columns:
-            self.connection.execute(
-                "ALTER TABLE hosted_content_events ADD COLUMN created_at TEXT"
-            )
-            self.connection.execute(
-                "UPDATE hosted_content_events SET created_at = ?",
-                (self.clock().isoformat(),),
-            )
+        self.connection.execute("BEGIN IMMEDIATE")
+        try:
+            if "created_at" not in columns:
+                self.connection.execute(
+                    """
+                    ALTER TABLE hosted_content_events
+                    ADD COLUMN created_at TEXT
+                    """
+                )
+                self.connection.execute(
+                    "UPDATE hosted_content_events SET created_at = ?",
+                    (self.clock().isoformat(),),
+                )
+            self.connection.execute("PRAGMA user_version = 2")
+        except Exception:
+            self.connection.rollback()
+            raise
         self.connection.commit()
 
     def provision_tenant(self, tenant_id: str) -> None:
@@ -306,6 +343,154 @@ class HostedContentStore:
             separators=(",", ":"),
         ).encode()
 
+    def restore_tenant(self, payload: bytes) -> dict[str, object]:
+        try:
+            value = json.loads(payload)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError("tenant backup is malformed") from exc
+        tenant_id, projects = self._validate_tenant_backup(value)
+        self.connection.execute("BEGIN IMMEDIATE")
+        try:
+            self.connection.execute(
+                "INSERT INTO hosted_content_tenants(tenant_id) VALUES(?)",
+                (tenant_id,),
+            )
+            event_count = 0
+            for project in projects:
+                project_id = project["project_id"]
+                self.connection.execute(
+                    """
+                    INSERT INTO hosted_content_projects(tenant_id, project_id)
+                    VALUES(?, ?)
+                    """,
+                    (tenant_id, project_id),
+                )
+                for event in project["events"]:
+                    self.connection.execute(
+                        """
+                        INSERT INTO hosted_content_events(
+                          tenant_id, project_id, event_seq, kind, content,
+                          created_at
+                        ) VALUES(?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            tenant_id,
+                            project_id,
+                            event["event_seq"],
+                            event["kind"],
+                            event["content"],
+                            event["created_at"],
+                        ),
+                    )
+                    event_count += 1
+        except Exception:
+            self.connection.rollback()
+            raise
+        self.connection.commit()
+        return {
+            "tenant_id": tenant_id,
+            "projects": len(projects),
+            "events": event_count,
+        }
+
+    def _validate_tenant_backup(
+        self, value: object
+    ) -> tuple[str, list[dict[str, object]]]:
+        if not isinstance(value, dict) or set(value) != {
+            "tenant_id",
+            "projects",
+        }:
+            raise ValueError("tenant backup has invalid fields")
+        tenant_id = value["tenant_id"]
+        projects = value["projects"]
+        if not isinstance(tenant_id, str) or not tenant_id:
+            raise ValueError("tenant backup has invalid tenant")
+        if not isinstance(projects, list):
+            raise ValueError("tenant backup projects must be a list")
+        if len(projects) > self.quota.max_projects_per_tenant:
+            raise HostedQuotaExceededError("tenant_project_limit")
+        validated: list[dict[str, object]] = []
+        project_ids: set[str] = set()
+        tenant_bytes = 0
+        for project in projects:
+            if not isinstance(project, dict) or set(project) != {
+                "tenant_id",
+                "project_id",
+                "events",
+            }:
+                raise ValueError("tenant backup project has invalid fields")
+            project_id = project["project_id"]
+            events = project["events"]
+            if (
+                project["tenant_id"] != tenant_id
+                or not isinstance(project_id, str)
+                or not project_id
+                or project_id in project_ids
+                or not isinstance(events, list)
+            ):
+                raise ValueError("tenant backup project is invalid")
+            if len(events) > self.quota.max_events_per_project:
+                raise HostedQuotaExceededError("project_event_limit")
+            project_ids.add(project_id)
+            sequences: set[int] = set()
+            checked_events = []
+            for event in events:
+                checked, content_bytes = self._validate_backup_event(
+                    event, tenant_id, project_id
+                )
+                if checked["event_seq"] in sequences:
+                    raise ValueError(
+                        "tenant backup event sequence is duplicated"
+                    )
+                sequences.add(checked["event_seq"])
+                tenant_bytes += content_bytes
+                checked_events.append(checked)
+            validated.append(
+                {"project_id": project_id, "events": checked_events}
+            )
+        if tenant_bytes > self.quota.max_tenant_bytes:
+            raise HostedQuotaExceededError("tenant_byte_limit")
+        return tenant_id, validated
+
+    def _validate_backup_event(
+        self, event: object, tenant_id: str, project_id: str
+    ) -> tuple[dict[str, object], int]:
+        expected = {
+            "tenant_id",
+            "project_id",
+            "event_seq",
+            "kind",
+            "content",
+            "created_at",
+        }
+        if not isinstance(event, dict) or set(event) != expected:
+            raise ValueError("tenant backup event has invalid fields")
+        if (
+            event["tenant_id"] != tenant_id
+            or event["project_id"] != project_id
+        ):
+            raise ValueError(
+                "tenant backup event crosses its project boundary"
+            )
+        sequence = event["event_seq"]
+        kind = event["kind"]
+        content = event["content"]
+        created_at = event["created_at"]
+        if not isinstance(sequence, int) or sequence < 1:
+            raise ValueError("tenant backup event sequence is invalid")
+        if not isinstance(kind, str) or not kind:
+            raise ValueError("tenant backup event kind is invalid")
+        if not isinstance(content, str) or not isinstance(created_at, str):
+            raise ValueError("tenant backup event content is invalid")
+        try:
+            datetime.fromisoformat(created_at)
+        except ValueError as exc:
+            raise ValueError("tenant backup event time is invalid") from exc
+        content_bytes = len(content.encode("utf-8"))
+        if content_bytes > self.quota.max_event_bytes:
+            raise HostedQuotaExceededError("event_byte_limit")
+        return dict(event), content_bytes
+
     def purge_events_before(self, tenant_id: str, cutoff: datetime) -> int:
         cursor = self.connection.execute(
             """
@@ -373,3 +558,69 @@ class HostedContentStore:
             "content": row["content"],
             "created_at": row["created_at"],
         }
+
+
+class RequestScopedHostedContentStore:
+    """Use one SQLite connection per threaded hosted operation."""
+
+    def __init__(
+        self,
+        path: str | Path,
+        quota: HostedQuotaPolicy | None = None,
+        clock: Callable[[], datetime] = _utc_now,
+        *,
+        wal_autocheckpoint_pages: int = 1000,
+    ) -> None:
+        self.path = Path(path)
+        self.quota = quota or HostedQuotaPolicy()
+        self.clock = clock
+        self.wal_autocheckpoint_pages = wal_autocheckpoint_pages
+        initial = HostedContentStore(
+            self.path,
+            self.quota,
+            self.clock,
+            wal_autocheckpoint_pages=wal_autocheckpoint_pages,
+        )
+        initial.close()
+
+    def record_event(
+        self, tenant_id: str, project_id: str, kind: str, content: str
+    ) -> dict[str, object]:
+        return self._call("record_event", tenant_id, project_id, kind, content)
+
+    def search(
+        self, tenant_id: str, project_id: str, query: str
+    ) -> list[dict[str, object]]:
+        return self._call("search", tenant_id, project_id, query)
+
+    def export_project(
+        self, tenant_id: str, project_id: str
+    ) -> dict[str, object]:
+        return self._call("export_project", tenant_id, project_id)
+
+    def poll_events(
+        self, tenant_id: str, project_id: str, cursor: int | None
+    ) -> dict[str, object]:
+        return self._call("poll_events", tenant_id, project_id, cursor)
+
+    def backup_tenant(self, tenant_id: str) -> bytes:
+        return self._call("backup_tenant", tenant_id)
+
+    def restore_tenant(self, payload: bytes) -> dict[str, object]:
+        return self._call("restore_tenant", payload)
+
+    def checkpoint_wal(self, mode: str = "PASSIVE") -> dict[str, int]:
+        return self._call("checkpoint_wal", mode)
+
+    def _call(self, method: str, *arguments):
+        store = HostedContentStore(
+            self.path,
+            self.quota,
+            self.clock,
+            wal_autocheckpoint_pages=self.wal_autocheckpoint_pages,
+            migrate=False,
+        )
+        try:
+            return getattr(store, method)(*arguments)
+        finally:
+            store.close()
