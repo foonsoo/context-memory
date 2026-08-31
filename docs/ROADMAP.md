@@ -226,7 +226,16 @@ Keep the current local-first, single-user stdio product and a possible hosted se
    and real-store denial tests cover the P7-4 boundary. Remote access remains
    disabled; unauthenticated edge limiting, trusted transport, and API controls
    belong to P7-5.
-5. **Add transport and API production controls.** Put TLS and trusted-proxy handling at the deployment boundary; define request/body/time limits, pagination and cancellation, stable error codes, idempotency retention, CORS policy where applicable, and backward-compatible API versioning.
+5. **Add transport and API production controls — in progress.** The first
+   transport-neutral slice defines exact trusted-proxy/TLS resolution,
+   allowlisted CORS and explicit API-version checks, body and cooperative
+   deadline/cancellation limits, stable error envelopes, tenant/route-bound
+   signed expiring cursors, and persistent tenant/operation-scoped idempotency
+   claims with bounded retention and restart-safe replay. The local stdio and
+   localhost HTTP surfaces remain unchanged and are not promoted to hosted
+   service endpoints. A concrete hosted adapter, disconnect propagation, and
+   deployment-shaped TLS/proxy/slow-request tests remain before this item can
+   pass.
 6. **Add data governance and privacy operations.** Document collection purpose, retention defaults, user export and deletion, account/project erasure, backup expiry, regional/storage choices, incident handling, and handling of sensitive data. Evaluate secret/PII detection as a warning and policy layer without claiming perfect detection.
 7. **Make operations observable and recoverable.** Add health/readiness endpoints, structured redacted logs, metrics for latency/errors/queue depth/database size, trace/request IDs, migration status, backup age, restore drills, disk-full behavior, and operator runbooks with alert thresholds.
 8. **Prove service behavior under load and failure.** Test concurrent readers/writers, process interruption, WAL growth, slow clients, malformed/oversized requests, migration rollback or forward recovery, backup restoration, and capacity limits. Define service-level objectives only after these measurements.
