@@ -106,7 +106,10 @@ class HostedIdentityStore:
 
     def provision_project(self, tenant_id: str, project_id: str) -> None:
         self.conn.execute(
-            "INSERT INTO hosted_projects(tenant_id, project_id) VALUES(?, ?)",
+            """
+            INSERT OR IGNORE INTO hosted_projects(tenant_id, project_id)
+            VALUES(?, ?)
+            """,
             (tenant_id, project_id),
         )
 

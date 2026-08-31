@@ -51,6 +51,7 @@ include = [
   "src/context_memory/decision_assembly.py",
   "src/context_memory/embeddings.py",
   "src/context_memory/hooks.py",
+  "src/context_memory/hosted_api.py",
   "src/context_memory/hosted_administration.py",
   "src/context_memory/hosted_authorization.py",
   "src/context_memory/hosted_content.py",

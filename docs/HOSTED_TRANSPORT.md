@@ -7,6 +7,13 @@ Any future hosted adapter must compose the contracts in
 repository gateways. Merely binding the local bearer-token server to a public
 interface is unsupported.
 
+`HostedAPIAdapter` is the concrete pre-authenticated boundary. An edge supplies
+the server-loaded `HostedSession` plus peer, TLS, forwarded-header, origin,
+version, body-length, request-ID, and idempotency metadata. The adapter applies
+transport policy before invoking `HostedRepositoryGateway` or
+`HostedAdministrationGateway`, converts opaque event cursors at the boundary,
+and emits stable response envelopes without exposing authorization reasons.
+
 ## Deployment trust boundary
 
 TLS terminates at the service process or a specifically configured reverse
@@ -54,11 +61,20 @@ retention interval. Concurrent identical claims return
 claim. Adapters must complete the idempotency record only after the underlying
 mutation commits.
 
+The first mutation route uses PUT-like project-create semantics: provisioning
+the same tenant/project root is harmless. A denied or failed mutation abandons
+only its matching pending claim so a corrected request can retry. Once the
+mutation and replay response commit, a late deadline or disconnect may hide the
+response from that client but a retry returns the stored result instead of
+executing a second mutation.
+
 ## Remaining P7-5 integration gate
 
-The policy primitives are dependency-free and tested, but no public hosted
-listener exists yet. Before P7-5 can pass, a concrete adapter must apply every
-guard end to end, translate disconnects into cooperative cancellation, exercise
-slow/oversized/malformed requests, and demonstrate trusted-proxy/TLS behavior
-in a deployment-shaped test. P7-4 authorization remains mandatory after these
-transport checks.
+The policy primitives and concrete adapter are dependency-free and tested, but
+no public hosted listener exists yet. Direct adapter tests cover trusted-proxy
+TLS resolution, CORS/version metadata, oversized and malformed bodies,
+cross-tenant denial, cursor isolation, persistent mutation replay, deadline
+expiry, and disconnect cancellation. Before P7-5 can pass, a deployment-shaped
+listener test must prove socket-level body/read deadlines, disconnect
+propagation, trusted proxy/TLS configuration, and graceful shutdown. P7-4
+authorization remains mandatory after all transport checks.

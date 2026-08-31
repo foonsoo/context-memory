@@ -19,14 +19,18 @@ def _utc_now() -> datetime:
 
 
 class HostedAPIErrorCode(StrEnum):
+    ACCESS_DENIED = "access_denied"
     BODY_TOO_LARGE = "body_too_large"
     CORS_ORIGIN_DENIED = "cors_origin_denied"
     DEADLINE_EXCEEDED = "deadline_exceeded"
     IDEMPOTENCY_CONFLICT = "idempotency_conflict"
     IDEMPOTENCY_IN_PROGRESS = "idempotency_in_progress"
     INSECURE_TRANSPORT = "insecure_transport"
+    INTERNAL_ERROR = "internal_error"
+    INVALID_REQUEST = "invalid_request"
     INVALID_CURSOR = "invalid_cursor"
     REQUEST_CANCELLED = "request_cancelled"
+    RATE_LIMITED = "rate_limited"
     UNSUPPORTED_API_VERSION = "unsupported_api_version"
 
 
@@ -401,6 +405,28 @@ class HostedIdempotencyStore:
                 409,
                 "idempotency claim is missing or already completed",
             )
+
+    def abandon(
+        self,
+        tenant_id: str,
+        operation: str,
+        key: str,
+        request: Any,
+    ) -> bool:
+        cursor = self.connection.execute(
+            """
+            DELETE FROM hosted_idempotency
+            WHERE tenant_id = ? AND operation = ? AND key = ?
+              AND request_hash = ? AND state = 'pending'
+            """,
+            (
+                tenant_id,
+                operation,
+                key,
+                self._request_hash(request),
+            ),
+        )
+        return cursor.rowcount == 1
 
     @staticmethod
     def _request_hash(request: Any) -> str:
