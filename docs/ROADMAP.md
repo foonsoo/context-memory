@@ -386,8 +386,11 @@ not authorize internet exposure.
    bounded omission warnings to the leading direct lexical candidates, and
    then published the revision after a zero-finding lint and first-position
    queue review. Browse reported three renderable and one unrenderable page
-   with expected backlinks. A separate Wiki UI remains deferred because the
-   observed friction was repaired in the client-neutral contract.
+   with expected backlinks. A follow-up SQLite-authority cycle showed that
+   rank alone still admitted a one-of-thirteen-term repository-path match;
+   omission warnings now also require 0.15 query coverage. A separate Wiki UI
+   remains deferred because the observed friction was repaired in the
+   client-neutral contract.
 5. **No active core feature expansion.** Neural-default retrieval, broad rank
    tuning, direct vendor crawlers, uploaded-file storage, autonomous memory
    promotion, and peer-to-peer/CRDT synchronization remain outside the active

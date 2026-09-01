@@ -495,8 +495,14 @@ class WikiRepository:
             # related operational memories into warnings. Vector-only
             # and deep lexical matches remain available to generation
             # without being presented as deterministic omissions.
-            lexical_rank = memory.get("retrieval", {}).get("lexical_rank")
-            if lexical_rank is None or lexical_rank > 10:
+            retrieval = memory.get("retrieval", {})
+            lexical_rank = retrieval.get("lexical_rank")
+            query_coverage = retrieval.get("query_coverage", 0.0)
+            if (
+                lexical_rank is None
+                or lexical_rank > 10
+                or query_coverage < 0.15
+            ):
                 continue
             if memory["id"] not in cited_memories:
                 findings.append(

@@ -37,3 +37,15 @@ The first reader-side cycle used a fresh stdio connection to browse that publish
 After installing that contract into the shared runtime and opening another fresh stdio connection, the live database returned the expected per-page states and counts: one renderable published page, two rejected-only unrenderable pages, and an export with one document from three source pages. A second evidence-backed page was then generated from the verified reader-contract decision and the existing SQLite-authority decision. It passed deterministic lint with zero findings, appeared first in the review queue, and was explicitly published. The resulting four-page browse window reported two renderable and two unrenderable pages; selecting the original page returned the new published page as a backlink through their shared cited memory. Markdown export produced two documents, reported two skipped source pages, and included correct index, previous/next, and bidirectional related-page links. No additional reader-side contract or UI friction appeared in this multi-page cycle.
 
 The 2026-09-01 adoption cycle revisited the previously rejected product-direction page using a fresh MCP connection and repository-verified current direction. Generation produced a two-citation revision, but deterministic lint warned about an automatic-commit preference and a repository-location decision that matched only broad product-name terms. This repeated the earlier omission-noise failure outside the task type. Omission lint is now bounded to the leading ten direct lexical candidates; broad and vector-only retrieval remains available to generation but no longer creates low-confidence review warnings. After a consistent pre-upgrade backup and runtime reinstall, the same immutable revision passed lint with zero findings, appeared first in the typed review queue, and was explicitly published. The live browse window moved from two renderable/two unrenderable pages to three renderable/one unrenderable page and returned both expected backlinks. This cycle found and repaired a client-neutral lint issue; it did not reveal evidence that a separate UI would improve the workflow.
+
+A follow-up cycle after CI run 72 passed generated a replacement for the
+published SQLite-authority page. The proposed revision correctly appeared
+first in the review queue and cited the authority, reader, and current product
+direction decisions, but omission lint again warned about the repository-path
+decision. That candidate was lexical rank ten only because one of thirteen
+query terms matched, with query coverage 0.077 and semantic similarity 0.163.
+Omission warnings now require both a leading direct lexical rank and at least
+0.15 query coverage. After an integrity-checked backup and runtime reinstall,
+the same immutable revision passed lint with zero findings, remained first in
+the queue, and was explicitly published. Browse and export then reported three
+renderable pages, one skipped audit-only page, and the expected backlinks.
