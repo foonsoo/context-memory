@@ -287,7 +287,27 @@ Keep the current local-first, single-user stdio product and a possible hosted se
    request/trace correlation, metrics, telemetry failure, storage exhaustion,
    and successful/failed restore drills. The listener remains undeployed;
    concurrency, interruption, WAL, recovery, and capacity proof belong to P7-8.
-8. **Prove service behavior under load and failure.** Test concurrent readers/writers, process interruption, WAL growth, slow clients, malformed/oversized requests, migration rollback or forward recovery, backup restoration, and capacity limits. Define service-level objectives only after these measurements.
+8. **Prove service behavior under load and failure — completed.**
+   Request-scoped SQLite connections now support concurrent hosted readers and
+   writers while preserving contiguous per-project event sequences. Regression
+   tests cover committed and uncommitted process interruption, bounded WAL
+   growth and explicit truncation after a reader releases its snapshot,
+   transactional migration rollback followed by forward recovery, and exact
+   tenant backup restoration. The earlier socket-level transport suite retains
+   slow-client, malformed/oversized request, disconnect cancellation, and
+   clean-shutdown coverage. Persistent request and content limits remain the
+   capacity enforcement boundary.
+
+   **Exit result — passed 2026-09-01.** The reproducible development-host
+   measurement completed 800 operations with four writers and four readers,
+   committed all 400 events, and preserved event sequences. It measured about
+   2,807 operations/second, with write p50/p95 of 0.79/5.58 ms and read
+   p50/p95 of 2.73/3.71 ms. These values establish an eight-worker
+   pre-production test bound, not an internet-service SLO. The failure/load,
+   transport, and operations regression selection passed 18 tests. Production
+   SLOs and a deployment-specific concurrency limit remain intentionally
+   unpublished until the same measurement is repeated on the selected runtime,
+   storage class, edge, and regional topology.
 9. **Finish the user journey — completed.** The installed-wheel black-box
    gate now covers initialization and portable registration output, first useful
    memory creation and approval, next-session retrieval, evidence-backed

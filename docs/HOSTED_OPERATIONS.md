@@ -1,9 +1,9 @@
 # Hosted operations and recovery runbook
 
 This runbook applies to a future hosted deployment. It does not turn the
-dependency-injected listener into a supported public service. P7-8 load and
-failure measurements remain mandatory before deployment or service-level
-objectives are published.
+dependency-injected listener into a supported public service. P7-8's
+development-host load and failure gate has passed, but deployment-specific
+measurements remain mandatory before service-level objectives are published.
 
 ## Signals and exposure
 
@@ -38,8 +38,8 @@ ID, path, and arbitrary error text are forbidden metric labels.
 
 ## Initial alert thresholds
 
-These are conservative operator alerts, not service-level objectives. P7-8
-measurements may tighten them.
+These are conservative operator alerts, not service-level objectives.
+Production-like measurements may tighten them.
 
 | Signal | Warning | Page / remove readiness |
 |---|---:|---:|
@@ -51,10 +51,38 @@ measurements may tighten them.
 | Database bytes | 70% of provisioned storage | 85% of provisioned storage |
 | Listener errors | any occurrence | 3 occurrences in 5 minutes |
 
-Capacity is intentionally not assigned a number until P7-8 establishes a safe
-concurrency bound. The edge must stop routing new traffic whenever readiness is
-removed; liveness failure is reserved for a stuck/dead process that should be
-restarted.
+The development-host gate establishes eight concurrent workers (four readers
+and four writers) only as the initial pre-production test bound. It is not a
+safe public-service capacity claim. Until a deployment-specific measurement is
+recorded, configure no more than eight application workers, warn above six
+active requests for five minutes, and remove readiness at eight active requests
+for two minutes. Lower this bound when storage or runtime measurements require
+it; never raise it from the development result alone. The edge must stop routing
+new traffic whenever readiness is removed; liveness failure is reserved for a
+stuck/dead process that should be restarted.
+
+## Load and failure evidence
+
+Run the dependency-free measurement from a clean checkout with:
+
+```sh
+PYTHONPATH=src python3 tests/hosted_load_measurement.py \
+  --writers 4 --readers 4 --operations 100
+```
+
+The 2026-09-01 development-host run completed 800 operations at about 2,807
+operations/second, committed all 400 events, and measured write p50/p95 at
+0.79/5.58 ms and read p50/p95 at 2.73/3.71 ms. Record the runtime, storage
+class, topology, configuration, raw output, and artifact revision whenever this
+is repeated. Do not compare hosts from rounded numbers in this runbook.
+
+The automated failure gate verifies contiguous event sequences under
+concurrent reads and writes, abrupt exit before and after commit, WAL growth and
+truncation, failed-migration rollback and forward recovery, and exact tenant
+backup restoration. Socket regressions separately retain slow-body,
+malformed/oversized request, disconnect-cancellation, and shutdown coverage.
+An environment may publish SLOs only after these same cases pass on its selected
+runtime, storage, edge, and regional topology with representative data volume.
 
 ## Migration and database incidents
 
