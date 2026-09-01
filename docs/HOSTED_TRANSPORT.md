@@ -89,9 +89,11 @@ read timeout, disconnect cancellation, and graceful shutdown.
 
 The listener is intentionally not exposed through the local CLI or installed
 as an internet service. P7-6 privacy/governance, P7-7 operations, and P7-8
-load/failure gates must pass before deployment. Production wiring must provide
-request-safe database handles or a bounded connection pool; sharing a default
-thread-bound SQLite connection across handler threads is not supported.
+load/failure gates have passed at the repository level. Production wiring must
+still provide request-safe database handles or a bounded connection pool;
+sharing a default thread-bound SQLite connection across handler threads is not
+supported. It must also repeat the gates on the selected identity, edge,
+runtime, storage, backup, and regional topology before internet exposure.
 
 P7-7 adds narrow unauthenticated `/healthz` and `/readyz` probes plus internal
 redacted telemetry. Their detailed dependency results and metrics are operator

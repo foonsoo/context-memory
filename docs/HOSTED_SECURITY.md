@@ -111,8 +111,8 @@ denial, and forwards the exact authorized tenant and project to a
 with tenant predicates in the storage query itself; wrapping the local
 single-user `MemoryStore` or filtering a broad result afterward is forbidden.
 
-The policy kernel, durable identity state, and repository gateway are only
-initial P7-4 slices. `HostedContentStore` now supplies a separate concrete
+The policy kernel, durable identity state, and repository gateway began as
+P7-4 slices. `HostedContentStore` now supplies a separate concrete
 tenant-keyed SQLite prototype for search, export, event polling, and tenant
 backup. Every project query carries both keys, composite foreign keys prevent
 cross-tenant roots, and regression tests reuse the same project ID in two
@@ -120,6 +120,7 @@ tenants to prove read isolation. It is not a wrapper around the local
 single-user store.
 
 The gateway-to-store matrix now verifies that cross-tenant search, export,
-event polling, and backup are denied against the real content store. Remote
-access remains blocked because deployment-level unauthenticated traffic limits,
-trusted transport, and API production controls are a separate P7-5 gate.
+event polling, and backup are denied against the real content store. P7-5 added
+the trusted transport and API controls, but remote access remains blocked until
+a deployment supplies and validates unauthenticated edge limiting, TLS/proxy
+termination, and the server-verified identity integration.

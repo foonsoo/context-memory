@@ -243,7 +243,7 @@ Keep the current local-first, single-user stdio product and a possible hosted se
    socket tests cover trusted-proxy TLS metadata, verified/denied sessions,
    oversized and malformed requests, slow bodies, disconnect cancellation, and
    shutdown. The listener is not exposed through the local CLI or deployed;
-   P7-6 through P7-8 remain mandatory before remote service launch.
+   P7-6 through P7-8 were completed before considering remote service launch.
 
    **Exit result — passed 2026-08-31.** Every named P7-5 control has an
    executable policy or socket-level regression. Existing stdio and localhost
@@ -265,7 +265,8 @@ Keep the current local-first, single-user stdio product and a possible hosted se
    retention/export, warning-only sensitive-data handling, backup expiry,
    actor deletion without shared-content loss, interruption and retry between
    content and identity deletion, and tenant erasure without raw receipt
-   identifiers. Remote deployment remains disabled pending P7-7 and P7-8.
+   identifiers. Remote deployment remains disabled until an explicit
+   environment-specific launch decision; P7-7 and P7-8 are now complete.
 7. **Make operations observable and recoverable — completed.** The hosted
    listener now exposes narrow unauthenticated liveness and dependency-aware
    readiness responses without disclosing dependency details. An internal
@@ -285,8 +286,9 @@ Keep the current local-first, single-user stdio product and a possible hosted se
    **Exit result — passed 2026-08-31.** Socket and unit regressions cover
    healthy and failed readiness, migration/schema/backup probes, redacted logs,
    request/trace correlation, metrics, telemetry failure, storage exhaustion,
-   and successful/failed restore drills. The listener remains undeployed;
-   concurrency, interruption, WAL, recovery, and capacity proof belong to P7-8.
+   and successful/failed restore drills. The listener remains undeployed; P7-8
+   subsequently completed the concurrency, interruption, WAL, recovery, and
+   development-host capacity proof.
 8. **Prove service behavior under load and failure — completed.**
    Request-scoped SQLite connections now support concurrent hosted readers and
    writers while preserving contiguous per-project event sequences. Regression
@@ -342,6 +344,45 @@ Keep the current local-first, single-user stdio product and a possible hosted se
    journey including package removal with user data preserved.
 
 **Exit gate:** a new user can install or sign up, understand what is stored and why, complete the memory lifecycle, recover or delete their data, and receive a supported upgrade. Hosted deployment additionally passes tenant-isolation, authentication, load, failure-recovery, privacy, and observability gates.
+
+**P7 exit result — implementation gate passed 2026-09-01; hosted deployment
+not authorized.** The published local product completes installation,
+supported-client registration, lifecycle, correction, backup/restore, upgrade,
+erasure, and uninstall-with-data-preserved journeys. The separate hosted
+prototype now has executable tenant isolation, current session/grant
+authorization, privileged-action auditing, quotas and rate limits, trusted
+transport policy, a versioned API adapter and listener, governance operations,
+readiness/telemetry, restore drills, and load/failure recovery proof. The
+listener is intentionally absent from the local CLI and package onboarding.
+Passing these repository gates does not select a cloud, identity provider, TLS
+edge, storage class, backup service, region, operator, or public SLO and does
+not authorize internet exposure.
+
+### Work remaining after P7
+
+1. **P7 publication housekeeping.** Push the completed P7-8 and exit-audit
+   commits, then require the normal CI matrix to pass on the pushed revision.
+   Cut a new signed/provenance-bearing release only if these hosted prototype
+   modules and documentation are intended to become a published package
+   baseline; no version bump is implied by the exit audit alone.
+2. **Hosted launch decision — intentionally unstarted.** Decide whether a
+   remote service should exist. If approved, select the identity provider,
+   trusted TLS/proxy edge, runtime and SQLite storage class, regions, external
+   backup system, secret management, incident owner, and deployment operator.
+   This is deployment work, not permission to weaken the local-first product.
+3. **Environment-specific production validation — conditional on launch.**
+   Wire the server-verified session loader and unauthenticated edge limiting,
+   repeat isolation/privacy/load/failure/restore tests with representative data
+   on the selected topology, establish measured concurrency and SLOs, exercise
+   migration and incident runbooks, and complete a security/privacy review
+   before exposing traffic.
+4. **P5 adoption evidence — evidence-gated.** Continue real Decision Wiki
+   review cycles and record repeated navigation or review friction. A separate
+   Wiki UI remains deferred until that evidence exists.
+5. **No active core feature expansion.** Neural-default retrieval, broad rank
+   tuning, direct vendor crawlers, uploaded-file storage, autonomous memory
+   promotion, and peer-to-peer/CRDT synchronization remain outside the active
+   roadmap unless new verified failures justify a new phase.
 
 ## Existing work: overlap and disposition
 
