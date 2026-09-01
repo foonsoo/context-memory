@@ -666,6 +666,30 @@ class StoreTests(unittest.TestCase):
                    if item["code"] == "omitted_current_memory"]
         self.assertNotIn(task["id"], omitted)
 
+    def test_wiki_revision_lint_bounds_omissions_to_leading_lexical_matches(self):
+        p = self.store.create_project("wiki-bounded-omission")
+        decision_event = self.store.record_event(p["id"], "decision", "Use SQLite storage")
+        self.store.upsert_memory(p["id"], "Storage", "Use SQLite storage", "decision", "active",
+                                 source_event_ids=[decision_event["id"]])
+        omitted_event = self.store.record_event(p["id"], "fact", "A remote repository exists")
+        omitted = self.store.upsert_memory(p["id"], "Repository", "A remote repository exists", "fact", "active",
+                                           source_event_ids=[omitted_event["id"]])
+        page = self.store.create_wiki_page(p["id"], "sqlite storage", "Storage")
+        revision = self.store.generate_wiki_revision(page["id"], "SQLite storage")
+
+        low_rank = dict(omitted)
+        low_rank["retrieval"] = {"lexical_rank": 11}
+        with patch.object(self.store, "search", return_value=[low_rank]):
+            findings = self.store.lint_wiki_revision(revision["id"])["findings"]
+        self.assertNotIn("omitted_current_memory", {item["code"] for item in findings})
+
+        leading = dict(omitted)
+        leading["retrieval"] = {"lexical_rank": 10}
+        with patch.object(self.store, "search", return_value=[leading]):
+            findings = self.store.lint_wiki_revision(revision["id"])["findings"]
+        self.assertIn(omitted["id"], {item.get("memory_id") for item in findings
+                                      if item["code"] == "omitted_current_memory"})
+
     def test_wiki_revision_generation_failure_exposes_retrieval_diagnostics(self):
         p = self.store.create_project("wiki-generation-diagnostics")
         event = self.store.record_event(p["id"], "task", "Observe deployed review friction")

@@ -381,8 +381,13 @@ not authorize internet exposure.
    migration and incident runbooks, and complete a security/privacy review
    before exposing traffic.
 4. **P5 adoption evidence — evidence-gated.** Continue real Decision Wiki
-   review cycles and record repeated navigation or review friction. A separate
-   Wiki UI remains deferred until that evidence exists.
+   review cycles and record repeated navigation or review friction. The
+   2026-09-01 product-direction cycle reproduced low-confidence omission lint,
+   bounded omission warnings to the leading direct lexical candidates, and
+   then published the revision after a zero-finding lint and first-position
+   queue review. Browse reported three renderable and one unrenderable page
+   with expected backlinks. A separate Wiki UI remains deferred because the
+   observed friction was repaired in the client-neutral contract.
 5. **No active core feature expansion.** Neural-default retrieval, broad rank
    tuning, direct vendor crawlers, uploaded-file storage, autonomous memory
    promotion, and peer-to-peer/CRDT synchronization remain outside the active

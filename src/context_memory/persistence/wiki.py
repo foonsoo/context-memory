@@ -488,6 +488,16 @@ class WikiRepository:
             # absent from generated sections.
             if memory["type"] == "task":
                 continue
+            # Broad OR-based retrieval is useful for recall, but omission
+            # lint is an attention-demanding review signal. Limit it to the
+            # leading direct lexical candidates so a shared product or
+            # repository name does not turn loosely related operational
+            # memories into warnings. Vector-only and deep lexical matches
+            # remain available to generation without being presented as
+            # deterministic omissions.
+            lexical_rank = memory.get("retrieval", {}).get("lexical_rank")
+            if lexical_rank is None or lexical_rank > 10:
+                continue
             if memory["id"] not in cited_memories:
                 findings.append(
                     {
