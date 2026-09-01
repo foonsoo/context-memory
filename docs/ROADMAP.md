@@ -360,11 +360,12 @@ not authorize internet exposure.
 
 ### Work remaining after P7
 
-1. **P7 publication housekeeping.** Push the completed P7-8 and exit-audit
-   commits, then require the normal CI matrix to pass on the pushed revision.
-   Cut a new signed/provenance-bearing release only if these hosted prototype
-   modules and documentation are intended to become a published package
-   baseline; no version bump is implied by the exit audit alone.
+1. **P7 publication housekeeping — completed 2026-09-01.** The completed P7-8
+   and exit-audit commits are present on `origin/main` at `3f36124`, and the
+   push-triggered CI matrix passed on that revision (run 70). Cut a new
+   signed/provenance-bearing release only if these hosted prototype modules and
+   documentation are intended to become a published package baseline; no
+   version bump is implied by the exit audit alone.
 2. **Hosted launch decision — intentionally unstarted.** Decide whether a
    remote service should exist. If approved, select the identity provider,
    trusted TLS/proxy edge, runtime and SQLite storage class, regions, external
