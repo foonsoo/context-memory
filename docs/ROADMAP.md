@@ -366,12 +366,15 @@ not authorize internet exposure.
    signed/provenance-bearing release only if these hosted prototype modules and
    documentation are intended to become a published package baseline; no
    version bump is implied by the exit audit alone.
-2. **Hosted launch decision — intentionally unstarted.** Decide whether a
-   remote service should exist. If approved, select the identity provider,
-   trusted TLS/proxy edge, runtime and SQLite storage class, regions, external
-   backup system, secret management, incident owner, and deployment operator.
-   This is deployment work, not permission to weaken the local-first product.
-3. **Environment-specific production validation — conditional on launch.**
+2. **Hosted launch decision — deferred 2026-09-01.** Do not launch or expose a
+   remote service now. The available adoption evidence does not establish
+   multi-user or multi-machine demand sufficient to justify continuous
+   security, privacy, incident, backup-custody, and infrastructure ownership.
+   Keep the hosted implementation as an undeployed tested prototype and the
+   local-first package as the supported product. The evidence, consequences,
+   and explicit reconsideration gate are recorded in
+   `docs/HOSTED_LAUNCH_DECISION.md`.
+3. **Environment-specific production validation — deferred with launch.**
    Wire the server-verified session loader and unauthenticated edge limiting,
    repeat isolation/privacy/load/failure/restore tests with representative data
    on the selected topology, establish measured concurrency and SLOs, exercise
