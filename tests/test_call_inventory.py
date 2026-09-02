@@ -10,8 +10,8 @@ class CallInventoryTests(unittest.TestCase):
 
     def test_inventory_covers_the_frozen_store_surface(self):
         inventory = build_inventory()
-        self.assertEqual(inventory["method_count"], 89)
-        self.assertEqual(inventory["public_count"], 61)
+        self.assertEqual(inventory["method_count"], 90)
+        self.assertEqual(inventory["public_count"], 62)
         self.assertEqual(inventory["private_count"], 28)
 
 

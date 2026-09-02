@@ -769,6 +769,17 @@ class MemoryStore:
             project_id, cursor, kinds, scope_id, limit
         )
 
+    def cursor_for_recent_events(
+        self,
+        project_id: str,
+        kinds: list[str] | None = None,
+        scope_id: str | None = None,
+        limit: int = 6,
+    ) -> int:
+        return self.project_evidence.cursor_for_recent_events(
+            project_id, kinds, scope_id, limit
+        )
+
     @staticmethod
     def _receipt_stream(
         kinds: list[str] | None, scope_id: str | None
@@ -948,6 +959,7 @@ class MemoryStore:
         event_char_budget: int = 2000,
         discover_projects: bool = True,
         response_format: str = "legacy",
+        prefer_latest_events: bool = False,
     ) -> dict[str, Any]:
         return self.context_assembler.get_context(
             project_id,
@@ -961,6 +973,7 @@ class MemoryStore:
             event_char_budget,
             discover_projects,
             response_format,
+            prefer_latest_events,
         )
 
     def decision_context(

@@ -63,6 +63,73 @@ class MCPTests(unittest.TestCase):
         self.assertEqual(first["project"]["id"], second["project"]["id"])
         self.assertEqual(first["context"]["response_format"], "compact")
 
+    def test_bootstrap_surfaces_recent_unpromoted_handoff_by_default(self):
+        resolved = self.store.resolve_project(self.temp.name)
+        project_id = resolved["project"]["id"]
+        for index in range(8):
+            self.store.record_event(
+                project_id,
+                "task",
+                f"handoff {index}",
+                scope_id=resolved["scope_id"],
+            )
+        expected_path = "/workspace/official/context-memory"
+        latest = self.store.record_event(
+            project_id,
+            "summary",
+            f"Draft is stored at {expected_path}",
+            scope_id=resolved["scope_id"],
+        )
+
+        result = self.server.call(
+            "context_bootstrap",
+            {
+                "cwd": self.temp.name,
+                "query": "blog draft",
+                "client": "test",
+                "external_id": "recent-tail",
+                "response_format": "compact",
+            },
+        )
+
+        context = result["context"]
+        self.assertTrue(context["startup_event_tail"]["implicit"])
+        self.assertEqual(
+            context["recent_events"][-1]["event_id"], latest["id"]
+        )
+        self.assertIn(expected_path, context["recent_events"][-1]["text"])
+        self.assertLessEqual(len(context["recent_events"]), 6)
+
+    def test_bootstrap_event_budget_preserves_newest_handoff(self):
+        resolved = self.store.resolve_project(self.temp.name)
+        project_id = resolved["project"]["id"]
+        self.store.record_event(
+            project_id,
+            "task",
+            "older " + "x" * 300,
+            scope_id=resolved["scope_id"],
+        )
+        latest = self.store.record_event(
+            project_id,
+            "summary",
+            "newest repository path: /workspace/official",
+            scope_id=resolved["scope_id"],
+        )
+
+        result = self.server.call(
+            "context_bootstrap",
+            {
+                "cwd": self.temp.name,
+                "query": "repository path",
+                "event_char_budget": 80,
+                "response_format": "compact",
+            },
+        )
+
+        events = result["context"]["recent_events"]
+        self.assertEqual(events[-1]["event_id"], latest["id"])
+        self.assertIn("/workspace/official", events[-1]["text"])
+
     def test_tool_profiles_split_working_and_administrative_surfaces(self):
         core = MCPServer(self.store, "core")
         admin = MCPServer(self.store, "admin")

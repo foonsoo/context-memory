@@ -53,7 +53,10 @@ def workflow_guide() -> str:
         "Use the returned project and scope IDs for all writes; never ask "
         "the user for a project UUID. Treat the directory as an identity "
         "hint because retrieval may discover relevant memories from "
-        "another registered project.",
+        "another registered project. Inspect the bounded recent event tail "
+        "as well as promoted memories before concluding that prior work or "
+        "an artifact is missing; repository paths in newer immutable events "
+        "take precedence over an empty workspace hint.",
         "- Inspect consequential citations with `get_source` before "
         "relying on them. Treat disputed memories as warnings.",
         "- Record durable user decisions, constraints, verified facts, "

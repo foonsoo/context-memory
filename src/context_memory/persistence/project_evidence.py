@@ -233,6 +233,34 @@ class ProjectEvidenceRepository:
             "events": rows,
         }
 
+    def cursor_for_recent_events(
+        self,
+        project_id: str,
+        kinds: list[str] | None = None,
+        scope_id: str | None = None,
+        limit: int = 6,
+    ) -> int:
+        """Return a cursor that exposes the newest matching event tail."""
+        if not 1 <= limit <= 1000:
+            raise ValueError("limit must be 1..1000")
+        if kinds is not None and (
+            not kinds or any(not kind.strip() for kind in kinds)
+        ):
+            raise ValueError("kinds must contain non-empty values")
+        sql = "SELECT event_seq FROM events WHERE project_id=?"
+        args: list[Any] = [project_id]
+        if kinds:
+            unique_kinds = list(dict.fromkeys(kinds))
+            sql += " AND kind IN (" + ",".join("?" for _ in unique_kinds) + ")"
+            args.extend(unique_kinds)
+        if scope_id:
+            sql += " AND (scope_id=? OR scope_id IS NULL)"
+            args.append(scope_id)
+        sql += " ORDER BY event_seq DESC LIMIT 1 OFFSET ?"
+        args.append(limit - 1)
+        row = self.store.conn.execute(sql, args).fetchone()
+        return max(0, int(row["event_seq"]) - 1) if row else 0
+
     @staticmethod
     def _receipt_stream(
         kinds: list[str] | None, scope_id: str | None

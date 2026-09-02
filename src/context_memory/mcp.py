@@ -7,6 +7,7 @@ from socketserver import TCPServer
 from typing import Any
 
 from . import __version__
+from .contracts import PROMOTABLE_EVENT_KINDS
 from .mcp_tools import CORE_TOOL_NAMES, TOOL_BY_NAME, TOOL_PAGE_SIZE, TOOLS
 from .store import MemoryStore
 
@@ -140,12 +141,34 @@ class MCPServer:
             external_id,
             metadata,
         )
+        implicit_event_tail = "event_cursor" not in context_args
+        if implicit_event_tail:
+            event_kinds = context_args.setdefault(
+                "event_kinds", sorted(PROMOTABLE_EVENT_KINDS)
+            )
+            event_limit = context_args.setdefault("event_limit", 6)
+            context_args.setdefault("event_char_budget", 2000)
+            context_args["prefer_latest_events"] = True
+            context_args["event_cursor"] = self.store.cursor_for_recent_events(
+                resolved["project"]["id"],
+                event_kinds,
+                resolved["scope_id"],
+                event_limit,
+            )
         context = self.store.get_context(
             resolved["project"]["id"],
             query,
             scope_id=resolved["scope_id"],
             **context_args,
         )
+        context["startup_event_tail"] = {
+            "implicit": implicit_event_tail,
+            "purpose": (
+                "surface recent durable evidence that may not yet be promoted"
+                if implicit_event_tail
+                else "caller-controlled event stream"
+            ),
+        }
         return {
             "project": resolved["project"],
             "scope_id": resolved["scope_id"],

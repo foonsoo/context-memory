@@ -23,6 +23,7 @@ class ContextAssembler:
         event_char_budget: int = 2000,
         discover_projects: bool = True,
         response_format: str = "legacy",
+        prefer_latest_events: bool = False,
     ) -> dict[str, Any]:
         if response_format not in {"legacy", "compact"}:
             raise ValueError("response_format must be legacy or compact")
@@ -42,7 +43,10 @@ class ContextAssembler:
             event_result = self.store.read_events_since(
                 project_id, event_cursor, selected_kinds, scope_id, event_limit
             )
-            for event in event_result["events"]:
+            event_rows = event_result["events"]
+            if prefer_latest_events:
+                event_rows = list(reversed(event_rows))
+            for event in event_rows:
                 prefix = f"[{event['event_seq']}/{event['kind']}] "
                 remaining = reserved - event_used - len(prefix)
                 if remaining <= 0:
@@ -54,19 +58,21 @@ class ContextAssembler:
                     if truncated and remaining
                     else content
                 )
-                recent_events.append(
-                    {
-                        "event_id": event["id"],
-                        "event_seq": event["event_seq"],
-                        "kind": event["kind"],
-                        "text": text,
-                        "created_at": event["created_at"],
-                        "session_id": event["session_id"],
-                        "scope_id": event["scope_id"],
-                        "metadata": event["metadata"],
-                        "content_truncated": truncated,
-                    }
-                )
+                rendered_event = {
+                    "event_id": event["id"],
+                    "event_seq": event["event_seq"],
+                    "kind": event["kind"],
+                    "text": text,
+                    "created_at": event["created_at"],
+                    "session_id": event["session_id"],
+                    "scope_id": event["scope_id"],
+                    "metadata": event["metadata"],
+                    "content_truncated": truncated,
+                }
+                if prefer_latest_events:
+                    recent_events.insert(0, rendered_event)
+                else:
+                    recent_events.append(rendered_event)
                 event_used += len(text)
             fully_consumed = len(recent_events) == len(event_result["events"])
             event_result["next_cursor"] = (

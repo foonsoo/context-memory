@@ -8,7 +8,10 @@ TOOLS = [
         "name": "context_bootstrap",
         "description": (
             "Resolve a workspace, idempotently start its session, and "
-            "retrieve focused context in one call."
+            "retrieve focused context in one call. Unless an event cursor is "
+            "provided, also include a bounded tail of recent promotable "
+            "immutable events so unpromoted handoffs and repository-path "
+            "clues are not missed."
         ),
         "inputSchema": obj(
             {
