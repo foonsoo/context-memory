@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from socketserver import TCPServer
 from typing import Any
 
@@ -142,31 +143,93 @@ class MCPServer:
             metadata,
         )
         implicit_event_tail = "event_cursor" not in context_args
-        if implicit_event_tail:
-            event_kinds = context_args.setdefault(
-                "event_kinds", sorted(PROMOTABLE_EVENT_KINDS)
-            )
-            event_limit = context_args.setdefault("event_limit", 6)
-            context_args.setdefault("event_char_budget", 2000)
-            context_args["prefer_latest_events"] = True
-            context_args["event_cursor"] = self.store.cursor_for_recent_events(
-                resolved["project"]["id"],
-                event_kinds,
-                resolved["scope_id"],
-                event_limit,
-            )
         context = self.store.get_context(
             resolved["project"]["id"],
             query,
             scope_id=resolved["scope_id"],
             **context_args,
         )
+        fallback_reasons: list[str] = []
+        if implicit_event_tail:
+            if context["retrieval_gate"]["status"] == "no_confident_match":
+                fallback_reasons.append("no_confident_match")
+            if not context["items"]:
+                fallback_reasons.append("no_memory_items")
+            workspace = Path(cwd).expanduser()
+            if workspace.is_dir() and not any(workspace.iterdir()):
+                fallback_reasons.append("empty_workspace")
+
+            event_kinds = context_args.get(
+                "event_kinds", sorted(PROMOTABLE_EVENT_KINDS)
+            )
+            event_limit = context_args.get("event_limit", 3)
+            event_cursor = self.store.cursor_for_recent_events(
+                resolved["project"]["id"],
+                event_kinds,
+                resolved["scope_id"],
+                event_limit,
+            )
+            tail = self.store.read_events_since(
+                resolved["project"]["id"],
+                event_cursor,
+                event_kinds,
+                resolved["scope_id"],
+                event_limit,
+            )["events"]
+            source_event_ids = {
+                event_id
+                for item in context["items"]
+                for event_id in item.get("source_event_ids", [])
+            }
+            sourced_sequences = [
+                event["event_seq"]
+                for event in tail
+                if event["id"] in source_event_ids
+            ]
+            newest_sourced = max(sourced_sequences, default=-1)
+            novel_events = [
+                event
+                for event in tail
+                if event["id"] not in source_event_ids
+                and event["event_seq"] > newest_sourced
+            ]
+            if novel_events:
+                fallback_reasons.append("new_unpromoted_events")
+
+            if fallback_reasons:
+                fallback_args = dict(context_args)
+                fallback_args.update(
+                    {
+                        "event_cursor": event_cursor,
+                        "event_kinds": event_kinds,
+                        "event_limit": event_limit,
+                        "event_char_budget": context_args.get(
+                            "event_char_budget", 800
+                        ),
+                        "prefer_latest_events": True,
+                        "exclude_event_ids": sorted(source_event_ids),
+                        "compact_events": True,
+                    }
+                )
+                context = self.store.get_context(
+                    resolved["project"]["id"],
+                    query,
+                    scope_id=resolved["scope_id"],
+                    **fallback_args,
+                )
         context["startup_event_tail"] = {
             "implicit": implicit_event_tail,
-            "purpose": (
-                "surface recent durable evidence that may not yet be promoted"
+            "included": bool(context["recent_events"]),
+            "fallback_reasons": fallback_reasons,
+            "event_limit": (
+                context_args.get("event_limit", 3)
                 if implicit_event_tail
-                else "caller-controlled event stream"
+                else None
+            ),
+            "event_char_budget": (
+                context_args.get("event_char_budget", 800)
+                if implicit_event_tail
+                else None
             ),
         }
         return {

@@ -98,7 +98,8 @@ class MCPTests(unittest.TestCase):
             context["recent_events"][-1]["event_id"], latest["id"]
         )
         self.assertIn(expected_path, context["recent_events"][-1]["text"])
-        self.assertLessEqual(len(context["recent_events"]), 6)
+        self.assertLessEqual(len(context["recent_events"]), 3)
+        self.assertNotIn("metadata", context["recent_events"][-1])
 
     def test_bootstrap_event_budget_preserves_newest_handoff(self):
         resolved = self.store.resolve_project(self.temp.name)
@@ -129,6 +130,38 @@ class MCPTests(unittest.TestCase):
         events = result["context"]["recent_events"]
         self.assertEqual(events[-1]["event_id"], latest["id"])
         self.assertIn("/workspace/official", events[-1]["text"])
+
+    def test_bootstrap_skips_event_tail_when_memory_covers_latest_evidence(self):
+        resolved = self.store.resolve_project(self.temp.name)
+        event = self.store.record_event(
+            resolved["project"]["id"],
+            "task",
+            "Implement adaptive bootstrap retrieval",
+            scope_id=resolved["scope_id"],
+        )
+        self.store.upsert_memory(
+            resolved["project"]["id"],
+            "Adaptive bootstrap",
+            "Implement adaptive bootstrap retrieval",
+            "task",
+            "active",
+            scope_id=resolved["scope_id"],
+            source_event_ids=[event["id"]],
+        )
+
+        result = self.server.call(
+            "context_bootstrap",
+            {
+                "cwd": self.temp.name,
+                "query": "adaptive bootstrap retrieval",
+                "response_format": "compact",
+            },
+        )
+
+        context = result["context"]
+        self.assertEqual(context["recent_events"], [])
+        self.assertFalse(context["startup_event_tail"]["included"])
+        self.assertEqual(context["startup_event_tail"]["fallback_reasons"], [])
 
     def test_tool_profiles_split_working_and_administrative_surfaces(self):
         core = MCPServer(self.store, "core")

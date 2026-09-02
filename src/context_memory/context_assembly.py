@@ -24,6 +24,8 @@ class ContextAssembler:
         discover_projects: bool = True,
         response_format: str = "legacy",
         prefer_latest_events: bool = False,
+        exclude_event_ids: list[str] | None = None,
+        compact_events: bool = False,
     ) -> dict[str, Any]:
         if response_format not in {"legacy", "compact"}:
             raise ValueError("response_format must be legacy or compact")
@@ -44,6 +46,10 @@ class ContextAssembler:
                 project_id, event_cursor, selected_kinds, scope_id, event_limit
             )
             event_rows = event_result["events"]
+            excluded = set(exclude_event_ids or [])
+            event_rows = [
+                event for event in event_rows if event["id"] not in excluded
+            ]
             if prefer_latest_events:
                 event_rows = list(reversed(event_rows))
             for event in event_rows:
@@ -69,12 +75,15 @@ class ContextAssembler:
                     "metadata": event["metadata"],
                     "content_truncated": truncated,
                 }
+                if compact_events:
+                    for key in ("session_id", "scope_id", "metadata"):
+                        rendered_event.pop(key)
                 if prefer_latest_events:
                     recent_events.insert(0, rendered_event)
                 else:
                     recent_events.append(rendered_event)
                 event_used += len(text)
-            fully_consumed = len(recent_events) == len(event_result["events"])
+            fully_consumed = len(recent_events) == len(event_rows)
             event_result["next_cursor"] = (
                 event_result["next_cursor"]
                 if fully_consumed

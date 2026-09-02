@@ -960,6 +960,8 @@ class MemoryStore:
         discover_projects: bool = True,
         response_format: str = "legacy",
         prefer_latest_events: bool = False,
+        exclude_event_ids: list[str] | None = None,
+        compact_events: bool = False,
     ) -> dict[str, Any]:
         return self.context_assembler.get_context(
             project_id,
@@ -974,6 +976,8 @@ class MemoryStore:
             discover_projects,
             response_format,
             prefer_latest_events,
+            exclude_event_ids,
+            compact_events,
         )
 
     def decision_context(
