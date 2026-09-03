@@ -19,6 +19,7 @@ TOOLS = [
 TOOL_PAGE_SIZE = 10
 TOOL_BY_NAME = {tool["name"]: tool for tool in TOOLS}
 CORE_TOOL_NAMES = {
+    "context_recall",
     "context_bootstrap",
     "project_resolve",
     "session_start",

@@ -242,6 +242,7 @@ class MCPServer:
 
     def call(self, name: str, a: dict[str, Any]) -> Any:
         mapping = {
+            "context_recall": self.store.context_recall,
             "context_bootstrap": self.bootstrap,
             "project_create": self.store.create_project,
             "project_list": self.store.list_projects,

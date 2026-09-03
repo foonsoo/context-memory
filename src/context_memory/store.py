@@ -40,6 +40,7 @@ from .persistence import (
 )
 from .persistence.primitives import row_dict
 from .retrieval import retrieval_gate, select_project_candidate
+from .recall import RecallAssembler
 from .serialization import canonical, canonical_digest
 from .validation import normalize_test_results
 
@@ -116,6 +117,7 @@ class MemoryStore:
             self, now, uid, current_datetime
         )
         self.context_assembler = ContextAssembler(self)
+        self.recall_assembler = RecallAssembler(self)
         self.decision_assembler = DecisionAssembler(
             self, now, current_datetime
         )
@@ -978,6 +980,18 @@ class MemoryStore:
             prefer_latest_events,
             exclude_event_ids,
             compact_events,
+        )
+
+    def context_recall(
+        self,
+        cwd: str,
+        query: str,
+        token_budget: int = 350,
+        max_items: int = 6,
+    ) -> dict[str, Any]:
+        """Return a session-independent vNext context pack."""
+        return self.recall_assembler.recall(
+            cwd, query, token_budget, max_items
         )
 
     def decision_context(

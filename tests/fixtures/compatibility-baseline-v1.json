@@ -15,6 +15,7 @@
     {"name":"read_events_since","input_schema_sha256":"26422799e56aa86f2a6f99fc0e5c71868f9f191e7959733e2a058df6c779b74c","annotations":{"readOnlyHint":true}},
     {"name":"event_poll","input_schema_sha256":"f5a0dcd547285c71fb525eef7371f4ada9322bc3d215afcf9076a64b5496e96e","annotations":{"readOnlyHint":false}},
     {"name":"event_ack","input_schema_sha256":"e3db3545c2d20c9366c82610b7a4cf54cefd79b75e5cae791d3d3dfc43f498f8","annotations":{"readOnlyHint":false}},
+    {"name":"context_recall","input_schema_sha256":"c8300bdb45f730e2436028d41f057f3995f37fe61afab95a37c144108de8e892","annotations":{"readOnlyHint":true}},
     {"name":"memory_upsert","input_schema_sha256":"98dedf2bf050755dc65a67498c5dd65d0fe28fa23f49aca62884c66e5cd7d4da","annotations":{"readOnlyHint":false}},
     {"name":"memory_transition","input_schema_sha256":"83594c51f920bb92b23d9c3b6bb1933bce97d9473723d21948374f842657ce36","annotations":{"readOnlyHint":false}},
     {"name":"search_alias_set","input_schema_sha256":"d2fa295b47f7e92dd44469eaa9d17658fdb37b1a2d47fcec50dc9c53e4c866bb","annotations":{"readOnlyHint":false}},

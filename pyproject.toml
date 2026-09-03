@@ -84,6 +84,7 @@ include = [
   "src/context_memory/persistence/transfer.py",
   "src/context_memory/persistence/wiki.py",
   "src/context_memory/retrieval.py",
+  "src/context_memory/recall.py",
   "src/context_memory/serialization.py",
   "src/context_memory/store.py",
   "src/context_memory/tasks.py",

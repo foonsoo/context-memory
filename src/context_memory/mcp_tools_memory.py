@@ -4,6 +4,32 @@ from .mcp_schema import obj
 
 TOOLS = [
     {
+        "name": "context_recall",
+        "description": (
+            "Retrieve a small, session-independent context pack for a "
+            "natural-language continuation request. Results are bounded by "
+            "an estimated token budget; fetch source details separately."
+        ),
+        "inputSchema": obj(
+            {
+                "cwd": {"type": "string"},
+                "query": {"type": "string"},
+                "token_budget": {
+                    "type": "integer",
+                    "minimum": 64,
+                    "maximum": 2048,
+                },
+                "max_items": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 12,
+                },
+            },
+            ["cwd", "query"],
+        ),
+        "annotations": {"readOnlyHint": True},
+    },
+    {
         "name": "memory_upsert",
         "description": (
             "Propose, activate, or update a derived project/global memory "
