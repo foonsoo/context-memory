@@ -241,6 +241,9 @@ def run(repeats: int = 5, fixture_path: str | Path = DEFAULT_FIXTURE) -> dict[st
                         "case": case["id"], "prompt": prompt, "cwd": "placeholder" if cwd == placeholder else "canonical",
                         "complete": complete, "false_absence": absent, "wrong_project": selected is not None and selected not in expected_ids,
                         "stale_leaks": leaks, "category_checks": checks, "returned_tokens": tokens,
+                        "selected_project": selected,
+                        "retrieval_status": (result.get("retrieval") or {}).get("status"),
+                        "selection_reason": (result.get("retrieval") or {}).get("selection_reason"),
                         "latency_ms": {"p50": round(statistics.median(prompt_latencies), 3), "p95": round(percentile(prompt_latencies, .95), 3)},
                     })
             count = len(outcomes)

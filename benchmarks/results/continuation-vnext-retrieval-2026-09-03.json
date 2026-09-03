@@ -1,0 +1,3001 @@
+{
+  "baseline_notes": {
+    "llm-wiki-snapshot": "Deterministic exported-page proxy; not a live LLM Wiki service."
+  },
+  "contract_version": "continuation-eval/v1",
+  "fixture": {
+    "cases": 8,
+    "prompts": 24,
+    "repeats": 10,
+    "source": "continuation-scenarios-v1.json"
+  },
+  "modes": {
+    "context-memory": {
+      "metrics": {
+        "artifact_recovery": 0.1388888888888889,
+        "continuation_recall": 0.125,
+        "decision_recovery": 0.4375,
+        "false_absence_rate": 0.5833333333333334,
+        "latency_ms": {
+          "p50": 0.176,
+          "p95": 0.322
+        },
+        "next_step_recovery": 0.4444444444444444,
+        "returned_tokens": {
+          "max": 987,
+          "median": 624.0
+        },
+        "source_recovery": 1.0,
+        "stale_error_leakage": 0.0,
+        "total_llm_input_tokens": {
+          "max": 1000,
+          "median": 635.5
+        },
+        "wrong_project_rate": 0.0
+      },
+      "prompts": [
+        {
+          "case": "blog-episode-four",
+          "category_checks": {
+            "artifacts": [
+              false,
+              false,
+              false
+            ],
+            "decisions": [
+              false,
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.256,
+            "p95": 0.497
+          },
+          "prompt": "블로그 4화를 이어서 작성하자",
+          "retrieval_status": null,
+          "returned_tokens": 538,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "blog-episode-four",
+          "category_checks": {
+            "artifacts": [
+              false,
+              false,
+              false
+            ],
+            "decisions": [
+              false,
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.256,
+            "p95": 0.289
+          },
+          "prompt": "전에 쓰던 글 다음 편 계속해줘",
+          "retrieval_status": null,
+          "returned_tokens": 541,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "blog-episode-four",
+          "category_checks": {
+            "artifacts": [
+              false,
+              false,
+              false
+            ],
+            "decisions": [
+              false,
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.298,
+            "p95": 0.347
+          },
+          "prompt": "Continue the fourth Context Memory blog post",
+          "retrieval_status": null,
+          "returned_tokens": 760,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "api-pagination",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              false,
+              false
+            ],
+            "next_steps": [
+              false,
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.192,
+            "p95": 0.204
+          },
+          "prompt": "아까 정한 API 방식으로 계속하자",
+          "retrieval_status": null,
+          "returned_tokens": 318,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "api-pagination",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              true,
+              true
+            ],
+            "next_steps": [
+              true,
+              true
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.15,
+            "p95": 0.175
+          },
+          "prompt": "pagination 작업 이어서 해줘",
+          "retrieval_status": null,
+          "returned_tokens": 729,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "api-pagination",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              true,
+              true
+            ],
+            "next_steps": [
+              true,
+              true
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.155,
+            "p95": 0.163
+          },
+          "prompt": "Resume the API pagination implementation",
+          "retrieval_status": null,
+          "returned_tokens": 730,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "deployment-rollback",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              false,
+              false,
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.167,
+            "p95": 0.175
+          },
+          "prompt": "배포 작업 계속해줘",
+          "retrieval_status": null,
+          "returned_tokens": 313,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "deployment-rollback",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              false,
+              false,
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.195,
+            "p95": 0.199
+          },
+          "prompt": "전에 합의한 롤백 방식으로 진행하자",
+          "retrieval_status": null,
+          "returned_tokens": 320,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "deployment-rollback",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              true,
+              true,
+              true
+            ],
+            "next_steps": [
+              true
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.154,
+            "p95": 0.17
+          },
+          "prompt": "Continue the Nova deployment rollout",
+          "retrieval_status": null,
+          "returned_tokens": 718,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "mobile-redesign",
+          "category_checks": {
+            "artifacts": [
+              false,
+              false
+            ],
+            "decisions": [
+              false,
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.163,
+            "p95": 0.173
+          },
+          "prompt": "모바일 리디자인 계속하자",
+          "retrieval_status": null,
+          "returned_tokens": 316,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "mobile-redesign",
+          "category_checks": {
+            "artifacts": [
+              false,
+              false
+            ],
+            "decisions": [
+              false,
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.175,
+            "p95": 0.194
+          },
+          "prompt": "전에 결정한 내비게이션으로 구현해줘",
+          "retrieval_status": null,
+          "returned_tokens": 321,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "mobile-redesign",
+          "category_checks": {
+            "artifacts": [
+              false,
+              true
+            ],
+            "decisions": [
+              true,
+              true
+            ],
+            "next_steps": [
+              true
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.157,
+            "p95": 0.165
+          },
+          "prompt": "Resume the Orbit mobile redesign",
+          "retrieval_status": null,
+          "returned_tokens": 719,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "data-migration-correction",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              false
+            ],
+            "next_steps": [
+              false,
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.175,
+            "p95": 0.204
+          },
+          "prompt": "데이터 마이그레이션 이어서 하자",
+          "retrieval_status": null,
+          "returned_tokens": 319,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "data-migration-correction",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              false
+            ],
+            "next_steps": [
+              false,
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.195,
+            "p95": 0.204
+          },
+          "prompt": "수정된 보존 기간 기준으로 계속해줘",
+          "retrieval_status": null,
+          "returned_tokens": 320,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "data-migration-correction",
+          "category_checks": {
+            "artifacts": [
+              true
+            ],
+            "decisions": [
+              true
+            ],
+            "next_steps": [
+              true,
+              true
+            ]
+          },
+          "complete": true,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.153,
+            "p95": 0.166
+          },
+          "prompt": "Continue the corrected Ledger migration",
+          "retrieval_status": null,
+          "returned_tokens": 707,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "installed-wheel-restart",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              false,
+              false,
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.193,
+            "p95": 0.202
+          },
+          "prompt": "재시작 후 설치 검증 계속해줘",
+          "retrieval_status": null,
+          "returned_tokens": 317,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "installed-wheel-restart",
+          "category_checks": {
+            "artifacts": [
+              true
+            ],
+            "decisions": [
+              true,
+              true,
+              true
+            ],
+            "next_steps": [
+              true
+            ]
+          },
+          "complete": true,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.166,
+            "p95": 0.177
+          },
+          "prompt": "installed wheel 테스트 다음 단계로 가자",
+          "retrieval_status": null,
+          "returned_tokens": 738,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "installed-wheel-restart",
+          "category_checks": {
+            "artifacts": [
+              true
+            ],
+            "decisions": [
+              true,
+              true,
+              true
+            ],
+            "next_steps": [
+              true
+            ]
+          },
+          "complete": true,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.162,
+            "p95": 0.182
+          },
+          "prompt": "Resume the installed-wheel restart journey",
+          "retrieval_status": null,
+          "returned_tokens": 731,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "multi-client-handoff",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              false,
+              false
+            ],
+            "next_steps": [
+              false,
+              false,
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.192,
+            "p95": 0.208
+          },
+          "prompt": "다른 클라이언트에서 하던 작업 계속하자",
+          "retrieval_status": null,
+          "returned_tokens": 322,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "multi-client-handoff",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              true,
+              true
+            ],
+            "next_steps": [
+              true,
+              true,
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.156,
+            "p95": 0.176
+          },
+          "prompt": "Relay handoff 다음 단계 진행해줘",
+          "retrieval_status": null,
+          "returned_tokens": 722,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "multi-client-handoff",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              true,
+              true
+            ],
+            "next_steps": [
+              true,
+              true,
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.169,
+            "p95": 0.183
+          },
+          "prompt": "Continue the Relay work from the other client",
+          "retrieval_status": null,
+          "returned_tokens": 725,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "scope-change",
+          "category_checks": {
+            "artifacts": [
+              false,
+              false
+            ],
+            "decisions": [
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.181,
+            "p95": 0.192
+          },
+          "prompt": "패키지를 옮겼는데 계속 작업해줘",
+          "retrieval_status": null,
+          "returned_tokens": 319,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "scope-change",
+          "category_checks": {
+            "artifacts": [
+              false,
+              false
+            ],
+            "decisions": [
+              false
+            ],
+            "next_steps": [
+              true
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.335,
+            "p95": 0.382
+          },
+          "prompt": "scope 바뀐 뒤 다음 단계 진행하자",
+          "retrieval_status": null,
+          "returned_tokens": 987,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "scope-change",
+          "category_checks": {
+            "artifacts": [
+              false,
+              true
+            ],
+            "decisions": [
+              true
+            ],
+            "next_steps": [
+              true
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.305,
+            "p95": 0.32
+          },
+          "prompt": "Resume Meridian after the scope path changed",
+          "retrieval_status": null,
+          "returned_tokens": 949,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        }
+      ]
+    },
+    "context-recall-vnext": {
+      "metrics": {
+        "artifact_recovery": 0.3888888888888889,
+        "continuation_recall": 0.25,
+        "decision_recovery": 0.9791666666666666,
+        "false_absence_rate": 0.041666666666666664,
+        "latency_ms": {
+          "p50": 0.344,
+          "p95": 0.468
+        },
+        "next_step_recovery": 0.8333333333333334,
+        "returned_tokens": {
+          "max": 467,
+          "median": 346.5
+        },
+        "source_recovery": 1.0,
+        "stale_error_leakage": 0.0,
+        "total_llm_input_tokens": {
+          "max": 480,
+          "median": 359.5
+        },
+        "wrong_project_rate": 0.0
+      },
+      "prompts": [
+        {
+          "case": "blog-episode-four",
+          "category_checks": {
+            "artifacts": [
+              true,
+              false,
+              false
+            ],
+            "decisions": [
+              true,
+              true
+            ],
+            "next_steps": [
+              true
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.426,
+            "p95": 0.513
+          },
+          "prompt": "블로그 4화를 이어서 작성하자",
+          "retrieval_status": "found",
+          "returned_tokens": 467,
+          "selected_project": "c0f83dce-bcdd-4198-9e84-8f04efa6649d",
+          "selection_reason": "query_project_name",
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "blog-episode-four",
+          "category_checks": {
+            "artifacts": [
+              true,
+              false,
+              false
+            ],
+            "decisions": [
+              true,
+              true
+            ],
+            "next_steps": [
+              true
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.471,
+            "p95": 0.483
+          },
+          "prompt": "전에 쓰던 글 다음 편 계속해줘",
+          "retrieval_status": "found",
+          "returned_tokens": 466,
+          "selected_project": "c0f83dce-bcdd-4198-9e84-8f04efa6649d",
+          "selection_reason": "query_project_name",
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "blog-episode-four",
+          "category_checks": {
+            "artifacts": [
+              true,
+              false,
+              false
+            ],
+            "decisions": [
+              true,
+              true
+            ],
+            "next_steps": [
+              true
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.452,
+            "p95": 0.479
+          },
+          "prompt": "Continue the fourth Context Memory blog post",
+          "retrieval_status": "found",
+          "returned_tokens": 465,
+          "selected_project": "c0f83dce-bcdd-4198-9e84-8f04efa6649d",
+          "selection_reason": "query_project_name",
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "api-pagination",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              true,
+              true
+            ],
+            "next_steps": [
+              true,
+              true
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.411,
+            "p95": 0.428
+          },
+          "prompt": "아까 정한 API 방식으로 계속하자",
+          "retrieval_status": "found",
+          "returned_tokens": 357,
+          "selected_project": "cad1c8df-fa2b-453d-9e64-1e6ca1a64e1e",
+          "selection_reason": "query_project_name",
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "api-pagination",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              true,
+              true
+            ],
+            "next_steps": [
+              true,
+              true
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.282,
+            "p95": 0.293
+          },
+          "prompt": "pagination 작업 이어서 해줘",
+          "retrieval_status": "found",
+          "returned_tokens": 352,
+          "selected_project": "cad1c8df-fa2b-453d-9e64-1e6ca1a64e1e",
+          "selection_reason": "local_match",
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "api-pagination",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              true,
+              true
+            ],
+            "next_steps": [
+              true,
+              true
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.289,
+            "p95": 0.298
+          },
+          "prompt": "Resume the API pagination implementation",
+          "retrieval_status": "found",
+          "returned_tokens": 353,
+          "selected_project": "cad1c8df-fa2b-453d-9e64-1e6ca1a64e1e",
+          "selection_reason": "local_match",
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "deployment-rollback",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              true,
+              true,
+              true
+            ],
+            "next_steps": [
+              true
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.413,
+            "p95": 0.423
+          },
+          "prompt": "배포 작업 계속해줘",
+          "retrieval_status": "found",
+          "returned_tokens": 341,
+          "selected_project": "c0aa2119-fd21-4d36-97d1-cae9b1720447",
+          "selection_reason": "single_supported_candidate",
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "deployment-rollback",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              true,
+              true,
+              true
+            ],
+            "next_steps": [
+              true
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.237,
+            "p95": 0.254
+          },
+          "prompt": "전에 합의한 롤백 방식으로 진행하자",
+          "retrieval_status": "found",
+          "returned_tokens": 346,
+          "selected_project": "c0aa2119-fd21-4d36-97d1-cae9b1720447",
+          "selection_reason": "cwd_project_context",
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "deployment-rollback",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              true,
+              true,
+              true
+            ],
+            "next_steps": [
+              true
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.288,
+            "p95": 0.298
+          },
+          "prompt": "Continue the Nova deployment rollout",
+          "retrieval_status": "found",
+          "returned_tokens": 338,
+          "selected_project": "c0aa2119-fd21-4d36-97d1-cae9b1720447",
+          "selection_reason": "local_match",
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "mobile-redesign",
+          "category_checks": {
+            "artifacts": [
+              false,
+              true
+            ],
+            "decisions": [
+              true,
+              true
+            ],
+            "next_steps": [
+              true
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.397,
+            "p95": 0.407
+          },
+          "prompt": "모바일 리디자인 계속하자",
+          "retrieval_status": "found",
+          "returned_tokens": 347,
+          "selected_project": "5c5a2b5d-5a55-4b1e-a854-f1188b77ae49",
+          "selection_reason": "single_supported_candidate",
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "mobile-redesign",
+          "category_checks": {
+            "artifacts": [
+              false,
+              true
+            ],
+            "decisions": [
+              true,
+              true
+            ],
+            "next_steps": [
+              true
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.235,
+            "p95": 0.243
+          },
+          "prompt": "전에 결정한 내비게이션으로 구현해줘",
+          "retrieval_status": "found",
+          "returned_tokens": 350,
+          "selected_project": "5c5a2b5d-5a55-4b1e-a854-f1188b77ae49",
+          "selection_reason": "cwd_project_context",
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "mobile-redesign",
+          "category_checks": {
+            "artifacts": [
+              false,
+              true
+            ],
+            "decisions": [
+              true,
+              true
+            ],
+            "next_steps": [
+              true
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.288,
+            "p95": 0.297
+          },
+          "prompt": "Resume the Orbit mobile redesign",
+          "retrieval_status": "found",
+          "returned_tokens": 341,
+          "selected_project": "5c5a2b5d-5a55-4b1e-a854-f1188b77ae49",
+          "selection_reason": "local_match",
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "data-migration-correction",
+          "category_checks": {
+            "artifacts": [
+              true
+            ],
+            "decisions": [
+              true
+            ],
+            "next_steps": [
+              true,
+              true
+            ]
+          },
+          "complete": true,
+          "cwd": "placeholder",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.377,
+            "p95": 0.389
+          },
+          "prompt": "데이터 마이그레이션 이어서 하자",
+          "retrieval_status": "found",
+          "returned_tokens": 340,
+          "selected_project": "45216ae4-f60b-487f-9e19-6c97a3dc28ee",
+          "selection_reason": "single_supported_candidate",
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "data-migration-correction",
+          "category_checks": {
+            "artifacts": [
+              true
+            ],
+            "decisions": [
+              true
+            ],
+            "next_steps": [
+              true,
+              true
+            ]
+          },
+          "complete": true,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.235,
+            "p95": 0.25
+          },
+          "prompt": "수정된 보존 기간 기준으로 계속해줘",
+          "retrieval_status": "found",
+          "returned_tokens": 339,
+          "selected_project": "45216ae4-f60b-487f-9e19-6c97a3dc28ee",
+          "selection_reason": "cwd_project_context",
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "data-migration-correction",
+          "category_checks": {
+            "artifacts": [
+              true
+            ],
+            "decisions": [
+              true
+            ],
+            "next_steps": [
+              true,
+              true
+            ]
+          },
+          "complete": true,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.287,
+            "p95": 0.296
+          },
+          "prompt": "Continue the corrected Ledger migration",
+          "retrieval_status": "found",
+          "returned_tokens": 333,
+          "selected_project": "45216ae4-f60b-487f-9e19-6c97a3dc28ee",
+          "selection_reason": "local_match",
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "installed-wheel-restart",
+          "category_checks": {
+            "artifacts": [
+              true
+            ],
+            "decisions": [
+              true,
+              true,
+              true
+            ],
+            "next_steps": [
+              true
+            ]
+          },
+          "complete": true,
+          "cwd": "placeholder",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.466,
+            "p95": 0.486
+          },
+          "prompt": "재시작 후 설치 검증 계속해줘",
+          "retrieval_status": "found",
+          "returned_tokens": 365,
+          "selected_project": "81392ee9-970d-4d26-8cda-8041b3bdaa51",
+          "selection_reason": "single_supported_candidate",
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "installed-wheel-restart",
+          "category_checks": {
+            "artifacts": [
+              true
+            ],
+            "decisions": [
+              true,
+              true,
+              true
+            ],
+            "next_steps": [
+              true
+            ]
+          },
+          "complete": true,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.302,
+            "p95": 0.326
+          },
+          "prompt": "installed wheel 테스트 다음 단계로 가자",
+          "retrieval_status": "found",
+          "returned_tokens": 364,
+          "selected_project": "81392ee9-970d-4d26-8cda-8041b3bdaa51",
+          "selection_reason": "local_match",
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "installed-wheel-restart",
+          "category_checks": {
+            "artifacts": [
+              true
+            ],
+            "decisions": [
+              true,
+              true,
+              true
+            ],
+            "next_steps": [
+              true
+            ]
+          },
+          "complete": true,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.299,
+            "p95": 0.317
+          },
+          "prompt": "Resume the installed-wheel restart journey",
+          "retrieval_status": "found",
+          "returned_tokens": 361,
+          "selected_project": "81392ee9-970d-4d26-8cda-8041b3bdaa51",
+          "selection_reason": "local_match",
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "multi-client-handoff",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              true,
+              true
+            ],
+            "next_steps": [
+              true,
+              true,
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.434,
+            "p95": 0.446
+          },
+          "prompt": "다른 클라이언트에서 하던 작업 계속하자",
+          "retrieval_status": "found",
+          "returned_tokens": 353,
+          "selected_project": "fe287a9a-01a6-44d6-841c-41340323a0d0",
+          "selection_reason": "single_supported_candidate",
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "multi-client-handoff",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              true,
+              true
+            ],
+            "next_steps": [
+              true,
+              true,
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.289,
+            "p95": 0.302
+          },
+          "prompt": "Relay handoff 다음 단계 진행해줘",
+          "retrieval_status": "found",
+          "returned_tokens": 344,
+          "selected_project": "fe287a9a-01a6-44d6-841c-41340323a0d0",
+          "selection_reason": "local_match",
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "multi-client-handoff",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              true,
+              true
+            ],
+            "next_steps": [
+              true,
+              true,
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.31,
+            "p95": 0.319
+          },
+          "prompt": "Continue the Relay work from the other client",
+          "retrieval_status": "found",
+          "returned_tokens": 344,
+          "selected_project": "fe287a9a-01a6-44d6-841c-41340323a0d0",
+          "selection_reason": "local_match",
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "scope-change",
+          "category_checks": {
+            "artifacts": [
+              false,
+              true
+            ],
+            "decisions": [
+              true
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.425,
+            "p95": 0.449
+          },
+          "prompt": "패키지를 옮겼는데 계속 작업해줘",
+          "retrieval_status": "found",
+          "returned_tokens": 341,
+          "selected_project": "b57c469d-2507-463f-adf3-60b1b1cd8cf1",
+          "selection_reason": "single_supported_candidate",
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "scope-change",
+          "category_checks": {
+            "artifacts": [
+              false,
+              false
+            ],
+            "decisions": [
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.416,
+            "p95": 0.433
+          },
+          "prompt": "scope 바뀐 뒤 다음 단계 진행하자",
+          "retrieval_status": "no_confident_match",
+          "returned_tokens": 131,
+          "selected_project": null,
+          "selection_reason": "ambiguous_candidates",
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "scope-change",
+          "category_checks": {
+            "artifacts": [
+              false,
+              true
+            ],
+            "decisions": [
+              true
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.424,
+            "p95": 0.438
+          },
+          "prompt": "Resume Meridian after the scope path changed",
+          "retrieval_status": "found",
+          "returned_tokens": 339,
+          "selected_project": "b57c469d-2507-463f-adf3-60b1b1cd8cf1",
+          "selection_reason": "single_confident_candidate",
+          "stale_leaks": [],
+          "wrong_project": false
+        }
+      ]
+    },
+    "llm-wiki-snapshot": {
+      "metrics": {
+        "artifact_recovery": 0.1111111111111111,
+        "continuation_recall": 0.0,
+        "decision_recovery": 0.3958333333333333,
+        "false_absence_rate": 0.5,
+        "latency_ms": {
+          "p50": 0.009,
+          "p95": 0.012
+        },
+        "next_step_recovery": 0.3055555555555556,
+        "returned_tokens": {
+          "max": 110,
+          "median": 57.5
+        },
+        "source_recovery": 0.0,
+        "stale_error_leakage": 0.0,
+        "total_llm_input_tokens": {
+          "max": 125,
+          "median": 71.0
+        },
+        "wrong_project_rate": 0.125
+      },
+      "prompts": [
+        {
+          "case": "blog-episode-four",
+          "category_checks": {
+            "artifacts": [
+              false,
+              false,
+              false
+            ],
+            "decisions": [
+              false,
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.009,
+            "p95": 0.02
+          },
+          "prompt": "블로그 4화를 이어서 작성하자",
+          "retrieval_status": "not_found",
+          "returned_tokens": 19,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "blog-episode-four",
+          "category_checks": {
+            "artifacts": [
+              false,
+              false,
+              false
+            ],
+            "decisions": [
+              false,
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.01,
+            "p95": 0.012
+          },
+          "prompt": "전에 쓰던 글 다음 편 계속해줘",
+          "retrieval_status": "not_found",
+          "returned_tokens": 19,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "blog-episode-four",
+          "category_checks": {
+            "artifacts": [
+              false,
+              false,
+              false
+            ],
+            "decisions": [
+              false,
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.009,
+            "p95": 0.012
+          },
+          "prompt": "Continue the fourth Context Memory blog post",
+          "retrieval_status": "found",
+          "returned_tokens": 102,
+          "selected_project": "atlas-api",
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": true
+        },
+        {
+          "case": "api-pagination",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              true,
+              true
+            ],
+            "next_steps": [
+              true,
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.01,
+            "p95": 0.011
+          },
+          "prompt": "아까 정한 API 방식으로 계속하자",
+          "retrieval_status": "found",
+          "returned_tokens": 102,
+          "selected_project": "atlas-api",
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "api-pagination",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              true,
+              true
+            ],
+            "next_steps": [
+              true,
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.009,
+            "p95": 0.012
+          },
+          "prompt": "pagination 작업 이어서 해줘",
+          "retrieval_status": "found",
+          "returned_tokens": 102,
+          "selected_project": "atlas-api",
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "api-pagination",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              true,
+              true
+            ],
+            "next_steps": [
+              true,
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.009,
+            "p95": 0.011
+          },
+          "prompt": "Resume the API pagination implementation",
+          "retrieval_status": "found",
+          "returned_tokens": 102,
+          "selected_project": "atlas-api",
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "deployment-rollback",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              false,
+              false,
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.009,
+            "p95": 0.01
+          },
+          "prompt": "배포 작업 계속해줘",
+          "retrieval_status": "not_found",
+          "returned_tokens": 19,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "deployment-rollback",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              false,
+              false,
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.011,
+            "p95": 0.013
+          },
+          "prompt": "전에 합의한 롤백 방식으로 진행하자",
+          "retrieval_status": "not_found",
+          "returned_tokens": 19,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "deployment-rollback",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              false,
+              false,
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.009,
+            "p95": 0.011
+          },
+          "prompt": "Continue the Nova deployment rollout",
+          "retrieval_status": "found",
+          "returned_tokens": 102,
+          "selected_project": "atlas-api",
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": true
+        },
+        {
+          "case": "mobile-redesign",
+          "category_checks": {
+            "artifacts": [
+              false,
+              false
+            ],
+            "decisions": [
+              false,
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.01,
+            "p95": 0.01
+          },
+          "prompt": "모바일 리디자인 계속하자",
+          "retrieval_status": "not_found",
+          "returned_tokens": 19,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "mobile-redesign",
+          "category_checks": {
+            "artifacts": [
+              false,
+              false
+            ],
+            "decisions": [
+              false,
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.011,
+            "p95": 0.012
+          },
+          "prompt": "전에 결정한 내비게이션으로 구현해줘",
+          "retrieval_status": "not_found",
+          "returned_tokens": 19,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "mobile-redesign",
+          "category_checks": {
+            "artifacts": [
+              false,
+              true
+            ],
+            "decisions": [
+              true,
+              true
+            ],
+            "next_steps": [
+              true
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.009,
+            "p95": 0.011
+          },
+          "prompt": "Resume the Orbit mobile redesign",
+          "retrieval_status": "found",
+          "returned_tokens": 97,
+          "selected_project": "orbit-mobile",
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "data-migration-correction",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              false
+            ],
+            "next_steps": [
+              false,
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.009,
+            "p95": 0.01
+          },
+          "prompt": "데이터 마이그레이션 이어서 하자",
+          "retrieval_status": "not_found",
+          "returned_tokens": 19,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "data-migration-correction",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              false
+            ],
+            "next_steps": [
+              false,
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.009,
+            "p95": 0.01
+          },
+          "prompt": "수정된 보존 기간 기준으로 계속해줘",
+          "retrieval_status": "not_found",
+          "returned_tokens": 19,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "data-migration-correction",
+          "category_checks": {
+            "artifacts": [
+              true
+            ],
+            "decisions": [
+              true
+            ],
+            "next_steps": [
+              false,
+              true
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.009,
+            "p95": 0.012
+          },
+          "prompt": "Continue the corrected Ledger migration",
+          "retrieval_status": "found",
+          "returned_tokens": 96,
+          "selected_project": "ledger-service",
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "installed-wheel-restart",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              false,
+              false,
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.01,
+            "p95": 0.011
+          },
+          "prompt": "재시작 후 설치 검증 계속해줘",
+          "retrieval_status": "not_found",
+          "returned_tokens": 19,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "installed-wheel-restart",
+          "category_checks": {
+            "artifacts": [
+              true
+            ],
+            "decisions": [
+              true,
+              true,
+              true
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.01,
+            "p95": 0.012
+          },
+          "prompt": "installed wheel 테스트 다음 단계로 가자",
+          "retrieval_status": "found",
+          "returned_tokens": 110,
+          "selected_project": "context-memory-cli",
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "installed-wheel-restart",
+          "category_checks": {
+            "artifacts": [
+              true
+            ],
+            "decisions": [
+              true,
+              true,
+              true
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.009,
+            "p95": 0.011
+          },
+          "prompt": "Resume the installed-wheel restart journey",
+          "retrieval_status": "found",
+          "returned_tokens": 110,
+          "selected_project": "context-memory-cli",
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "multi-client-handoff",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              false,
+              false
+            ],
+            "next_steps": [
+              false,
+              false,
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.009,
+            "p95": 0.01
+          },
+          "prompt": "다른 클라이언트에서 하던 작업 계속하자",
+          "retrieval_status": "not_found",
+          "returned_tokens": 19,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "multi-client-handoff",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              true,
+              true
+            ],
+            "next_steps": [
+              true,
+              true,
+              true
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.009,
+            "p95": 0.011
+          },
+          "prompt": "Relay handoff 다음 단계 진행해줘",
+          "retrieval_status": "found",
+          "returned_tokens": 97,
+          "selected_project": "relay-core",
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "multi-client-handoff",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              true,
+              true
+            ],
+            "next_steps": [
+              true,
+              true,
+              true
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.01,
+            "p95": 0.012
+          },
+          "prompt": "Continue the Relay work from the other client",
+          "retrieval_status": "found",
+          "returned_tokens": 97,
+          "selected_project": "relay-core",
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "scope-change",
+          "category_checks": {
+            "artifacts": [
+              false,
+              false
+            ],
+            "decisions": [
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.01,
+            "p95": 0.01
+          },
+          "prompt": "패키지를 옮겼는데 계속 작업해줘",
+          "retrieval_status": "not_found",
+          "returned_tokens": 19,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "scope-change",
+          "category_checks": {
+            "artifacts": [
+              false,
+              false
+            ],
+            "decisions": [
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.01,
+            "p95": 0.012
+          },
+          "prompt": "scope 바뀐 뒤 다음 단계 진행하자",
+          "retrieval_status": "not_found",
+          "returned_tokens": 19,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "scope-change",
+          "category_checks": {
+            "artifacts": [
+              false,
+              false
+            ],
+            "decisions": [
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.009,
+            "p95": 0.011
+          },
+          "prompt": "Resume Meridian after the scope path changed",
+          "retrieval_status": "found",
+          "returned_tokens": 110,
+          "selected_project": "context-memory-cli",
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": true
+        }
+      ]
+    },
+    "repository-only": {
+      "metrics": {
+        "artifact_recovery": 0.25,
+        "continuation_recall": 0.0,
+        "decision_recovery": 0.125,
+        "false_absence_rate": 0.625,
+        "latency_ms": {
+          "p50": 0.07,
+          "p95": 0.095
+        },
+        "next_step_recovery": 0.05555555555555555,
+        "returned_tokens": {
+          "max": 92,
+          "median": 51.5
+        },
+        "source_recovery": 0.0,
+        "stale_error_leakage": 0.041666666666666664,
+        "total_llm_input_tokens": {
+          "max": 104,
+          "median": 67.0
+        },
+        "wrong_project_rate": 0.0
+      },
+      "prompts": [
+        {
+          "case": "blog-episode-four",
+          "category_checks": {
+            "artifacts": [
+              false,
+              false,
+              false
+            ],
+            "decisions": [
+              false,
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.026,
+            "p95": 0.051
+          },
+          "prompt": "블로그 4화를 이어서 작성하자",
+          "retrieval_status": "not_found",
+          "returned_tokens": 51,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "blog-episode-four",
+          "category_checks": {
+            "artifacts": [
+              false,
+              false,
+              false
+            ],
+            "decisions": [
+              false,
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.024,
+            "p95": 0.03
+          },
+          "prompt": "전에 쓰던 글 다음 편 계속해줘",
+          "retrieval_status": "not_found",
+          "returned_tokens": 51,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "blog-episode-four",
+          "category_checks": {
+            "artifacts": [
+              false,
+              false,
+              false
+            ],
+            "decisions": [
+              false,
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.024,
+            "p95": 0.028
+          },
+          "prompt": "Continue the fourth Context Memory blog post",
+          "retrieval_status": "not_found",
+          "returned_tokens": 51,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "api-pagination",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              false,
+              false
+            ],
+            "next_steps": [
+              false,
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.024,
+            "p95": 0.026
+          },
+          "prompt": "아까 정한 API 방식으로 계속하자",
+          "retrieval_status": "not_found",
+          "returned_tokens": 51,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "api-pagination",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              false,
+              false
+            ],
+            "next_steps": [
+              false,
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.073,
+            "p95": 0.117
+          },
+          "prompt": "pagination 작업 이어서 해줘",
+          "retrieval_status": "not_found",
+          "returned_tokens": 52,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "api-pagination",
+          "category_checks": {
+            "artifacts": [
+              true
+            ],
+            "decisions": [
+              false,
+              false
+            ],
+            "next_steps": [
+              false,
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.071,
+            "p95": 0.082
+          },
+          "prompt": "Resume the API pagination implementation",
+          "retrieval_status": "found",
+          "returned_tokens": 91,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "deployment-rollback",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              false,
+              false,
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.024,
+            "p95": 0.029
+          },
+          "prompt": "배포 작업 계속해줘",
+          "retrieval_status": "not_found",
+          "returned_tokens": 51,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "deployment-rollback",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              false,
+              false,
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.072,
+            "p95": 0.086
+          },
+          "prompt": "전에 합의한 롤백 방식으로 진행하자",
+          "retrieval_status": "not_found",
+          "returned_tokens": 51,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "deployment-rollback",
+          "category_checks": {
+            "artifacts": [
+              true
+            ],
+            "decisions": [
+              false,
+              false,
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.071,
+            "p95": 0.079
+          },
+          "prompt": "Continue the Nova deployment rollout",
+          "retrieval_status": "found",
+          "returned_tokens": 85,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "mobile-redesign",
+          "category_checks": {
+            "artifacts": [
+              false,
+              false
+            ],
+            "decisions": [
+              false,
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.024,
+            "p95": 0.028
+          },
+          "prompt": "모바일 리디자인 계속하자",
+          "retrieval_status": "not_found",
+          "returned_tokens": 51,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "mobile-redesign",
+          "category_checks": {
+            "artifacts": [
+              false,
+              false
+            ],
+            "decisions": [
+              false,
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.073,
+            "p95": 0.087
+          },
+          "prompt": "전에 결정한 내비게이션으로 구현해줘",
+          "retrieval_status": "not_found",
+          "returned_tokens": 52,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "mobile-redesign",
+          "category_checks": {
+            "artifacts": [
+              true,
+              false
+            ],
+            "decisions": [
+              false,
+              true
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.071,
+            "p95": 0.08
+          },
+          "prompt": "Resume the Orbit mobile redesign",
+          "retrieval_status": "found",
+          "returned_tokens": 85,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "data-migration-correction",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              false
+            ],
+            "next_steps": [
+              false,
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.024,
+            "p95": 0.028
+          },
+          "prompt": "데이터 마이그레이션 이어서 하자",
+          "retrieval_status": "not_found",
+          "returned_tokens": 51,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "data-migration-correction",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              false
+            ],
+            "next_steps": [
+              false,
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.071,
+            "p95": 0.09
+          },
+          "prompt": "수정된 보존 기간 기준으로 계속해줘",
+          "retrieval_status": "not_found",
+          "returned_tokens": 53,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "data-migration-correction",
+          "category_checks": {
+            "artifacts": [
+              true
+            ],
+            "decisions": [
+              true
+            ],
+            "next_steps": [
+              false,
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.072,
+            "p95": 0.078
+          },
+          "prompt": "Continue the corrected Ledger migration",
+          "retrieval_status": "found",
+          "returned_tokens": 86,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "installed-wheel-restart",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              false,
+              false,
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.024,
+            "p95": 0.028
+          },
+          "prompt": "재시작 후 설치 검증 계속해줘",
+          "retrieval_status": "not_found",
+          "returned_tokens": 51,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "installed-wheel-restart",
+          "category_checks": {
+            "artifacts": [
+              true
+            ],
+            "decisions": [
+              false,
+              false,
+              false
+            ],
+            "next_steps": [
+              true
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.072,
+            "p95": 0.09
+          },
+          "prompt": "installed wheel 테스트 다음 단계로 가자",
+          "retrieval_status": "found",
+          "returned_tokens": 84,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "installed-wheel-restart",
+          "category_checks": {
+            "artifacts": [
+              true
+            ],
+            "decisions": [
+              false,
+              false,
+              false
+            ],
+            "next_steps": [
+              true
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.072,
+            "p95": 0.079
+          },
+          "prompt": "Resume the installed-wheel restart journey",
+          "retrieval_status": "found",
+          "returned_tokens": 84,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "multi-client-handoff",
+          "category_checks": {
+            "artifacts": [
+              false
+            ],
+            "decisions": [
+              false,
+              false
+            ],
+            "next_steps": [
+              false,
+              false,
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.024,
+            "p95": 0.029
+          },
+          "prompt": "다른 클라이언트에서 하던 작업 계속하자",
+          "retrieval_status": "not_found",
+          "returned_tokens": 51,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "multi-client-handoff",
+          "category_checks": {
+            "artifacts": [
+              true
+            ],
+            "decisions": [
+              true,
+              true
+            ],
+            "next_steps": [
+              false,
+              false,
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.071,
+            "p95": 0.086
+          },
+          "prompt": "Relay handoff 다음 단계 진행해줘",
+          "retrieval_status": "found",
+          "returned_tokens": 87,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "multi-client-handoff",
+          "category_checks": {
+            "artifacts": [
+              true
+            ],
+            "decisions": [
+              true,
+              true
+            ],
+            "next_steps": [
+              false,
+              false,
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.071,
+            "p95": 0.082
+          },
+          "prompt": "Continue the Relay work from the other client",
+          "retrieval_status": "found",
+          "returned_tokens": 87,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "scope-change",
+          "category_checks": {
+            "artifacts": [
+              false,
+              false
+            ],
+            "decisions": [
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "placeholder",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.024,
+            "p95": 0.029
+          },
+          "prompt": "패키지를 옮겼는데 계속 작업해줘",
+          "retrieval_status": "not_found",
+          "returned_tokens": 51,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "scope-change",
+          "category_checks": {
+            "artifacts": [
+              false,
+              false
+            ],
+            "decisions": [
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": true,
+          "latency_ms": {
+            "p50": 0.095,
+            "p95": 0.112
+          },
+          "prompt": "scope 바뀐 뒤 다음 단계 진행하자",
+          "retrieval_status": "not_found",
+          "returned_tokens": 50,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [],
+          "wrong_project": false
+        },
+        {
+          "case": "scope-change",
+          "category_checks": {
+            "artifacts": [
+              true,
+              false
+            ],
+            "decisions": [
+              false
+            ],
+            "next_steps": [
+              false
+            ]
+          },
+          "complete": false,
+          "cwd": "canonical",
+          "false_absence": false,
+          "latency_ms": {
+            "p50": 0.096,
+            "p95": 0.105
+          },
+          "prompt": "Resume Meridian after the scope path changed",
+          "retrieval_status": "found",
+          "returned_tokens": 92,
+          "selected_project": null,
+          "selection_reason": null,
+          "stale_leaks": [
+            "services/search"
+          ],
+          "wrong_project": false
+        }
+      ]
+    }
+  },
+  "schema_version": 1
+}

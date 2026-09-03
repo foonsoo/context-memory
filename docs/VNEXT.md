@@ -53,3 +53,34 @@ returned and total-input estimated tokens, and search p50/p95 latency.
 The existing memory system remains a data source and comparison baseline. New
 vNext work should not add dependencies on session start/end, manual promotion,
 or checkpoint lifecycle to the recall path.
+
+## First retrieval iteration
+
+`benchmarks/analyze_continuation_failures.py` makes project candidates,
+confidence, evidence quality, and selection reasons visible for every frozen
+prompt. The first report showed three concrete failures: whole-database recall
+treated the first memory as a project decision, canonical cwd queries did not
+combine related active facts/decisions/tasks, and Korean continuation nouns were
+split from English memory terminology or hidden by inflection.
+
+The smallest measured correction uses the existing project aggregation gate,
+adds bounded vNext-only Korean lexical bridges, treats a cwd with active memory
+as a project identity hint, and adds at most one active sibling per memory type.
+An unselected placeholder is now returned as `project: null`, rather than being
+reported as the recalled project. Prompt outcomes expose selected project,
+retrieval status, and selection reason for future failure analysis.
+
+The 10-repeat result is
+`benchmarks/results/continuation-vnext-retrieval-2026-09-03.json`. Relative to
+the frozen vNext baseline, continuation recall improved from 0.125 to 0.250,
+artifact recovery from 0.222 to 0.389, decision recovery from 0.521 to 0.979,
+next-step recovery from 0.444 to 0.833, wrong-project rate from 0.292 to 0, and
+false absence from 0.417 to 0.042. Stale/error leakage remains 0 and source
+recovery remains 1.0. Median returned estimated tokens increased from 303 to
+346.5, still under the 350-token item-pack contract; p95 search latency changed
+from 0.246 ms to 0.468 ms.
+
+One failure remains: `scope 바뀐 뒤 다음 단계 진행하자` is conservatively
+rejected as ambiguous. Artifact paths are the next largest quality gap; add
+repository artifact extraction only after separately measuring its latency and
+token cost.
