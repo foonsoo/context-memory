@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "contract_version": "continuation-eval/v1",
+  "cases": [
+    {
+      "id": "blog-episode-four",
+      "project": "context-memory-blog",
+      "canonical_path": "repos/context-memory",
+      "prompts": ["블로그 4화를 이어서 작성하자", "전에 쓰던 글 다음 편 계속해줘", "Continue the fourth Context Memory blog post"],
+      "repository_files": {
+        "docs/blog/01-why-ai-forgets.md": "1화: AI는 왜 어제 한 일을 잊을까. 일반 독자에게 실제 시행착오를 차분히 설명한다.",
+        "docs/blog/02-what-to-remember.md": "2화: 무엇을 기억해야 할까. 기술 용어보다 구체적인 경험을 먼저 쓴다.",
+        "docs/blog/03-how-to-find-context.md": "3화: 지금 필요한 기억을 어떻게 찾을까. 검색 누락 사례와 bounded context를 설명한다.",
+        "docs/blog/README.md": "총 6편 구성. 다음은 4화 기억을 쌓았더니 의사결정 문서가 되었다."
+      },
+      "wiki_pages": ["블로그는 총 6편이며 1~3화 원고는 docs/blog에 있다. 4화 주제는 기억을 쌓았더니 의사결정 문서가 되었다. 기존 문체는 실제 사례를 먼저 드는 일반 독자용 설명체다."],
+      "memories": [
+        {"key": "episodes", "title": "블로그 원고와 구성", "content": "1~3화 파일은 docs/blog/01-why-ai-forgets.md, 02-what-to-remember.md, 03-how-to-find-context.md에 있고 전체는 6편 구성이다.", "type": "fact", "status": "active"},
+        {"key": "style", "title": "블로그 문체", "content": "기존 문체는 실제 사례를 먼저 들고 기술 용어를 풀어 쓰는 일반 독자용 설명체다.", "type": "decision", "status": "active"},
+        {"key": "next", "title": "블로그 4화", "content": "다음 작업은 4화 '기억을 쌓았더니 의사결정 문서가 되었다'를 작성하는 것이다.", "type": "task", "status": "active"},
+        {"key": "wrong", "title": "원고 없음", "content": "블로그 1화부터 3화 원고가 없다.", "type": "fact", "status": "superseded"}
+      ],
+      "expected": {"artifacts": ["docs/blog/01-why-ai-forgets.md", "docs/blog/02-what-to-remember.md", "docs/blog/03-how-to-find-context.md"], "decisions": ["6편", "일반 독자"], "next_steps": ["기억을 쌓았더니 의사결정 문서가 되었다"], "forbidden": ["원고가 없다"]}
+    },
+    {
+      "id": "api-pagination",
+      "project": "atlas-api",
+      "canonical_path": "repos/atlas-api",
+      "prompts": ["아까 정한 API 방식으로 계속하자", "pagination 작업 이어서 해줘", "Resume the API pagination implementation"],
+      "repository_files": {"docs/api.md": "Atlas list API uses cursor pagination. Implementation lives in src/atlas/pagination.py."},
+      "wiki_pages": ["Atlas API pagination uses opaque cursors, keeps the public response contract, and next implements invalid-cursor tests in tests/test_pagination.py."],
+      "memories": [
+        {"key": "decision", "title": "Atlas pagination", "content": "Atlas 목록 API는 offset이 아니라 opaque cursor pagination을 사용하고 public response contract를 유지한다.", "type": "decision", "status": "active"},
+        {"key": "task", "title": "Pagination next step", "content": "다음은 tests/test_pagination.py에 invalid cursor 회귀 테스트를 추가한다.", "type": "task", "status": "active"}
+      ],
+      "expected": {"artifacts": ["src/atlas/pagination.py"], "decisions": ["opaque cursor", "public response contract"], "next_steps": ["tests/test_pagination.py", "invalid cursor"], "forbidden": ["offset pagination"]}
+    },
+    {
+      "id": "deployment-rollback",
+      "project": "nova-web",
+      "canonical_path": "repos/nova-web",
+      "prompts": ["배포 작업 계속해줘", "전에 합의한 롤백 방식으로 진행하자", "Continue the Nova deployment rollout"],
+      "repository_files": {"runbooks/deploy.md": "Nova canary deploy and rollback runbook. Verify staging health first."},
+      "wiki_pages": ["Nova deploy uses a 10 percent canary and automatic rollback above a 2 percent error rate. Run scripts/verify_staging.sh next."],
+      "memories": [
+        {"key": "decision", "title": "Nova rollout", "content": "Nova는 10 percent canary로 배포하고 error rate가 2 percent를 넘으면 automatic rollback한다.", "type": "decision", "status": "active"},
+        {"key": "task", "title": "Nova deploy next", "content": "다음은 scripts/verify_staging.sh를 실행해 staging health를 확인한다.", "type": "task", "status": "active"}
+      ],
+      "expected": {"artifacts": ["runbooks/deploy.md"], "decisions": ["10 percent canary", "2 percent", "automatic rollback"], "next_steps": ["scripts/verify_staging.sh"], "forbidden": ["full rollout immediately"]}
+    },
+    {
+      "id": "mobile-redesign",
+      "project": "orbit-mobile",
+      "canonical_path": "repos/orbit-mobile",
+      "prompts": ["모바일 리디자인 계속하자", "전에 결정한 내비게이션으로 구현해줘", "Resume the Orbit mobile redesign"],
+      "repository_files": {"design/navigation.md": "Orbit navigation spec: bottom tabs and a modal compose flow."},
+      "wiki_pages": ["Orbit chose four bottom tabs and modal compose. The next artifact is app/navigation/RootNavigator.tsx with accessibility labels."],
+      "memories": [
+        {"key": "decision", "title": "Orbit navigation", "content": "Orbit 모바일은 four bottom tabs와 modal compose flow를 사용한다.", "type": "decision", "status": "active"},
+        {"key": "task", "title": "Orbit navigation next", "content": "다음은 app/navigation/RootNavigator.tsx를 구현하고 accessibility labels를 추가한다.", "type": "task", "status": "active"}
+      ],
+      "expected": {"artifacts": ["design/navigation.md", "app/navigation/RootNavigator.tsx"], "decisions": ["four bottom tabs", "modal compose"], "next_steps": ["accessibility labels"], "forbidden": ["drawer navigation"]}
+    },
+    {
+      "id": "data-migration-correction",
+      "project": "ledger-service",
+      "canonical_path": "repos/ledger-service",
+      "prompts": ["데이터 마이그레이션 이어서 하자", "수정된 보존 기간 기준으로 계속해줘", "Continue the corrected Ledger migration"],
+      "repository_files": {"migrations/042_retention.sql": "Ledger migration 042 changes retention to ninety days."},
+      "wiki_pages": ["Ledger retention is ninety days; the old thirty-day plan was corrected. Dry-run migrations/042_retention.sql next."],
+      "memories": [
+        {"key": "old", "title": "Old retention", "content": "Ledger audit retention is thirty days.", "type": "decision", "status": "superseded"},
+        {"key": "current", "title": "Corrected retention", "content": "Correction: Ledger audit retention is ninety days.", "type": "decision", "status": "active"},
+        {"key": "task", "title": "Migration next", "content": "다음은 migrations/042_retention.sql을 staging snapshot에서 dry-run한다.", "type": "task", "status": "active"}
+      ],
+      "expected": {"artifacts": ["migrations/042_retention.sql"], "decisions": ["ninety days"], "next_steps": ["staging snapshot", "dry-run"], "forbidden": ["thirty days"]}
+    },
+    {
+      "id": "installed-wheel-restart",
+      "project": "context-memory-cli",
+      "canonical_path": "repos/context-memory-cli",
+      "prompts": ["재시작 후 설치 검증 계속해줘", "installed wheel 테스트 다음 단계로 가자", "Resume the installed-wheel restart journey"],
+      "repository_files": {"tests/installed_e2e.py": "Black-box installed wheel restart journey."},
+      "wiki_pages": ["The installed-wheel journey uses a fresh venv and persistent database, then verifies correction/source recovery after restart. Next run tests/installed_e2e.py."],
+      "memories": [
+        {"key": "decision", "title": "Installed journey contract", "content": "Installed-wheel 검증은 fresh venv와 persistent database를 사용하고 restart 뒤 correction과 source recovery를 확인한다.", "type": "decision", "status": "active"},
+        {"key": "task", "title": "Installed journey next", "content": "다음은 tests/installed_e2e.py를 black-box로 실행한다.", "type": "task", "status": "active"}
+      ],
+      "expected": {"artifacts": ["tests/installed_e2e.py"], "decisions": ["fresh venv", "persistent database", "source recovery"], "next_steps": ["black-box"], "forbidden": ["in-process only"]}
+    },
+    {
+      "id": "multi-client-handoff",
+      "project": "relay-core",
+      "canonical_path": "repos/relay-core",
+      "prompts": ["다른 클라이언트에서 하던 작업 계속하자", "Relay handoff 다음 단계 진행해줘", "Continue the Relay work from the other client"],
+      "repository_files": {"docs/client-contract.md": "Relay handoff contract is client-neutral and session-independent."},
+      "wiki_pages": ["Relay state is project-scoped, client-neutral, and session-independent. Next verify Codex and Claude return the same handoff."],
+      "memories": [
+        {"key": "decision", "title": "Relay client contract", "content": "Relay handoff는 project-scoped, client-neutral, session-independent여야 한다.", "type": "decision", "status": "active"},
+        {"key": "task", "title": "Relay client next", "content": "다음은 Codex와 Claude client에서 같은 handoff가 반환되는지 검증한다.", "type": "task", "status": "active"}
+      ],
+      "expected": {"artifacts": ["docs/client-contract.md"], "decisions": ["client-neutral", "session-independent"], "next_steps": ["Codex", "Claude", "same handoff"], "forbidden": ["current session only"]}
+    },
+    {
+      "id": "scope-change",
+      "project": "meridian-monorepo",
+      "canonical_path": "repos/meridian",
+      "prompts": ["패키지를 옮겼는데 계속 작업해줘", "scope 바뀐 뒤 다음 단계 진행하자", "Resume Meridian after the scope path changed"],
+      "repository_files": {"packages/search/README.md": "Search package moved from services/search. The canonical module is packages/search."},
+      "wiki_pages": ["Meridian search moved to packages/search; services/search is stale. Next update packages/search/tests/test_index.py."],
+      "memories": [
+        {"key": "old", "title": "Old search path", "content": "Search module is services/search.", "type": "fact", "status": "superseded"},
+        {"key": "current", "title": "Current search path", "content": "Search module moved to packages/search and this is the canonical scope path.", "type": "fact", "status": "active"},
+        {"key": "task", "title": "Search scope next", "content": "다음은 packages/search/tests/test_index.py를 업데이트한다.", "type": "task", "status": "active"}
+      ],
+      "expected": {"artifacts": ["packages/search/README.md", "packages/search/tests/test_index.py"], "decisions": ["canonical scope path"], "next_steps": ["update"], "forbidden": ["services/search"]}
+    }
+  ]
+}

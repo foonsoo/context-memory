@@ -34,6 +34,22 @@ false absence, stale/error leakage, source recovery, returned tokens, and p50/p9
 latency. Token optimization is accepted only when recall and false-absence do not
 regress.
 
+The frozen first bakeoff is `benchmarks/fixtures/continuation-scenarios-v1.json`:
+24 Korean and English continuation phrasings across eight work cases. Run it with
+`python benchmarks/run_continuation_evaluation.py --repeats 5`. It compares a
+repository-only search, the legacy Context Memory context pack, a deterministic
+exported-page proxy named `llm-wiki-snapshot`, and Context Recall vNext. The proxy
+is deliberately labelled as such; a live LLM Wiki export can replace its adapter
+without changing the fixture or metrics.
+
+The first phrasing in every case starts from an empty placeholder directory.
+All three blog-four phrasings do, making canonical path recovery part of the
+acceptance case. Later phrasings use the canonical checkout so the same run also
+measures the ordinary repository baseline. The report includes artifact,
+decision, and next-step recovery separately, total continuation recall,
+wrong-project and false-absence rates, stale/error leakage, source recovery,
+returned and total-input estimated tokens, and search p50/p95 latency.
+
 The existing memory system remains a data source and comparison baseline. New
 vNext work should not add dependencies on session start/end, manual promotion,
 or checkpoint lifecycle to the recall path.
