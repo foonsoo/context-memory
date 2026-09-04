@@ -84,3 +84,30 @@ One failure remains: `scope 바뀐 뒤 다음 단계 진행하자` is conservati
 rejected as ambiguous. Artifact paths are the next largest quality gap; add
 repository artifact extraction only after separately measuring its latency and
 token cost.
+
+## Path identity and artifact normalization
+
+The remaining scope failure exposed a resolver defect rather than a retrieval
+threshold problem. Registered path aliases were used as discovery priors but
+not as exact inputs to `resolve_project`. On macOS temporary paths, `/var` and
+`/private/var` normalization made that visible; project-name fallback hid it
+when the checkout basename happened to equal the project name. Exact normalized
+path aliases now resolve the registered project and create its workspace scope
+before name fallback.
+
+Artifact failure classification found that six missing blog checks already had
+enough evidence in one memory: the first file used a full directory while the
+next two filenames elided it. vNext now normalizes those explicit path lists
+inside the selected memory and charges the added strings to the estimated-token
+budget. It does not scan repository files. The remaining artifact misses exist
+only in repository content and remain evidence for a separately bounded,
+measured repository adapter rather than justification for adding one implicitly.
+
+The follow-up 10-repeat result is
+`benchmarks/results/continuation-vnext-paths-2026-09-04.json`. Compared with the
+previous iteration, continuation recall improved from 0.250 to 0.375, artifact
+recovery from 0.389 to 0.583, decision recovery from 0.979 to 1.0, and false
+absence from 0.042 to 0. Wrong-project rate and stale/error leakage remain 0;
+source recovery remains 1.0. All three empty-cwd blog prompts now recover the
+three prior files, six-part structure, intended style, episode-four topic, and
+canonical repository path.

@@ -3,7 +3,11 @@ import unittest
 from pathlib import Path
 
 from context_memory.mcp import CORE_TOOL_NAMES, MCPServer, TOOL_BY_NAME
-from context_memory.recall import _expand_recall_query, estimate_tokens
+from context_memory.recall import (
+    _artifact_paths,
+    _expand_recall_query,
+    estimate_tokens,
+)
 from context_memory.store import MemoryStore
 
 
@@ -37,6 +41,19 @@ class RecallTests(unittest.TestCase):
         self.assertIn(
             "client",
             _expand_recall_query("다른 클라이언트에서 하던 작업 계속하자"),
+        )
+
+    def test_artifact_paths_expand_directory_elided_filenames(self):
+        paths = _artifact_paths(
+            "Files: docs/blog/01-first.md, 02-second.md, 03-third.md"
+        )
+        self.assertEqual(
+            paths,
+            [
+                "docs/blog/01-first.md",
+                "docs/blog/02-second.md",
+                "docs/blog/03-third.md",
+            ],
         )
 
     def test_recall_is_session_independent_and_token_bounded(self):

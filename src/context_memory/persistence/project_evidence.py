@@ -655,6 +655,29 @@ class ProjectEvidenceRepository:
             scope_id = item.pop("scope_id")
             self._register_project_identities(item["id"], identities)
             return {"project": item, "scope_id": scope_id, "created": False}
+        path_matches = list(
+            self.store.conn.execute(
+                "SELECT DISTINCT project_id FROM project_aliases WHERE "
+                "kind='path' AND normalized=?",
+                (path,),
+            )
+        )
+        if len(path_matches) == 1:
+            project = self.store._row(
+                "SELECT * FROM projects WHERE id=?",
+                (path_matches[0]["project_id"],),
+            )
+            path_digest = hashlib.sha256(path.encode()).hexdigest()[:12]
+            scope = self.create_scope(
+                project["id"], f"__workspace__:{path_digest}", path
+            )
+            self._register_project_identities(project["id"], identities)
+            return {
+                "project": project,
+                "scope_id": scope["id"],
+                "created": False,
+                "matched_by": "path",
+            }
         # A repository name resolves ownership only when it identifies
         # one project.
         # Ambiguous names remain separate and are handled by retrieval

@@ -10,6 +10,9 @@ from typing import Any
 
 _CJK = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]")
 _WORDS = re.compile(r"[\w-]+", flags=re.UNICODE)
+_FILE_PATHS = re.compile(
+    r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*\.[A-Za-z0-9]+"
+)
 
 # Inspectable lexical bridges for common Korean continuation nouns. They
 # compensate for unicode61's lack of Korean stemming and for memories that
@@ -80,6 +83,22 @@ def _project_name_terms(value: str) -> set[str]:
         for term in re.findall(r"[\w]+", value.casefold(), flags=re.UNICODE)
         if len(term) > 2
     }
+
+
+def _artifact_paths(value: str) -> list[str]:
+    """Recover explicit and directory-elided file paths from memory text."""
+    paths: list[str] = []
+    directory = ""
+    for match in _FILE_PATHS.findall(value):
+        cleaned = match.rstrip(".,")
+        if "/" in cleaned:
+            directory = cleaned.rsplit("/", 1)[0]
+            paths.append(cleaned)
+        elif directory:
+            paths.append(f"{directory}/{cleaned}")
+        else:
+            paths.append(cleaned)
+    return list(dict.fromkeys(paths))
 
 
 class RecallAssembler:
@@ -230,7 +249,14 @@ class RecallAssembler:
                     source["id"] for source in candidate["sources"]
                 ],
             }
-            cost = estimate_tokens(text) + 12
+            artifacts = _artifact_paths(
+                f"{candidate['title']} {candidate['content']}"
+            )
+            if artifacts:
+                item["artifacts"] = artifacts
+            cost = estimate_tokens(text) + 12 + estimate_tokens(
+                " ".join(artifacts)
+            )
             if used + cost > budget:
                 continue
             pack.append(item)

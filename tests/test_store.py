@@ -967,6 +967,20 @@ class StoreTests(unittest.TestCase):
         aliases = self.store.list_project_aliases(first["project"]["id"])
         self.assertEqual(len([alias for alias in aliases if alias["kind"] == "path"]), 2)
 
+    def test_project_identity_resolves_registered_path_when_name_differs(self):
+        workspace = Path(self.temp.name) / "checkout" / "short-name"
+        workspace.mkdir(parents=True)
+        project = self.store.create_project(
+            "long-project-name", "long-project-name"
+        )
+        self.store.set_project_alias(project["id"], "path", str(workspace))
+
+        resolved = self.store.resolve_project(str(workspace))
+
+        self.assertEqual(resolved["project"]["id"], project["id"])
+        self.assertEqual(resolved["matched_by"], "path")
+        self.assertFalse(resolved["created"])
+
     def test_context_falls_back_to_cross_project_and_always_merges_global(self):
         official = self.store.create_project("official")
         empty = self.store.create_project("empty")

@@ -28,7 +28,7 @@ class ContinuationEvaluationTests(unittest.TestCase):
             "continuation_recall", "artifact_recovery", "decision_recovery",
             "next_step_recovery", "wrong_project_rate", "false_absence_rate",
             "stale_error_leakage", "source_recovery", "returned_tokens",
-            "total_llm_input_tokens", "latency_ms",
+            "reported_pack_tokens", "total_llm_input_tokens", "latency_ms",
         }
         for mode in result["modes"].values():
             self.assertEqual(set(mode["metrics"]), required)
@@ -38,6 +38,7 @@ class ContinuationEvaluationTests(unittest.TestCase):
         self.assertEqual(vnext["stale_error_leakage"], 0.0)
         # The 350-token vNext item budget excludes the fixed JSON envelope.
         self.assertLessEqual(vnext["returned_tokens"]["max"], 512)
+        self.assertLessEqual(vnext["reported_pack_tokens"]["max"], 350)
 
     def test_fixture_rejects_too_few_prompts(self):
         fixture = load_fixture()

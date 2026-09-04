@@ -189,6 +189,7 @@ def run(repeats: int = 5, fixture_path: str | Path = DEFAULT_FIXTURE) -> dict[st
             full_recalls = wrong_projects = false_absences = stale_leaks = 0
             sources_expected = sources_recovered = 0
             returned_tokens: list[int] = []
+            reported_pack_tokens: list[int] = []
             total_input_tokens: list[int] = []
             for case in fixture["cases"]:
                 target = seeded[case["id"]]
@@ -236,6 +237,14 @@ def run(repeats: int = 5, fixture_path: str | Path = DEFAULT_FIXTURE) -> dict[st
                         sources_recovered += int(valid)
                     tokens = estimate_tokens(rendered)
                     returned_tokens.append(tokens)
+                    reported_budget = result.get("budget")
+                    pack_used = (
+                        reported_budget.get("used")
+                        if isinstance(reported_budget, dict)
+                        else None
+                    )
+                    if isinstance(pack_used, int):
+                        reported_pack_tokens.append(pack_used)
                     total_input_tokens.append(tokens + estimate_tokens(prompt))
                     outcomes.append({
                         "case": case["id"], "prompt": prompt, "cwd": "placeholder" if cwd == placeholder else "canonical",
@@ -258,6 +267,10 @@ def run(repeats: int = 5, fixture_path: str | Path = DEFAULT_FIXTURE) -> dict[st
                     "stale_error_leakage": stale_leaks / sum(len(case["expected"]["forbidden"]) * len(case["prompts"]) for case in fixture["cases"]),
                     "source_recovery": sources_recovered / sources_expected if sources_expected else 1.0,
                     "returned_tokens": {"median": statistics.median(returned_tokens), "max": max(returned_tokens)},
+                    "reported_pack_tokens": (
+                        {"median": statistics.median(reported_pack_tokens), "max": max(reported_pack_tokens)}
+                        if reported_pack_tokens else None
+                    ),
                     "total_llm_input_tokens": {"median": statistics.median(total_input_tokens), "max": max(total_input_tokens)},
                     "latency_ms": {"p50": round(statistics.median(latencies), 3), "p95": round(percentile(latencies, .95), 3)},
                 },

@@ -52,6 +52,9 @@ def analyze() -> list[dict[str, object]]:
                         "case": case["id"],
                         "prompt": prompt,
                         "cwd": "placeholder" if cwd == placeholder else "canonical",
+                        "origin_project": store._row(
+                            "SELECT name FROM projects WHERE id=?", (origin_id,)
+                        )["name"],
                         "expected_project": target["project"]["name"],
                         "retrieval_gate": {
                             "status": gate["status"],
