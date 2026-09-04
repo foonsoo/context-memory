@@ -3,6 +3,9 @@
 Context Memory `0.6.2` was published to PyPI through the trusted-publishing
 workflow on 2026-08-25. The same workflow artifact passed reproducible-build,
 installed-wheel, TestPyPI, production PyPI, and post-publication `uvx` gates.
+The installed-wheel journey also exercises the session-independent
+`context_recall` MCP tool after a server restart, so release artifacts must ship
+the continuation-recall surface and its persisted-state behavior together.
 
 ## Versioning and compatibility
 

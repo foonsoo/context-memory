@@ -289,6 +289,27 @@ def main() -> None:
                 item["memory_id"] for item in resumed["context"]["items"]
             }:
                 raise AssertionError("approved memory was not retrieved")
+            recalled = request(
+                second,
+                140,
+                "tools/call",
+                {
+                    "name": "context_recall",
+                    "arguments": {
+                        "cwd": str(workspace),
+                        "query": "Continue the release channel work",
+                    },
+                },
+            )["structuredContent"]["result"]
+            if recalled["project"]["id"] != resolved["project"]["id"]:
+                raise AssertionError("context recall selected the wrong project")
+            if recalled["repository_path"] != str(workspace.resolve()):
+                raise AssertionError("context recall lost the repository path")
+            if not any(
+                memory["id"] == item.get("memory_id")
+                for item in recalled["items"]
+            ):
+                raise AssertionError("context recall missed the active decision")
             correction = request(
                 second,
                 14,

@@ -2,7 +2,7 @@
 
 A small, client-neutral context memory server for any MCP agent, including Claude Code, Craft Agents, Codex, Cursor, VS Code, and local-model clients. It keeps immutable evidence separate from derived memories and the FTS search projection, so a generated summary never becomes the only source of truth.
 
-For the lowest startup overhead, call `context_bootstrap` once with the workspace, focused query, client identity, and `response_format=compact`. The older `project_resolve` → `session_start` → `get_context` sequence and legacy context response remain supported. `serve` exposes the working `core` tool profile by default; use `--tool-profile admin` for maintenance-only clients or `--tool-profile all` for the historical complete catalog.
+For the lowest startup overhead, call `context_bootstrap` once with the workspace, focused query, client identity, and `response_format=compact`. For a small read-only continuation pack before a session exists, call `context_recall(cwd, query)`; it can recover the canonical project, repository path, current work, and source event IDs within a bounded estimated-token budget. The older `project_resolve` → `session_start` → `get_context` sequence and legacy context response remain supported. `serve` exposes the working `core` tool profile by default; use `--tool-profile admin` for maintenance-only clients or `--tool-profile all` for the historical complete catalog.
 
 This MVP is usable now: Python 3.11+ (Python 3.14 recommended), SQLite with WAL/FTS5, zero runtime dependencies, stdio MCP, local HTTP MCP, migrations, lifecycle hooks, and a standard-library test suite.
 
@@ -29,11 +29,28 @@ developing or testing unreleased changes; see
 
 Restart each registered client. At the beginning of **every new task/session**, the agent should perform this client-neutral sequence:
 
-1. `project_resolve(cwd)` with the current workspace. The path is a preferred identity hint; an unambiguous registered project name can resolve another workspace path to the same project.
-2. `session_start` with the returned project/scope, actual client name, and task/session ID when available.
-3. `get_context` using the current request as a focused query and a 4,000–8,000 character budget. If the selected project has no matching project memory, retrieval searches memory candidates across the shared database and aggregates normalized relevance, project-identity priors, recent activity, and the latest checkpoint by project; global memories are always merged. A sufficiently strong and separated candidate is selected automatically. For low-confidence or ambiguous results, inspect `project_discovery.candidates` and ask the user which project they mean.
-4. During work, preserve durable evidence with `record_event`; derive sourced knowledge with `memory_upsert`.
-5. Before finishing, record reusable verified results and call `session_end`.
+1. Call `context_bootstrap` once with `cwd`, the current request as `query`, a 4,000–8,000 character budget, `response_format=compact`, the actual client name, and the task/session ID when available. The path is an identity hint: bounded retrieval can select another canonical checkout when the evidence is unambiguous.
+2. Inspect consequential source event IDs with `get_source` before relying on them. Treat disputed memories as warnings and ask when project discovery is ambiguous.
+3. During work, preserve durable evidence with `record_event`; derive sourced knowledge with `memory_upsert`.
+4. Before finishing, record reusable verified results and call `session_end`.
+
+For a lightweight continuation lookup that must not create or resume a session,
+use `context_recall` instead:
+
+```json
+{
+  "cwd": "/current/workspace",
+  "query": "다음 작업 진행해줘",
+  "token_budget": 350,
+  "max_items": 6
+}
+```
+
+Its result is deliberately smaller than `get_context`: it returns the selected
+project and repository path, a few action-oriented items, and source event IDs
+for inspection. It does not promote memories, start a session, or return source
+bodies. The token estimate is deterministic and conservative; use `get_source`
+only for evidence that materially affects the work.
 
 Copy the appropriate instruction template into the consumer project: [`AGENTS.md`](AGENTS.md) or [`examples/AGENTS.md`](examples/AGENTS.md), [`examples/CLAUDE.md`](examples/CLAUDE.md), or [`examples/cursor-context-memory.mdc`](examples/cursor-context-memory.mdc). Generic clients can use [`examples/mcp.json`](examples/mcp.json). Hooks are optional convenience automation; the lifecycle above remains the correctness contract.
 

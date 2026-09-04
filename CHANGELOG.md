@@ -5,6 +5,23 @@ uses semantic versioning for the public Python package and MCP/CLI contracts.
 
 ## Unreleased
 
+### Added
+
+- A session-independent, estimated-token-bounded `context_recall` MCP tool for
+  recovering the canonical project, repository artifacts, current decisions,
+  and next actions from natural-language continuation requests.
+- Frozen continuation, large-repository, and provenance-bearing retrospective
+  replay evaluations covering Korean and English prompts, conservative project
+  selection, source recovery, stale-content leakage, and traversal bounds.
+
+### Changed
+
+- Context recall can use bounded recent promotable events when active memories
+  are unavailable, and prefers an event's explicit canonical repository path
+  over a placeholder workspace alias.
+- The installed-wheel release journey now verifies `context_recall` through the
+  shipped MCP server after a process restart.
+
 ## [0.6.2] - 2026-08-25
 
 ### Added
