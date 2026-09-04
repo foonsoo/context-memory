@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from context_memory.mcp import CORE_TOOL_NAMES, MCPServer, TOOL_BY_NAME
 from context_memory.recall import (
@@ -77,6 +78,28 @@ class RecallTests(unittest.TestCase):
             artifacts, ["docs/api.md", "src/atlas/pagination.py"]
         )
 
+    def test_repository_enumeration_stops_at_entry_budget(self):
+        root = Path(self.temp.name) / "large-repo"
+        root.mkdir()
+        for index in range(20):
+            (root / f"artifact-{index}.md").write_text(
+                "matching continuation artifact", encoding="utf-8"
+            )
+        reads = 0
+        original = Path.read_text
+
+        def counted_read(path, *args, **kwargs):
+            nonlocal reads
+            reads += 1
+            return original(path, *args, **kwargs)
+
+        with mock.patch.object(Path, "read_text", counted_read):
+            _repository_artifacts(
+                str(root), "matching", "continuation", max_entries=5
+            )
+
+        self.assertLessEqual(reads, 5)
+
     def test_cross_language_glosses_are_deterministic_and_bounded(self):
         self.assertEqual(
             _cross_language_glosses(
@@ -149,6 +172,75 @@ class RecallTests(unittest.TestCase):
         self.assertEqual(
             result["retrieval"]["selection_reason"], "cwd_project_context"
         )
+
+    def test_recall_uses_recent_raw_events_without_active_memory(self):
+        resolved = self.store.resolve_project(self.temp.name)
+        event = self.store.record_event(
+            resolved["project"]["id"],
+            "task",
+            "Continue the Atlas rollout from runbooks/atlas.md",
+            scope_id=resolved["scope_id"],
+            metadata={"repository_path": self.temp.name},
+        )
+
+        result = self.store.context_recall(
+            self.temp.name, "continue the Atlas rollout", 128
+        )
+
+        self.assertEqual(result["project"]["id"], resolved["project"]["id"])
+        self.assertEqual(
+            result["repository_path"], str(Path(self.temp.name).resolve())
+        )
+        self.assertEqual(result["items"][0]["source_event_ids"], [event["id"]])
+        self.assertNotIn("memory_id", result["items"][0])
+        self.assertEqual(
+            result["retrieval"]["selection_reason"], "cwd_recent_events"
+        )
+
+    def test_recall_discovers_unambiguous_raw_event_from_unknown_cwd(self):
+        target_root = Path(self.temp.name) / "atlas-service"
+        target_root.mkdir()
+        target = self.store.resolve_project(str(target_root))
+        event = self.store.record_event(
+            target["project"]["id"],
+            "task",
+            "Atlas rollout continues with the canary verification",
+            scope_id=target["scope_id"],
+        )
+        unknown = tempfile.TemporaryDirectory()
+        self.addCleanup(unknown.cleanup)
+
+        result = self.store.context_recall(
+            unknown.name, "continue the Atlas canary", 128
+        )
+
+        self.assertEqual(result["project"]["id"], target["project"]["id"])
+        self.assertEqual(result["items"][0]["source_event_ids"], [event["id"]])
+        self.assertEqual(
+            result["retrieval"]["selection_reason"],
+            "unambiguous_recent_events",
+        )
+
+    def test_recall_rejects_ambiguous_cross_project_raw_events(self):
+        for name in ("first", "second"):
+            root = Path(self.temp.name) / name
+            root.mkdir()
+            resolved = self.store.resolve_project(str(root))
+            self.store.record_event(
+                resolved["project"]["id"],
+                "task",
+                "Continue the shared canary verification",
+                scope_id=resolved["scope_id"],
+            )
+        unknown = tempfile.TemporaryDirectory()
+        self.addCleanup(unknown.cleanup)
+
+        result = self.store.context_recall(
+            unknown.name, "continue the shared canary verification", 128
+        )
+
+        self.assertIsNone(result["project"])
+        self.assertEqual(result["items"], [])
 
     def test_recall_adds_repository_artifacts_within_token_budget(self):
         project = self.store.resolve_project(self.temp.name)["project"]

@@ -147,3 +147,18 @@ prompts now fully recover artifacts, decisions, and next steps: continuation,
 artifact, decision, next-step, and source recovery are 1.000. Wrong-project,
 false-absence, and stale/error leakage rates remain zero. Median returned tokens
 are 376, the maximum remains 512, and p95 search latency is 0.603 ms.
+
+## Production-readiness hardening
+
+Repository artifact discovery now bounds enumeration as well as file reads and
+bytes. A lazy, non-symlink directory walk stops after 512 directory entries, 128
+eligible text files, or 256 KiB. This avoids constructing a complete repository
+path list before the existing limits take effect. Large-repository relevance and
+latency remain a separate held-out evaluation requirement.
+
+When no active memory can identify a project, recall may use recent promotable
+raw events without creating a session. The current cwd's bounded event tail is
+an identity fallback. If that tail is empty, a bounded whole-database event
+window may select exactly one lexically supported project; tied project evidence
+is rejected as ambiguous. Returned raw-event items expose source event IDs and
+omit `memory_id`, preserving the distinction from reviewed active memory.

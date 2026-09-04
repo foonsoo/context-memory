@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import json
 import math
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from .contracts import PROMOTABLE_EVENT_KINDS
 
 
 _CJK = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]")
@@ -150,6 +154,7 @@ def _repository_artifacts(
     limit: int = 3,
     max_files: int = 128,
     max_bytes: int = 256 * 1024,
+    max_entries: int = 512,
 ) -> list[str]:
     """Find a few relevant artifact paths within a bounded repository scan."""
     root = Path(repository_path)
@@ -157,33 +162,54 @@ def _repository_artifacts(
         return []
     terms = _terms(f"{query} {context}")
     ranked: list[tuple[int, str]] = []
-    inspected = total_bytes = 0
-    for path in sorted(root.rglob("*")):
-        if inspected >= max_files or total_bytes >= max_bytes:
-            break
-        if not path.is_file() or path.is_symlink():
-            continue
-        relative_path = path.relative_to(root)
-        if any(part.startswith(".") for part in relative_path.parts):
-            continue
-        if path.suffix.casefold() not in _REPOSITORY_TEXT_SUFFIXES:
-            continue
-        inspected += 1
+    inspected = total_bytes = enumerated = 0
+    pending = [root]
+    while pending and inspected < max_files and total_bytes < max_bytes:
+        directory = pending.pop()
         try:
-            size = path.stat().st_size
-            if size > max_bytes - total_bytes:
-                continue
-            content = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeError):
+            entries = os.scandir(directory)
+        except OSError:
             continue
-        total_bytes += size
-        relative = relative_path.as_posix()
-        overlap = len(terms & _terms(f"{relative} {content}"))
-        if overlap:
-            ranked.append((overlap, relative))
-            ranked.extend(
-                (overlap, artifact) for artifact in _artifact_paths(content)
-            )
+        with entries:
+            for entry in entries:
+                enumerated += 1
+                if enumerated > max_entries:
+                    pending.clear()
+                    break
+                if entry.name.startswith(".") or entry.is_symlink():
+                    continue
+                try:
+                    if entry.is_dir(follow_symlinks=False):
+                        pending.append(Path(entry.path))
+                        continue
+                    if not entry.is_file(follow_symlinks=False):
+                        continue
+                except OSError:
+                    continue
+                path = Path(entry.path)
+                if path.suffix.casefold() not in _REPOSITORY_TEXT_SUFFIXES:
+                    continue
+                if inspected >= max_files or total_bytes >= max_bytes:
+                    pending.clear()
+                    break
+                inspected += 1
+                relative_path = path.relative_to(root)
+                try:
+                    size = entry.stat(follow_symlinks=False).st_size
+                    if size > max_bytes - total_bytes:
+                        continue
+                    content = path.read_text(encoding="utf-8")
+                except (OSError, UnicodeError):
+                    continue
+                total_bytes += size
+                relative = relative_path.as_posix()
+                overlap = len(terms & _terms(f"{relative} {content}"))
+                if overlap:
+                    ranked.append((overlap, relative))
+                    ranked.extend(
+                        (overlap, artifact)
+                        for artifact in _artifact_paths(content)
+                    )
     ranked.sort(key=lambda row: (-row[0], row[1]))
     return list(dict.fromkeys(relative for _, relative in ranked))[:limit]
 
@@ -224,6 +250,70 @@ class RecallAssembler:
             ]
         return rows
 
+    def _recent_project_events(
+        self, project_id: str, scope_id: str | None, limit: int
+    ) -> list[dict[str, Any]]:
+        """Load a bounded newest-first tail when review has not made memory yet."""
+        cursor = self.store.cursor_for_recent_events(
+            project_id,
+            list(PROMOTABLE_EVENT_KINDS),
+            scope_id,
+            limit,
+        )
+        events = self.store.read_events_since(
+            project_id,
+            cursor,
+            list(PROMOTABLE_EVENT_KINDS),
+            scope_id,
+            limit,
+        )["events"]
+        return list(reversed(events))
+
+    def _discover_recent_events(
+        self, query: str, limit: int
+    ) -> tuple[str | None, list[dict[str, Any]]]:
+        """Select one unambiguous project from a bounded raw-event window."""
+        placeholders = ",".join("?" for _ in PROMOTABLE_EVENT_KINDS)
+        rows = [
+            dict(row)
+            for row in self.store.conn.execute(
+                "SELECT e.*,p.name AS project_name FROM events e "
+                "JOIN projects p ON p.id=e.project_id "
+                f"WHERE e.kind IN ({placeholders}) "
+                "ORDER BY e.created_at DESC,e.id LIMIT 96",
+                tuple(PROMOTABLE_EVENT_KINDS),
+            )
+        ]
+        query_terms = _terms(query)
+        grouped: dict[str, list[tuple[int, dict[str, Any]]]] = {}
+        for row in rows:
+            overlap = len(
+                query_terms
+                & _terms(f"{row['project_name']} {row['content']}")
+            )
+            if overlap:
+                grouped.setdefault(row["project_id"], []).append((overlap, row))
+        ranked = sorted(
+            (
+                (max(score for score, _ in events), len(events), project_id)
+                for project_id, events in grouped.items()
+            ),
+            reverse=True,
+        )
+        if not ranked or (len(ranked) > 1 and ranked[0][0] == ranked[1][0]):
+            return None, []
+        project_id = ranked[0][2]
+        events = [
+            event
+            for _, event in sorted(
+                grouped[project_id],
+                key=lambda item: (-item[0], -item[1]["event_seq"]),
+            )
+        ]
+        for event in events:
+            event["metadata"] = json.loads(event.pop("metadata_json"))
+        return project_id, events[:limit]
+
     def recall(
         self,
         cwd: str,
@@ -237,6 +327,7 @@ class RecallAssembler:
         limit = max(1, min(max_items, 12))
         resolved = self.store.resolve_project(cwd)
         origin_id = resolved["project"]["id"]
+        origin_scope_id = resolved.get("scope_id")
         retrieval_query = _expand_recall_query(query)
         local_candidates = self.store.search(
             origin_id,
@@ -298,6 +389,21 @@ class RecallAssembler:
                     selected_project_id = project_candidates[0]["id"]
                     selection_reason = "single_supported_candidate"
 
+        recent_events: list[dict[str, Any]] = []
+        if selected_project_id is None:
+            recent_events = self._recent_project_events(
+                origin_id, origin_scope_id, limit * 2
+            )
+            if recent_events:
+                selected_project_id = origin_id
+                selection_reason = "cwd_recent_events"
+            else:
+                selected_project_id, recent_events = (
+                    self._discover_recent_events(retrieval_query, limit * 2)
+                )
+                if selected_project_id is not None:
+                    selection_reason = "unambiguous_recent_events"
+
         candidates: list[dict[str, Any]] = []
         if selected_project_id is not None:
             ranked = local_candidates + discovery_candidates
@@ -356,6 +462,27 @@ class RecallAssembler:
             if len(pack) >= limit:
                 break
 
+        if not pack and recent_events:
+            for event in recent_events:
+                text = _compact_text(event["content"], query)
+                item = {
+                    "kind": event["kind"],
+                    "text": text,
+                    "source_event_ids": [event["id"]],
+                }
+                artifacts = _artifact_paths(event["content"])
+                if artifacts:
+                    item["artifacts"] = artifacts
+                cost = estimate_tokens(text) + 10 + estimate_tokens(
+                    " ".join(artifacts)
+                )
+                if used + cost > budget:
+                    continue
+                pack.append(item)
+                used += cost
+                if len(pack) >= limit:
+                    break
+
         project = (
             self.store._row(
                 "SELECT id,slug,name,description FROM projects WHERE id=?",
@@ -376,6 +503,14 @@ class RecallAssembler:
             if selected_project_id is not None
             else []
         )
+        if not paths and recent_events:
+            for event in recent_events:
+                repository_path = event.get("metadata", {}).get(
+                    "repository_path"
+                )
+                if isinstance(repository_path, str) and repository_path:
+                    paths.append(repository_path)
+                    break
         known = {
             artifact
             for item in pack
