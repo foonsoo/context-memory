@@ -6,6 +6,7 @@ from context_memory.mcp import CORE_TOOL_NAMES, MCPServer, TOOL_BY_NAME
 from context_memory.recall import (
     _artifact_paths,
     _expand_recall_query,
+    _repository_artifacts,
     estimate_tokens,
 )
 from context_memory.store import MemoryStore
@@ -54,6 +55,25 @@ class RecallTests(unittest.TestCase):
                 "docs/blog/02-second.md",
                 "docs/blog/03-third.md",
             ],
+        )
+
+    def test_repository_artifacts_are_relevant_and_bounded(self):
+        root = Path(self.temp.name) / "repo"
+        relevant = root / "docs" / "api.md"
+        relevant.parent.mkdir(parents=True)
+        relevant.write_text(
+            "Cursor pagination is implemented in src/atlas/pagination.py",
+            encoding="utf-8",
+        )
+        unrelated = root / "notes.txt"
+        unrelated.write_text("unrelated", encoding="utf-8")
+
+        artifacts = _repository_artifacts(
+            str(root), "continue pagination", "opaque cursor", limit=2
+        )
+
+        self.assertEqual(
+            artifacts, ["docs/api.md", "src/atlas/pagination.py"]
         )
 
     def test_recall_is_session_independent_and_token_bounded(self):
@@ -120,6 +140,23 @@ class RecallTests(unittest.TestCase):
         self.assertEqual(
             result["retrieval"]["selection_reason"], "cwd_project_context"
         )
+
+    def test_recall_adds_repository_artifacts_within_token_budget(self):
+        project = self.store.resolve_project(self.temp.name)["project"]
+        self.store.set_project_alias(project["id"], "path", self.temp.name)
+        docs = Path(self.temp.name) / "runbooks"
+        docs.mkdir()
+        (docs / "deploy.md").write_text(
+            "Nova canary deployment and rollback runbook", encoding="utf-8"
+        )
+        self._memory("Nova rollout", "Use a canary deployment", "decision")
+
+        result = self.store.context_recall(
+            self.temp.name, "Continue the Nova deployment", 128
+        )
+
+        self.assertIn("runbooks/deploy.md", result["items"][0]["artifacts"])
+        self.assertLessEqual(result["budget"]["used"], 128)
 
     def test_recall_does_not_report_placeholder_as_selected_project(self):
         unrelated = tempfile.TemporaryDirectory()

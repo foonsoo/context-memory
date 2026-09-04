@@ -7,8 +7,6 @@ import json
 import tempfile
 from pathlib import Path
 
-from context_memory.recall import _expand_recall_query
-
 try:
     from .run_continuation_evaluation import _seed, load_fixture
 except ImportError:  # Direct script execution.
@@ -31,51 +29,24 @@ def analyze() -> list[dict[str, object]]:
                     if prompt_index == 0 or case["id"] == "blog-episode-four"
                     else target["canonical"]
                 )
-                origin_id = store.resolve_project(str(cwd))["project"]["id"]
-                memories = store.search(
-                    origin_id,
-                    _expand_recall_query(prompt),
-                    24,
-                    ["active", "disputed"],
-                    None,
-                    True,
-                )
-                gate = store._retrieval_gate(memories)
-                candidates = store._aggregate_project_candidates(
-                    memories, origin_id
-                )
-                selected, reason, confidence = store._select_project_candidate(
-                    candidates
-                )
+                origin = store.resolve_project(str(cwd))["project"]
+                result = store.context_recall(str(cwd), prompt)
+                selected = result.get("project")
+                retrieval = result["retrieval"]
                 report.append(
                     {
                         "case": case["id"],
                         "prompt": prompt,
                         "cwd": "placeholder" if cwd == placeholder else "canonical",
-                        "origin_project": store._row(
-                            "SELECT name FROM projects WHERE id=?", (origin_id,)
-                        )["name"],
+                        "origin_project": origin["name"],
                         "expected_project": target["project"]["name"],
-                        "retrieval_gate": {
-                            "status": gate["status"],
-                            "reason": gate["reason"],
-                        },
-                        "selected_project_id": selected,
-                        "selection_reason": reason,
-                        "selection_confidence": round(confidence, 6),
-                        "project_candidates": [
-                            {
-                                "name": candidate["name"],
-                                "confidence": round(candidate["confidence"], 6),
-                                "matching_memories": candidate[
-                                    "matching_memory_count"
-                                ],
-                                "evidence_quality": round(
-                                    candidate["evidence_quality"], 6
-                                ),
-                            }
-                            for candidate in candidates[:4]
-                        ],
+                        "retrieval_status": retrieval["status"],
+                        "selected_project_id": (
+                            selected["id"] if selected else None
+                        ),
+                        "selection_reason": retrieval["selection_reason"],
+                        "repository_path": result["repository_path"],
+                        "items": result["items"],
                     }
                 )
         store.close()

@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import re
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 
@@ -13,6 +14,27 @@ _WORDS = re.compile(r"[\w-]+", flags=re.UNICODE)
 _FILE_PATHS = re.compile(
     r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*\.[A-Za-z0-9]+"
 )
+_REPOSITORY_TEXT_SUFFIXES = {
+    ".c",
+    ".css",
+    ".go",
+    ".html",
+    ".java",
+    ".js",
+    ".json",
+    ".jsx",
+    ".md",
+    ".py",
+    ".rb",
+    ".rs",
+    ".sh",
+    ".sql",
+    ".toml",
+    ".ts",
+    ".tsx",
+    ".yaml",
+    ".yml",
+}
 
 # Inspectable lexical bridges for common Korean continuation nouns. They
 # compensate for unicode61's lack of Korean stemming and for memories that
@@ -99,6 +121,52 @@ def _artifact_paths(value: str) -> list[str]:
         else:
             paths.append(cleaned)
     return list(dict.fromkeys(paths))
+
+
+def _repository_artifacts(
+    repository_path: str,
+    query: str,
+    context: str,
+    *,
+    limit: int = 3,
+    max_files: int = 128,
+    max_bytes: int = 256 * 1024,
+) -> list[str]:
+    """Find a few relevant artifact paths within a bounded repository scan."""
+    root = Path(repository_path)
+    if not root.is_dir():
+        return []
+    terms = _terms(f"{query} {context}")
+    ranked: list[tuple[int, str]] = []
+    inspected = total_bytes = 0
+    for path in sorted(root.rglob("*")):
+        if inspected >= max_files or total_bytes >= max_bytes:
+            break
+        if not path.is_file() or path.is_symlink():
+            continue
+        relative_path = path.relative_to(root)
+        if any(part.startswith(".") for part in relative_path.parts):
+            continue
+        if path.suffix.casefold() not in _REPOSITORY_TEXT_SUFFIXES:
+            continue
+        inspected += 1
+        try:
+            size = path.stat().st_size
+            if size > max_bytes - total_bytes:
+                continue
+            content = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            continue
+        total_bytes += size
+        relative = relative_path.as_posix()
+        overlap = len(terms & _terms(f"{relative} {content}"))
+        if overlap:
+            ranked.append((overlap, relative))
+            ranked.extend(
+                (overlap, artifact) for artifact in _artifact_paths(content)
+            )
+    ranked.sort(key=lambda row: (-row[0], row[1]))
+    return list(dict.fromkeys(relative for _, relative in ranked))[:limit]
 
 
 class RecallAssembler:
@@ -284,6 +352,21 @@ class RecallAssembler:
             if selected_project_id is not None
             else []
         )
+        known = {
+            artifact
+            for item in pack
+            for artifact in item.get("artifacts", [])
+        }
+        if paths and pack and len(known) < 3:
+            packed_context = " ".join(item["text"] for item in pack)
+            discovered = _repository_artifacts(paths[0], query, packed_context)
+            for artifact in discovered:
+                cost = estimate_tokens(artifact) + 2
+                if artifact in known or used + cost > budget:
+                    continue
+                pack[0].setdefault("artifacts", []).append(artifact)
+                known.add(artifact)
+                used += cost
         return {
             "contract": "context-recall/v1",
             "query": query,

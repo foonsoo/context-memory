@@ -111,3 +111,23 @@ absence from 0.042 to 0. Wrong-project rate and stale/error leakage remain 0;
 source recovery remains 1.0. All three empty-cwd blog prompts now recover the
 three prior files, six-part structure, intended style, episode-four topic, and
 canonical repository path.
+
+## Bounded repository artifact adapter
+
+After project selection, vNext may inspect only the selected canonical
+repository to recover artifacts that are absent from memory. The scan is capped
+at 128 non-hidden, non-symlink text files and 256 KiB total input; it returns at
+most three relevant paths, including explicit file references found in relevant
+documents. Returned paths are merged into memory items and charged to the same
+estimated-token budget. The adapter does not affect project selection and does
+not return repository content.
+
+The 10-repeat result is
+`benchmarks/results/continuation-vnext-repository-2026-09-04.json`. Relative to
+the path-normalization iteration, artifact recovery improved from 0.583 to
+1.000 and continuation recall from 0.375 to 0.750. Decision recovery remains
+1.000; wrong-project rate, false absence, and stale/error leakage remain zero;
+source recovery remains 1.000. Median returned tokens changed from 362 to 373,
+and p95 search latency from 0.484 ms to 0.598 ms. The remaining misses are
+cross-language next-step wording in the Relay and Meridian cases, not missing
+projects or artifacts.
