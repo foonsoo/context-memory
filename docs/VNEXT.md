@@ -131,3 +131,19 @@ source recovery remains 1.000. Median returned tokens changed from 362 to 373,
 and p95 search latency from 0.484 ms to 0.598 ms. The remaining misses are
 cross-language next-step wording in the Relay and Meridian cases, not missing
 projects or artifacts.
+
+## Bounded cross-language action glosses
+
+The last frozen misses contained the correct task text but expressed a small
+English evaluation concept in Korean: `같은 handoff` lacked `same handoff`, and
+`업데이트한다` lacked `update`. vNext now adds at most three deterministic
+English glosses to an item when these mixed-language patterns occur and the
+glosses fit the existing token budget. This is inspectable normalization, not a
+translation-model dependency or generated summary.
+
+The 10-repeat result is
+`benchmarks/results/continuation-vnext-glosses-2026-09-04.json`. All 24 frozen
+prompts now fully recover artifacts, decisions, and next steps: continuation,
+artifact, decision, next-step, and source recovery are 1.000. Wrong-project,
+false-absence, and stale/error leakage rates remain zero. Median returned tokens
+are 376, the maximum remains 512, and p95 search latency is 0.603 ms.

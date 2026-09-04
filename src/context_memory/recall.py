@@ -35,6 +35,9 @@ _REPOSITORY_TEXT_SUFFIXES = {
     ".yaml",
     ".yml",
 }
+_KOREAN_ACTION_GLOSSES = {
+    "업데이트": "update",
+}
 
 # Inspectable lexical bridges for common Korean continuation nouns. They
 # compensate for unicode61's lack of Korean stemming and for memories that
@@ -121,6 +124,22 @@ def _artifact_paths(value: str) -> list[str]:
         else:
             paths.append(cleaned)
     return list(dict.fromkeys(paths))
+
+
+def _cross_language_glosses(value: str, limit: int = 3) -> list[str]:
+    """Expose a few deterministic English action terms from mixed KO/EN text."""
+    glosses = [
+        f"same {match.group(1)}"
+        for match in re.finditer(
+            r"같은\s+([A-Za-z][A-Za-z0-9_-]*)", value, flags=re.IGNORECASE
+        )
+    ]
+    glosses.extend(
+        gloss
+        for source, gloss in _KOREAN_ACTION_GLOSSES.items()
+        if source in value
+    )
+    return list(dict.fromkeys(glosses))[:limit]
 
 
 def _repository_artifacts(
@@ -327,6 +346,11 @@ class RecallAssembler:
             )
             if used + cost > budget:
                 continue
+            glosses = _cross_language_glosses(text)
+            gloss_cost = estimate_tokens(" ".join(glosses)) + 2
+            if glosses and used + cost + gloss_cost <= budget:
+                item["glosses"] = glosses
+                cost += gloss_cost
             pack.append(item)
             used += cost
             if len(pack) >= limit:

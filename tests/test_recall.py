@@ -5,6 +5,7 @@ from pathlib import Path
 from context_memory.mcp import CORE_TOOL_NAMES, MCPServer, TOOL_BY_NAME
 from context_memory.recall import (
     _artifact_paths,
+    _cross_language_glosses,
     _expand_recall_query,
     _repository_artifacts,
     estimate_tokens,
@@ -74,6 +75,14 @@ class RecallTests(unittest.TestCase):
 
         self.assertEqual(
             artifacts, ["docs/api.md", "src/atlas/pagination.py"]
+        )
+
+    def test_cross_language_glosses_are_deterministic_and_bounded(self):
+        self.assertEqual(
+            _cross_language_glosses(
+                "같은 handoff가 반환되는지 검증하고 파일을 업데이트한다"
+            ),
+            ["same handoff", "update"],
         )
 
     def test_recall_is_session_independent_and_token_bounded(self):
