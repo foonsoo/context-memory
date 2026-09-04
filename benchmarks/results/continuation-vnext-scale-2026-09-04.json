@@ -1,0 +1,25 @@
+{
+  "contract_version": "context-recall-scale/v1",
+  "fixture": {
+    "distractor_files": 2500,
+    "kind": "synthetic-large-repository",
+    "repeats": 20,
+    "target": "zz-orchid-release/continuation-target.md",
+    "target_is_after_bulk_lexically": true,
+    "total_files": 2501
+  },
+  "limits": {
+    "max_bytes": 262144,
+    "max_entries": 512,
+    "max_files": 128
+  },
+  "metrics": {
+    "latency_ms": {
+      "p50": 3.318,
+      "p95": 3.728
+    },
+    "max_files_read": 128,
+    "target_recovery": 1.0
+  },
+  "schema_version": 1
+}

@@ -154,7 +154,11 @@ Repository artifact discovery now bounds enumeration as well as file reads and
 bytes. A lazy, non-symlink directory walk stops after 512 directory entries, 128
 eligible text files, or 256 KiB. This avoids constructing a complete repository
 path list before the existing limits take effect. Large-repository relevance and
-latency remain a separate held-out evaluation requirement.
+latency are measured separately by
+`benchmarks/run_recall_scale_evaluation.py`. Its synthetic tree contains at
+least 1,001 files, places the relevant artifact lexically after the bulk tree,
+and records target recovery, maximum files read, and p50/p95 latency. This is a
+resource-bound regression gate, not evidence of live-user relevance.
 
 When no active memory can identify a project, recall may use recent promotable
 raw events without creating a session. The current cwd's bounded event tail is
@@ -162,3 +166,9 @@ an identity fallback. If that tail is empty, a bounded whole-database event
 window may select exactly one lexically supported project; tied project evidence
 is rejected as ambiguous. Returned raw-event items expose source event IDs and
 omit `memory_id`, preserving the distinction from reviewed active memory.
+
+The original continuation fixture and the scale fixture are both synthetic.
+Held-out or live-user evidence must come from prompts that were not used to tune
+the implementation, retain a reviewable provenance note, and be reported
+separately from these repository gates. No synthetic score should be labelled as
+live adoption evidence.

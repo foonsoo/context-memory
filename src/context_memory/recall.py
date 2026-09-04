@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import heapq
 import json
 import math
 import os
@@ -163,9 +164,9 @@ def _repository_artifacts(
     terms = _terms(f"{query} {context}")
     ranked: list[tuple[int, str]] = []
     inspected = total_bytes = enumerated = 0
-    pending = [root]
+    pending: list[tuple[int, str, Path]] = [(0, "", root)]
     while pending and inspected < max_files and total_bytes < max_bytes:
-        directory = pending.pop()
+        _, _, directory = heapq.heappop(pending)
         try:
             entries = os.scandir(directory)
         except OSError:
@@ -180,7 +181,13 @@ def _repository_artifacts(
                     continue
                 try:
                     if entry.is_dir(follow_symlinks=False):
-                        pending.append(Path(entry.path))
+                        path = Path(entry.path)
+                        relative = path.relative_to(root).as_posix()
+                        path_terms = _terms(
+                            relative.replace("/", " ").replace("-", " ")
+                        )
+                        priority = -len(terms & path_terms)
+                        heapq.heappush(pending, (priority, relative, path))
                         continue
                     if not entry.is_file(follow_symlinks=False):
                         continue
