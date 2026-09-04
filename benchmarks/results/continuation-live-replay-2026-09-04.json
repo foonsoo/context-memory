@@ -1,0 +1,70 @@
+{
+  "cases": [
+    {
+      "case": "resume-production-hardening",
+      "expected_checks": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "forbidden_leaks": [],
+      "latency_ms": {
+        "p50": 20.108,
+        "p95": 20.778
+      },
+      "prompt": "Context Recall vNext 작업 이어서 해줘.",
+      "prompt_source_event_ids": [
+        "5c6c2525-bc38-406a-8e47-187422f5329f",
+        "59e8e1c8-04f9-451b-b546-43aa4f62c208"
+      ],
+      "returned_tokens": 343,
+      "selection_reason": "cwd_recent_events",
+      "source_recovered": true
+    },
+    {
+      "case": "resume-after-scale-gate",
+      "expected_checks": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "forbidden_leaks": [],
+      "latency_ms": {
+        "p50": 0.486,
+        "p95": 0.836
+      },
+      "prompt": "다음 작업도 진행해줘",
+      "prompt_source_event_ids": [
+        "33164ac7-0e1c-4726-b303-c19699f7430f",
+        "8d04414c-9793-47db-8634-d11622a4c6f3"
+      ],
+      "returned_tokens": 309,
+      "selection_reason": "cwd_recent_events",
+      "source_recovered": true
+    }
+  ],
+  "contract_version": "continuation-live-replay/v1",
+  "evaluation_class": "retrospective-live-replay",
+  "fixture": {
+    "cases": 2,
+    "repeats": 10,
+    "source": "continuation-live-replay-v1.json"
+  },
+  "limitations": "Prompts came from real use but were frozen after the implementation existed; this is not prospective held-out evidence.",
+  "metrics": {
+    "expected_recovery": 1.0,
+    "forbidden_leakage": 0,
+    "latency_ms": {
+      "p50": 10.438,
+      "p95": 20.778
+    },
+    "returned_tokens": {
+      "max": 343,
+      "median": 326.0
+    },
+    "source_recovery": 1.0
+  },
+  "schema_version": 1
+}

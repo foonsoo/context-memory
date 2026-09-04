@@ -172,3 +172,19 @@ Held-out or live-user evidence must come from prompts that were not used to tune
 the implementation, retain a reviewable provenance note, and be reported
 separately from these repository gates. No synthetic score should be labelled as
 live adoption evidence.
+
+The first separate real-use check is the provenance-bearing retrospective replay
+in `benchmarks/fixtures/continuation-live-replay-v1.json`. It freezes two actual
+continuation prompts and their source event IDs, including the generic Korean
+request `다음 작업도 진행해줘`. The replay exposed and fixed two defects that the
+synthetic fixture missed: long raw events triggered an invalid variable-width
+look-behind during compaction, and an event's explicit canonical repository path
+did not override its placeholder workspace alias.
+
+The 10-repeat result is
+`benchmarks/results/continuation-live-replay-2026-09-04.json`: expected-context
+and source recovery are 1.000, forbidden leakage is zero, median returned size is
+326 estimated tokens, and p95 latency is 20.778 ms on the recorded environment.
+This result is real-prompt retrospective evidence, not prospective held-out or
+adoption evidence; future prompts must be frozen before any tuning to satisfy
+that stronger gate.

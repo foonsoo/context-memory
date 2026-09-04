@@ -92,7 +92,7 @@ def _compact_text(value: str, query: str, limit: int = 240) -> str:
     if len(normalized) <= limit:
         return normalized
     terms = _terms(query)
-    sentences = re.split(r"(?<=[.!?。]|다\.)\s+", normalized)
+    sentences = re.split(r"(?<=[.!?。])\s+", normalized)
     relevant = [sentence for sentence in sentences if terms & _terms(sentence)]
     selected = " ".join(relevant[:2]) if relevant else normalized
     return selected[: limit - 1].rstrip() + "…"
@@ -510,13 +510,15 @@ class RecallAssembler:
             if selected_project_id is not None
             else []
         )
-        if not paths and recent_events:
+        if recent_events:
             for event in recent_events:
                 repository_path = event.get("metadata", {}).get(
                     "repository_path"
                 )
                 if isinstance(repository_path, str) and repository_path:
-                    paths.append(repository_path)
+                    paths = [repository_path] + [
+                        path for path in paths if path != repository_path
+                    ]
                     break
         known = {
             artifact

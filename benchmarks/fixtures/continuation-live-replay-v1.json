@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "contract_version": "continuation-live-replay/v1",
+  "evaluation_class": "retrospective-live-replay",
+  "limitations": "Prompts came from real use but were frozen after the implementation existed; this is not prospective held-out evidence.",
+  "cases": [
+    {
+      "id": "resume-production-hardening",
+      "prompt": "Context Recall vNext 작업 이어서 해줘.",
+      "prompt_source_event_ids": [
+        "5c6c2525-bc38-406a-8e47-187422f5329f",
+        "59e8e1c8-04f9-451b-b546-43aa4f62c208"
+      ],
+      "project": "context-recall-live-one",
+      "repository_path": "/Users/ym/Documents/repo/context-memory",
+      "handoff_kind": "task",
+      "handoff": "Context Recall vNext production hardening must make repository traversal truly bounded, add raw recent-event fallback, then add large-repository and held-out live evaluation. The authoritative repository is /Users/ym/Documents/repo/context-memory.",
+      "expected": [
+        "repository traversal truly bounded",
+        "raw recent-event fallback",
+        "large-repository",
+        "/Users/ym/Documents/repo/context-memory"
+      ],
+      "forbidden": ["production readiness is complete"]
+    },
+    {
+      "id": "resume-after-scale-gate",
+      "prompt": "다음 작업도 진행해줘",
+      "prompt_source_event_ids": [
+        "33164ac7-0e1c-4726-b303-c19699f7430f",
+        "8d04414c-9793-47db-8634-d11622a4c6f3"
+      ],
+      "project": "context-recall-live-two",
+      "repository_path": "/Users/ym/Documents/repo/context-memory",
+      "handoff_kind": "task",
+      "handoff": "The bounded traversal and raw-event fallback are complete. The 2,501-file scale gate recovered the lexically late artifact within 128 reads. Next add provenance-bearing held-out or live-user evaluation, then integrate README, CHANGELOG, and release workflow.",
+      "expected": [
+        "2,501-file scale gate",
+        "held-out or live-user evaluation",
+        "README",
+        "CHANGELOG"
+      ],
+      "forbidden": ["live-user evaluation is complete"]
+    }
+  ]
+}

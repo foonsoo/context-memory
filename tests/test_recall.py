@@ -39,6 +39,23 @@ class RecallTests(unittest.TestCase):
         self.assertGreaterEqual(estimate_tokens("블로그 4화를 continue"), 8)
         self.assertLess(estimate_tokens("short context"), 10)
 
+    def test_long_raw_event_is_compacted_without_regex_error(self):
+        resolved = self.store.resolve_project(self.temp.name)
+        event = self.store.record_event(
+            resolved["project"]["id"],
+            "task",
+            "Unrelated setup sentence. " * 12
+            + "Continue the Orchid validation from docs/orchid.md.",
+            scope_id=resolved["scope_id"],
+        )
+
+        result = self.store.context_recall(
+            self.temp.name, "Continue the Orchid validation", 128
+        )
+
+        self.assertEqual(result["items"][0]["source_event_ids"], [event["id"]])
+        self.assertIn("Orchid validation", result["items"][0]["text"])
+
     def test_korean_continuation_aliases_cover_short_and_inflected_terms(self):
         self.assertIn("blog", _expand_recall_query("전에 쓰던 글 계속해줘"))
         self.assertIn(
@@ -188,14 +205,27 @@ class RecallTests(unittest.TestCase):
         )
 
         self.assertEqual(result["project"]["id"], resolved["project"]["id"])
-        self.assertEqual(
-            result["repository_path"], str(Path(self.temp.name).resolve())
-        )
+        self.assertEqual(result["repository_path"], self.temp.name)
         self.assertEqual(result["items"][0]["source_event_ids"], [event["id"]])
         self.assertNotIn("memory_id", result["items"][0])
         self.assertEqual(
             result["retrieval"]["selection_reason"], "cwd_recent_events"
         )
+
+    def test_raw_event_repository_path_overrides_placeholder_alias(self):
+        resolved = self.store.resolve_project(self.temp.name)
+        canonical = "/srv/projects/atlas"
+        self.store.record_event(
+            resolved["project"]["id"],
+            "task",
+            "Continue Atlas work",
+            scope_id=resolved["scope_id"],
+            metadata={"repository_path": canonical},
+        )
+
+        result = self.store.context_recall(self.temp.name, "Continue Atlas", 128)
+
+        self.assertEqual(result["repository_path"], canonical)
 
     def test_recall_discovers_unambiguous_raw_event_from_unknown_cwd(self):
         target_root = Path(self.temp.name) / "atlas-service"
