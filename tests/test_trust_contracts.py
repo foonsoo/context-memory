@@ -1,4 +1,5 @@
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -264,6 +265,44 @@ class TrustContractTests(unittest.TestCase):
         found = self.store.project_evidence.find_project(shared)
         self.assertFalse(found["ambiguous"])
         self.assertEqual(found["project"]["id"], owner["id"])
+
+    def test_concurrent_scope_and_alias_registration_has_one_owner(self):
+        first = self.store.create_project("concurrent-first")
+        second = self.store.create_project("concurrent-second")
+        path = str(Path(self.temporary.name) / "concurrent-shared")
+        barrier = threading.Barrier(2)
+        outcomes = []
+
+        def register(project_id, kind):
+            connection = MemoryStore(self.store.path)
+            try:
+                barrier.wait()
+                if kind == "scope":
+                    connection.create_scope(project_id, "root", path)
+                else:
+                    connection.set_project_alias(project_id, "path", path)
+                outcomes.append((kind, "ok"))
+            except ValueError as error:
+                outcomes.append((kind, str(error)))
+            finally:
+                connection.close()
+
+        threads = [
+            threading.Thread(target=register, args=(first["id"], "scope")),
+            threading.Thread(target=register, args=(second["id"], "alias")),
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        self.assertEqual(sum(result == "ok" for _, result in outcomes), 1)
+        self.assertEqual(
+            sum("another project" in result for _, result in outcomes), 1
+        )
+        found = self.store.project_evidence.find_project(path)
+        self.assertFalse(found["ambiguous"])
+        self.assertIn(found["project"]["id"], {first["id"], second["id"]})
 
 
 if __name__ == "__main__":
