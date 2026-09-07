@@ -13,6 +13,10 @@ uses semantic versioning for the public Python package and MCP/CLI contracts.
 - Frozen continuation, large-repository, and provenance-bearing retrospective
   replay evaluations covering Korean and English prompts, conservative project
   selection, source recovery, stale-content leakage, and traversal bounds.
+- A seven-tool `minimal` profile, self-validating temporary-DB restart demo,
+  contribution/security guidance, and macOS/release CI jobs.
+- Synthetic alias regression data for no-answer, other-project, stale-decision,
+  mixed-language, API, restart, and install prompts. It is not independent data.
 
 ### Changed
 
@@ -21,6 +25,24 @@ uses semantic versioning for the public Python package and MCP/CLI contracts.
   over a placeholder workspace alias.
 - The installed-wheel release journey now verifies `context_recall` through the
   shipped MCP server after a process restart.
+- Scope paths and path aliases share one transactional owner check, including
+  import; same-named folders are not automatically joined.
+- Active-memory creation and default import require a valid same-project source
+  event. This proves traceability, not truth, and existing rows are unchanged.
+- Import offers `--allow-legacy-active-without-sources` only for historical
+  source-less active rows and reports count, IDs, and warning without bodies.
+  Invalid, missing, and cross-project links remain errors.
+- Task-specific global recall bridges (`install`→`wheel`, `client`→`handoff`,
+  and package/move→`scope`) moved out of defaults; use project search aliases.
+- `context_recall` remains free of persistent writes on verified paths.
+
+### Compatibility
+
+- Strict import may reject exports accepted by `0.6.2`. Back up the destination
+  and use the legacy flag only for known historical source-less active rows;
+  preferably attach confirming project-local events first.
+- These changes are on `main`, not published `0.6.2`. The proposed next semantic
+  version is `0.7.0`; no tag or upload has occurred.
 
 ## [0.6.2] - 2026-08-25
 
@@ -56,13 +78,3 @@ uses semantic versioning for the public Python package and MCP/CLI contracts.
 
 [Unreleased]: https://github.com/foonsoo/context-memory/compare/v0.6.2...HEAD
 [0.6.2]: https://github.com/foonsoo/context-memory/releases/tag/v0.6.2
-# Unreleased
-
-- Project auto-registration now uses canonical paths or explicit path aliases,
-  never a matching leaf folder name; conflicting path ownership is rejected.
-- New active memories require same-project source events. Legacy unsupported
-  active records remain intact and are listed by `doctor` without their bodies.
-- `context_recall` performs no persistent writes and global answer-key aliases
-  were removed.
-- Added an opt-in `minimal` MCP profile, synthetic restart demo, public-project
-  documentation, contribution/security guidance, and macOS/release CI gates.

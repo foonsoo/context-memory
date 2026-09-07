@@ -16,6 +16,17 @@ must include backup/restore guidance and the installed-wheel restart test.
 The normative runtime, MCP/CLI, migration, backup, deprecation, and recovery
 guarantees are in [SUPPORT.md](SUPPORT.md).
 
+Current `main` has import strictness and minimal/demo surfaces beyond published
+`0.6.2`; the proposed next version is `0.7.0`. Before release, back up a live
+database, run `doctor`, test a strict JSONL round trip, and document deliberate
+legacy source-less imports. To roll back, stop clients, restore the complete
+pre-upgrade SQLite backup (not one WAL component), reinstall `0.6.2`, and
+restart clients. Do not silently downgrade schema-bearing live data.
+
+Adding CI configuration is not evidence of a passing hosted run. Release notes
+must identify the exact run and platform; unexecuted macOS and real-client GUI
+checks remain explicitly unverified.
+
 ## Release procedure
 
 1. Start from a clean `main` that has passed CI. Update `CHANGELOG.md`, set the
