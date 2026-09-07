@@ -15,6 +15,8 @@ uses semantic versioning for the public Python package and MCP/CLI contracts.
   selection, source recovery, stale-content leakage, and traversal bounds.
 - A seven-tool `minimal` profile, self-validating temporary-DB restart demo,
   contribution/security guidance, and macOS/release CI jobs.
+- `doctor` reports historical cross-project scope/path-alias ownership
+  conflicts with the affected paths, registrations, and recovery guidance.
 - Synthetic alias regression data for no-answer, other-project, stale-decision,
   mixed-language, API, restart, and install prompts. It is not independent data.
 

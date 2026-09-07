@@ -30,6 +30,10 @@ consequential evidence with `get_source`.
 
 For a small session-independent read:
 
+> **Release status:** `context_recall` is available on `main` and is planned
+> for the next release; it is not included in the current PyPI `0.6.2`
+> package.
+
 ```json
 {"cwd":"/current/workspace","query":"다음 작업 진행해줘","token_budget":350,"max_items":6}
 ```

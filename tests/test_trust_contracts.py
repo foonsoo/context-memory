@@ -102,6 +102,74 @@ class TrustContractTests(unittest.TestCase):
         )
         self.assertNotIn("sensitive-memory-body", str(result))
 
+    def test_doctor_reports_existing_cross_project_path_conflicts(self):
+        first = self.store.create_project("doctor-owner-first")
+        second = self.store.create_project("doctor-owner-second")
+        shared = str(Path(self.temporary.name) / "legacy-shared")
+        scope = self.store.create_scope(first["id"], "root", shared)
+        timestamp = scope["created_at"]
+        self.store.conn.execute(
+            """INSERT INTO project_aliases(
+              project_id,kind,value,normalized,created_at,updated_at)
+            VALUES(?,?,?,?,?,?)""",
+            (
+                second["id"],
+                "path",
+                shared,
+                scope["path"],
+                timestamp,
+                timestamp,
+            ),
+        )
+
+        result = doctor(self.store)
+
+        self.assertFalse(result["ok"])
+        diagnostic = result["path_conflicts"]
+        self.assertEqual(diagnostic["count"], 1)
+        self.assertEqual(diagnostic["conflicts"][0]["path"], scope["path"])
+        self.assertEqual(
+            diagnostic["conflicts"][0]["project_ids"],
+            sorted([first["id"], second["id"]]),
+        )
+        self.assertEqual(
+            diagnostic["conflicts"][0]["registrations"],
+            sorted(
+                [
+                    {
+                        "project_id": first["id"],
+                        "source": "scope",
+                        "registration_id": scope["id"],
+                    },
+                    {
+                        "project_id": second["id"],
+                        "source": "alias",
+                        "registration_id": scope["path"],
+                    },
+                ],
+                key=lambda item: (
+                    item["project_id"],
+                    item["source"],
+                    item["registration_id"],
+                ),
+            ),
+        )
+        self.assertIn("Back up", diagnostic["recovery"])
+
+    def test_doctor_allows_same_project_scope_and_alias_for_one_path(self):
+        project = self.store.create_project("doctor-same-owner")
+        shared = str(Path(self.temporary.name) / "same-owner")
+        self.store.create_scope(project["id"], "root", shared)
+        self.store.set_project_alias(project["id"], "path", shared)
+
+        result = doctor(self.store)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(
+            result["path_conflicts"],
+            {"count": 0, "conflicts": [], "recovery": None},
+        )
+
     def test_recall_is_logically_read_only_for_known_and_unknown_paths(self):
         known = Path(self.temporary.name) / "known"
         resolved = self.store.resolve_project(str(known))

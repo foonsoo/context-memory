@@ -569,8 +569,49 @@ def doctor(store: MemoryStore) -> dict[str, object]:
             ) ORDER BY m.id"""
         )
     ]
+    conflicting_paths = [
+        row["path"]
+        for row in store.conn.execute(
+            """SELECT path FROM (
+              SELECT path,project_id FROM scopes WHERE path IS NOT NULL
+              UNION
+              SELECT normalized AS path,project_id FROM project_aliases
+                WHERE kind='path'
+            ) GROUP BY path HAVING count(DISTINCT project_id)>1
+            ORDER BY path"""
+        )
+    ]
+    path_conflicts = []
+    for path in conflicting_paths:
+        registrations = [
+            dict(row)
+            for row in store.conn.execute(
+                """SELECT project_id,'scope' AS source,id AS registration_id
+                  FROM scopes WHERE path=?
+                UNION ALL
+                SELECT project_id,'alias' AS source,normalized
+                  AS registration_id FROM project_aliases
+                  WHERE kind='path' AND normalized=?
+                ORDER BY project_id,source,registration_id""",
+                (path, path),
+            )
+        ]
+        path_conflicts.append(
+            {
+                "path": path,
+                "project_ids": sorted(
+                    {item["project_id"] for item in registrations}
+                ),
+                "registrations": registrations,
+            }
+        )
     return {
-        "ok": fts5 and integrity == "ok" and permissions_private,
+        "ok": (
+            fts5
+            and integrity == "ok"
+            and permissions_private
+            and not path_conflicts
+        ),
         "database": str(store.path),
         "sqlite_version": sqlite3.sqlite_version,
         "fts5": fts5,
@@ -580,6 +621,17 @@ def doctor(store: MemoryStore) -> dict[str, object]:
         "active_without_sources": {
             "count": len(unsupported_active),
             "memory_ids": unsupported_active,
+        },
+        "path_conflicts": {
+            "count": len(path_conflicts),
+            "conflicts": path_conflicts,
+            "recovery": (
+                "Back up the database, choose the correct project owner for "
+                "each path, remove the stale scope or path alias, then rerun "
+                "doctor."
+                if path_conflicts
+                else None
+            ),
         },
     }
 
