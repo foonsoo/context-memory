@@ -34,10 +34,16 @@ def create_snapshot(path: Path, workspace: Path) -> str:
     try:
         project = store.resolve_project(str(workspace))["project"]
         for index in range(5):
+            content = (
+                f"Verified synthetic implementation fact {index + 1}; "
+                "next task remains paired startup measurement."
+            )
+            source = store.record_event(project["id"], "fact", content)
             store.upsert_memory(
                 project["id"], f"Synthetic checkpoint {index + 1}",
-                f"Verified synthetic implementation fact {index + 1}; next task remains paired startup measurement.",
+                content,
                 "task" if index == 4 else "fact", "active",
+                source_event_ids=[source["id"]],
             )
     finally:
         store.close()

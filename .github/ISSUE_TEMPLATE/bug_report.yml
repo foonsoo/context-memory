@@ -1,0 +1,15 @@
+name: Bug report
+description: Report a reproducible problem using synthetic data
+body:
+  - type: textarea
+    attributes:
+      label: Reproduction
+      description: Include version, Python, OS, command/request, expected and actual results.
+    validations:
+      required: true
+  - type: checkboxes
+    attributes:
+      label: Privacy
+      options:
+        - label: I did not attach a real memory DB, credentials, personal data, or unredacted logs.
+          required: true

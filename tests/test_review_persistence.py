@@ -12,8 +12,12 @@ class ReviewRepositoryTests(unittest.TestCase):
             store = MemoryStore(Path(temporary) / "memory.db")
             try:
                 project = store.create_project("review-repository")
+                source = store.record_event(
+                    project["id"], "fact", "Needs review"
+                )
                 memory = store.upsert_memory(
-                    project["id"], "Candidate", "Needs review"
+                    project["id"], "Candidate", "Needs review",
+                    source_event_ids=[source["id"]],
                 )
                 with patch.object(
                     store.review,

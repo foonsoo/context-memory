@@ -126,7 +126,11 @@ def evaluate(name: str, provider: Any, root: Path, repeats: int,
     project = store.create_project(f"embedding-eval-{name}")
     ids: dict[str, str] = {}
     for key, title, content in memories:
-        ids[key] = store.upsert_memory(project["id"], title, content, "fact", "active")["id"]
+        source = store.record_event(project["id"], "fact", content)
+        ids[key] = store.upsert_memory(
+            project["id"], title, content, "fact", "active",
+            source_event_ids=[source["id"]],
+        )["id"]
     index_ms = (time.perf_counter() - started) * 1000
     outcomes = []
     latencies = []

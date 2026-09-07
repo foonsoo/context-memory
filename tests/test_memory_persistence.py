@@ -36,13 +36,17 @@ class MemoryRepositoryTests(unittest.TestCase):
             store = MemoryStore(Path(temporary) / "memory.db")
             try:
                 project = store.create_project("memory-lifecycle")
+                decision_event = store.record_event(
+                    project["id"], "decision", "Use bounded repositories"
+                )
                 with patch.object(
                     store.memories,
                     "upsert_memory",
                     wraps=store.memories.upsert_memory,
                 ) as upsert:
                     memory = store.upsert_memory(
-                        project["id"], "Decision", "Use bounded repositories"
+                        project["id"], "Decision", "Use bounded repositories",
+                        source_event_ids=[decision_event["id"]],
                     )
                 upsert.assert_called_once()
 
@@ -65,7 +69,10 @@ class MemoryRepositoryTests(unittest.TestCase):
                 self.assertEqual(embedding["memory_id"], memory["id"])
 
                 other = store.upsert_memory(
-                    project["id"], "Outcome", "Repository boundary held"
+                    project["id"], "Outcome", "Repository boundary held",
+                    source_event_ids=[store.record_event(
+                        project["id"], "outcome", "Repository boundary held"
+                    )["id"]],
                 )
                 store.transition(other["id"], "active")
                 alias = store.set_search_aliases(

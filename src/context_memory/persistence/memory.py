@@ -103,6 +103,37 @@ class MemoryRepository:
             ),
         )
 
+    @staticmethod
+    def _require_active_source(
+        connection: sqlite3.Connection,
+        memory_id: str,
+        project_id: str,
+        source_event_ids: list[str] | None = None,
+    ) -> None:
+        """Require project-local evidence before making a memory active.
+
+        This establishes traceability only; it does not assert that the
+        evidence is true.
+        """
+        submitted = list(dict.fromkeys(source_event_ids or []))
+        for event_id in submitted:
+            event = connection.execute(
+                "SELECT project_id FROM events WHERE id=?", (event_id,)
+            ).fetchone()
+            if not event or event["project_id"] != project_id:
+                raise ValueError(f"invalid source event: {event_id}")
+        existing = connection.execute(
+            """SELECT 1 FROM memory_sources s JOIN events e ON e.id=s.event_id
+            WHERE s.memory_id=? AND e.project_id=? LIMIT 1""",
+            (memory_id, project_id),
+        ).fetchone()
+        if not submitted and not existing:
+            raise ValueError(
+                "active memories require at least one source event from the "
+                "same project; record the original evidence with record_event "
+                "and connect its id with source_event_ids before activation"
+            )
+
     def upsert_memory(
         self,
         project_id: str,
@@ -170,6 +201,10 @@ class MemoryRepository:
             ),
         }
         with self.store.tx() as connection:
+            if status == "active":
+                self._require_active_source(
+                    connection, mid, project_id, source_event_ids
+                )
             if existing:
                 if existing["project_id"] != project_id:
                     raise ValueError("memory belongs to another project")
@@ -259,6 +294,9 @@ class MemoryRepository:
                 raise KeyError("memory not found")
             ts = self.now()
             if status == "active":
+                self._require_active_source(
+                    connection, memory_id, row["project_id"]
+                )
                 connection.execute(
                     "UPDATE memories SET"
                     " status=?,updated_at=?,last_confirmed_at=? WHERE id=?",

@@ -1,6 +1,31 @@
 # Context Memory
 
-A small, client-neutral context memory server for any MCP agent, including Claude Code, Craft Agents, Codex, Cursor, VS Code, and local-model clients. It keeps immutable evidence separate from derived memories and the FTS search projection, so a generated summary never becomes the only source of truth.
+Context Memory is a local MCP server for carrying verified decisions, constraints,
+and work state between agent sessions. Immutable evidence stays separate from
+derived memories, active memories are traceable to project-local evidence, and
+canonical workspace paths prevent same-named repositories from silently sharing
+a write target.
+
+It fits people who use one or more MCP clients on the same OS account and want a
+small, inspectable SQLite record. It is not an encrypted secrets store, a hosted
+team service, or proof that an agent will always follow recording instructions.
+
+## Short demo
+
+From a source checkout, the synthetic demo starts and restarts real MCP stdio
+server processes using a temporary database:
+
+```bash
+python -m pip install -e .
+python scripts/demo_lifecycle.py
+```
+
+The output first recalls `Use SQLite`, shows its source event, then reports the
+SQLite memory as `superseded` and recalls the active `Use PostgreSQL` decision.
+It proves storage, restart recovery, retrieval, provenance, and lifecycle change;
+it does not test whether a real LLM independently chooses to record evidence.
+
+## Shortest installation path
 
 For the lowest startup overhead, call `context_bootstrap` once with the workspace, focused query, client identity, and `response_format=compact`. For a small read-only continuation pack before a session exists, call `context_recall(cwd, query)`; it can recover the canonical project, repository path, current work, and source event IDs within a bounded estimated-token budget. The older `project_resolve` → `session_start` → `get_context` sequence and legacy context response remain supported. `serve` exposes the working `core` tool profile by default; use `--tool-profile admin` for maintenance-only clients or `--tool-profile all` for the historical complete catalog.
 
@@ -8,16 +33,15 @@ This MVP is usable now: Python 3.11+ (Python 3.14 recommended), SQLite with WAL/
 
 > **Sensitive-data warning:** this database is local, not encrypted. Do not record secrets, tokens, private keys, raw environment dumps, or unrelated personal data. The data directory is mode `0700`, but other processes running as your OS user and backups may still access it.
 
-## Quick start: one database, every MCP client
-
-Install the published package, choose one database path, and register that exact
-pair with every client on the same computer:
+Release `0.6.2` was recorded as the published package at this repository's
+reviewed baseline; this session did not independently query PyPI. Features on
+the current `main` branch, including `minimal`, may be unreleased. For the
+published path, choose one database and register it with one client:
 
 ```bash
 uvx --from context-memory-mcp context-memory \
   --db ~/.local/share/context-memory/memory.db \
-  init --workspace "$PWD" \
-  --clients claude-code,codex,cursor,vscode,craft --register
+  init --workspace "$PWD" --client codex --register
 
 uvx --from context-memory-mcp context-memory \
   --db ~/.local/share/context-memory/memory.db doctor
@@ -27,7 +51,12 @@ Use a cloned source checkout and dedicated virtual environment only when
 developing or testing unreleased changes; see
 [`docs/RELEASING.md`](docs/RELEASING.md) for that workflow.
 
-Restart each registered client. At the beginning of **every new task/session**, the agent should perform this client-neutral sequence:
+Restart the client. To expose only the seven tools needed for the basic
+lifecycle when running current source, add `--tool-profile minimal` to `init`.
+
+## First save and reuse
+
+At the beginning of **every new task/session**, the agent should perform this client-neutral sequence:
 
 1. Call `context_bootstrap` once with `cwd`, the current request as `query`, a 4,000–8,000 character budget, `response_format=compact`, the actual client name, and the task/session ID when available. The path is an identity hint: bounded retrieval can select another canonical checkout when the evidence is unambiguous.
 2. Inspect consequential source event IDs with `get_source` before relying on them. Treat disputed memories as warnings and ask when project discovery is ambiguous.
@@ -55,6 +84,26 @@ only for evidence that materially affects the work.
 Copy the appropriate instruction template into the consumer project: [`AGENTS.md`](AGENTS.md) or [`examples/AGENTS.md`](examples/AGENTS.md), [`examples/CLAUDE.md`](examples/CLAUDE.md), or [`examples/cursor-context-memory.mdc`](examples/cursor-context-memory.mdc). Generic clients can use [`examples/mcp.json`](examples/mcp.json). Hooks are optional convenience automation; the lifecycle above remains the correctness contract.
 
 If `init --register` reports a client as unavailable, install that client's CLI and rerun the same command. Craft Agents currently returns a guided workspace-source step and portable JSON rather than editing its configuration automatically. See [docs/CLIENTS.md](docs/CLIENTS.md) for registration and migration details.
+
+## Support and important limits
+
+- Data is plaintext SQLite. Processes and backups accessible to the same OS user
+  are inside the trust boundary; never store credentials or raw personal data.
+- MCP compatibility means protocol-level stdio/JSON-RPC coverage. A CLI shim,
+  official MCP SDK test, and execution in a named GUI client are different
+  evidence levels; see [client verification](docs/CLIENTS.md).
+- Search reports deterministic fixture metrics and configured-alias results.
+  These are retrieval regressions, not evidence that users or LLMs work better.
+- `context_recall` is read-only after server database initialization. Unknown
+  paths may be used for cross-project candidate discovery but are never
+  registered by the read call.
+- Same-named folders are distinct. To reconnect a moved checkout, explicitly add
+  its canonical path alias. See [project recovery](docs/PROJECT_IDENTITY.md).
+
+Detailed installation, client, architecture, support, and release documentation:
+[CLIENTS](docs/CLIENTS.md), [ARCHITECTURE](docs/ARCHITECTURE.md),
+[SUPPORT](docs/SUPPORT.md), [UTILITY](docs/UTILITY.md), and
+[RELEASING](docs/RELEASING.md).
 
 ## Install
 
@@ -107,11 +156,10 @@ uvx --from "$SOURCE" context-memory init \
 
 `context-memory init` rejects unpinned Git package sources. A PyPI package name, or a one-time installed executable with `--launcher installed`, does not use a Git URL at MCP startup.
 
-Until the first PyPI release, use the source install above and replace the
-default launcher with `--launcher installed`. Release requirements and the
-TestPyPI-before-PyPI procedure are documented in
+Release requirements and the TestPyPI-before-PyPI procedure are documented in
 [`docs/RELEASING.md`](docs/RELEASING.md); published changes are tracked in
-[`CHANGELOG.md`](CHANGELOG.md).
+[`CHANGELOG.md`](CHANGELOG.md). Do not assume current-main features exist in
+`0.6.2` unless its release notes say so.
 
 ### From source
 

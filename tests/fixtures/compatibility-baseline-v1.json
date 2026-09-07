@@ -55,10 +55,10 @@
   "cli": {
     "prog":"context-memory",
     "arguments":["db"],
-    "sha256":"282851cf299763d909ddc1a2168d47aaea754970a37a2639e38930afc89658dd",
+    "sha256":"954b2a21fe5e09c51100af38e378834f74482e20c2d0ac6e6535d795069826b0",
     "commands":[
-      {"name":"serve","arguments":["transport","host","port","token","tool_profile"],"sha256":"688c6b9d447aa41dfffb44bd0565f62f99b10b8e2f0164ce8f31df102753fa0c"},
-      {"name":"init","arguments":["workspace","client","clients","launcher","package","register"],"sha256":"612e63b765a85a5f32968bd8c32a2756ff55bbef32086b5f0c04dab13f4a9ecd"},
+      {"name":"serve","arguments":["transport","host","port","token","tool_profile"],"sha256":"2c148985ded86073d32463e4d3d7de16e511ce0e501df69295991b62cd128769"},
+      {"name":"init","arguments":["workspace","client","clients","launcher","package","register","tool_profile"],"sha256":"ed93d87f98e1047f5a9b28c0c6c292c02ecb4f95244222bde0b4f23c2d9ebe40"},
       {"name":"unregister","arguments":["workspace","client","clients","apply"],"sha256":"ad1148a9a22bc3f6e05864c4cc5537c3b4c9ba37c7e594a938bb5c9c0c71edc4"},
       {"name":"doctor","arguments":[],"sha256":"887a53d562837a7b65dd20d92ec19981853c24c42481bb2f10108f203c10c316"},
       {"name":"project-create","arguments":["slug","name","description"],"sha256":"d430c41f93d81e511c84df79519fd5bea2e1cd348886b7dee3b34cc51dbce0ae"},

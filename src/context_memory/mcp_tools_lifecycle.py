@@ -71,8 +71,9 @@ TOOLS = [
     {
         "name": "project_resolve",
         "description": (
-            "Resolve a workspace hint using canonical paths and "
-            "unambiguous registered project names."
+            "Resolve or register a workspace using its canonical path. "
+            "Folder-name similarity never assigns project ownership; add a "
+            "path alias explicitly before resolving a moved workspace."
         ),
         "inputSchema": obj({"cwd": {"type": "string"}}, ["cwd"]),
         "annotations": {"readOnlyHint": False},

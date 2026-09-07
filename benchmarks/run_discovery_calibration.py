@@ -39,12 +39,15 @@ def populate(store: MemoryStore, distractors: int) -> dict[str, dict[str, Any]]:
         project = store.create_project(slug, slug.replace("-", " "))
         projects[slug] = project
         for index in range(distractors):
+            content = f"{vocabulary} release planning milestone {index % 7}"
+            source = store.record_event(project["id"], "fact", content)
             store.upsert_memory(
                 project["id"],
                 f"Sprint note {index}",
-                f"{vocabulary} release planning milestone {index % 7}",
+                content,
                 "fact",
                 "active",
+                source_event_ids=[source["id"]],
             )
     return projects
 
@@ -57,12 +60,20 @@ def run(items_per_project: int = 40, repeats: int = 100) -> dict[str, Any]:
             hinted = store.create_project("empty-checkout", "scratch workspace")
             target = projects["context-memory"]
             store.start_session(target["id"], "calibration", external_id="recent-target")
+            target_source = store.record_event(
+                target["id"], "task",
+                "Tune cross project discovery confidence calibration performance"
+            )
             store.upsert_memory(target["id"], "Next implementation checkpoint",
                                 "Tune cross project discovery confidence calibration performance",
-                                "task", "active")
+                                "task", "active", source_event_ids=[target_source["id"]])
+            catalog_source = store.record_event(
+                projects["catalog-search"]["id"], "task",
+                "Tune product discovery relevance calibration performance"
+            )
             store.upsert_memory(projects["catalog-search"]["id"], "Search calibration",
                                 "Tune product discovery relevance calibration performance",
-                                "task", "active")
+                                "task", "active", source_event_ids=[catalog_source["id"]])
 
             scenarios = [
                 ("strong", "memory provenance retrieval checkpoint", target["id"], "single_confident_candidate"),
@@ -87,8 +98,13 @@ def run(items_per_project: int = 40, repeats: int = 100) -> dict[str, Any]:
             first = store.create_project("ambiguous-a")
             second = store.create_project("ambiguous-b")
             for project in (first, second):
+                source = store.record_event(
+                    project["id"], "task",
+                    "rotate signing keys during regional migration"
+                )
                 store.upsert_memory(project["id"], "Shared migration",
-                                    "rotate signing keys during regional migration", "task", "active")
+                                    "rotate signing keys during regional migration", "task", "active",
+                                    source_event_ids=[source["id"]])
             ambiguous = store.get_context(hinted["id"], "signing keys regional migration", 4000)
             ambiguous_passed = (ambiguous["project_discovery"]["selection_reason"] == "ambiguous_candidates"
                                 and ambiguous["items"] == [])

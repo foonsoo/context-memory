@@ -84,6 +84,32 @@ The official graph package uses npm version `2026.7.4` while its MCP `serverInfo
 
 All three default lexical modes missed the deliberately disjoint paraphrase `database durability repository` for `PostgreSQL persistence engine`. Context Memory recovered it after three explicit vocabulary aliases were configured. This demonstrates deterministic domain query expansion, not general semantic understanding; the benchmark records `default_paraphrase_recall=false` and `configured_alias_recall=true` separately.
 
+### Global recall-alias correction (2026-09-07)
+
+The reviewed baseline hard-coded `api → pagination` and Korean `재시작 →
+journey` in the global continuation query. They are fixture-specific associations,
+not synonyms, and could misroute authentication APIs, payment APIs, or ordinary
+server restarts. They were removed; genuine project vocabulary belongs in
+`search_alias_set` and is loaded only for that project by normal retrieval.
+
+The preserved pre-change synthetic result in
+`continuation-vnext-glosses-2026-09-04.json` scored 1.0 continuation, decision,
+artifact, and next-step recovery on 24 prompts. A one-repeat post-change run on
+2026-09-07 scored 0.9583 continuation and decision recovery, 0.9722 artifact
+recovery, 0.9444 next-step recovery, 0.0417 false absence, 0 wrong-project
+selection, 0 stale leakage, and 1.0 source recovery (p50/p95 0.392/0.545 ms on
+the local machine). The loss is reported rather than hidden: removing answer-key
+coupling made one deliberately vague prompt unrecoverable. This repository-made
+fixture is a regression suite, not an independent or held-out evaluation.
+
+To evaluate separately supplied judgments, pass a JSON fixture to
+`benchmarks/run_embedding_evaluation.py --fixture PATH`. Follow the versioned
+shape used by that runner and keep expected memory keys in the query judgments,
+not production aliases. Report default and configured-project-alias modes
+separately. Add negative/no-answer, answer-only-in-another-project, superseded
+decision, authentication API, payment API, server restart, and mixed Korean/
+English queries. Do not describe repository-authored additions as unseen data.
+
 ## Known limitations
 
 - Lexical FTS can miss semantically equivalent wording unless project aliases cover it; arbitrary paraphrases still need optional embeddings.

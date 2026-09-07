@@ -54,3 +54,13 @@ CORE_TOOL_NAMES = {
     "wiki_markdown_export",
     "wiki_revision_lint",
 }
+
+MINIMAL_TOOL_NAMES = {
+    "context_bootstrap",
+    "record_event",
+    "memory_upsert",
+    "memory_transition",
+    "context_recall",
+    "get_source",
+    "session_end",
+}

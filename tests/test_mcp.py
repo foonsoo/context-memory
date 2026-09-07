@@ -5,6 +5,7 @@ from pathlib import Path
 
 from context_memory.mcp import CORE_TOOL_NAMES, MCPServer, TOOLS, TOOL_BY_NAME, validate_json
 from context_memory.contracts import PROMOTABLE_EVENT_KINDS
+from context_memory.mcp_tools import MINIMAL_TOOL_NAMES
 from context_memory.store import MemoryStore
 
 
@@ -173,6 +174,20 @@ class MCPTests(unittest.TestCase):
         self.assertEqual(core_names | admin_names, {tool["name"] for tool in TOOLS})
         denied = admin.handle({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_context","arguments":{"project_id":"x","query":"q"}}})
         self.assertEqual(denied["error"]["code"], -32602)
+
+    def test_minimal_profile_exposes_only_complete_basic_lifecycle(self):
+        minimal = MCPServer(self.store, "minimal")
+        self.assertEqual(
+            {tool["name"] for tool in minimal.tools}, MINIMAL_TOOL_NAMES
+        )
+        initialized = minimal.handle(
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
+        )
+        instructions = initialized["result"]["instructions"]
+        self.assertNotIn("review_queue", instructions)
+        self.assertNotIn("wiki_", instructions)
+        for name in MINIMAL_TOOL_NAMES:
+            self.assertIn(name, instructions)
 
     def test_record_event_description_uses_durable_kind_contract(self):
         description = TOOL_BY_NAME["record_event"]["description"]

@@ -1,0 +1,15 @@
+name: Feature request
+description: Propose one small, testable improvement
+body:
+  - type: textarea
+    attributes:
+      label: Problem and scope
+      description: Describe the user problem, smallest useful change, and how to verify it.
+    validations:
+      required: true
+  - type: checkboxes
+    attributes:
+      label: Product boundary
+      options:
+        - label: I understand hosted prototypes are distinct from the supported local product.
+          required: true

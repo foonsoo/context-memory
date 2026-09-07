@@ -39,8 +39,8 @@ from .persistence import (
     WikiRepository,
 )
 from .persistence.primitives import row_dict
-from .retrieval import retrieval_gate, select_project_candidate
 from .recall import RecallAssembler
+from .retrieval import retrieval_gate, select_project_candidate
 from .serialization import canonical, canonical_digest
 from .validation import normalize_test_results
 

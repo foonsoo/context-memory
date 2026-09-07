@@ -21,6 +21,12 @@ classifiers = [
   "Topic :: Database",
 ]
 
+[project.urls]
+Repository = "https://github.com/foonsoo/context-memory"
+Issues = "https://github.com/foonsoo/context-memory/issues"
+Documentation = "https://github.com/foonsoo/context-memory/tree/main/docs"
+Changelog = "https://github.com/foonsoo/context-memory/blob/main/CHANGELOG.md"
+
 [project.optional-dependencies]
 crypto = ["cryptography>=42"]
 dev = ["ruff==0.16.1"]

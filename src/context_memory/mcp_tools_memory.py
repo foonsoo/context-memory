@@ -33,7 +33,9 @@ TOOLS = [
         "name": "memory_upsert",
         "description": (
             "Propose, activate, or update a derived project/global memory "
-            "with source provenance."
+            "with source provenance. Active memories require at least one "
+            "valid same-project source event, either already linked or passed "
+            "in source_event_ids; this guarantees traceability, not truth."
         ),
         "inputSchema": obj(
             {
@@ -91,7 +93,8 @@ TOOLS = [
         "name": "memory_transition",
         "description": (
             "Verify/activate, supersede, dispute, expire, or reject a memory; "
-            "optionally link the challenging/replacement memory."
+            "optionally link the challenging/replacement memory. Activation "
+            "requires an already-linked valid same-project source event."
         ),
         "inputSchema": obj(
             {

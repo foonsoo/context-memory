@@ -13,12 +13,9 @@ from typing import Any
 
 from .contracts import PROMOTABLE_EVENT_KINDS
 
-
 _CJK = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]")
 _WORDS = re.compile(r"[\w-]+", flags=re.UNICODE)
-_FILE_PATHS = re.compile(
-    r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*\.[A-Za-z0-9]+"
-)
+_FILE_PATHS = re.compile(r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*\.[A-Za-z0-9]+")
 _REPOSITORY_TEXT_SUFFIXES = {
     ".c",
     ".css",
@@ -45,16 +42,15 @@ _KOREAN_ACTION_GLOSSES = {
 }
 
 # Inspectable lexical bridges for common Korean continuation nouns. They
-# compensate for unicode61's lack of Korean stemming and for memories that
+# compensate for unicode61's missing Korean stemming and memories that
 # preserve English implementation terminology.
 _RECALL_ALIASES = {
     "글": ("블로그", "blog"),
     "블로그": ("blog",),
-    "api": ("pagination",),
     "배포": ("deploy", "deployment", "rollout"),
     "리디자인": ("redesign", "navigation"),
     "마이그레이션": ("migration",),
-    "재시작": ("restart", "journey"),
+    "재시작": ("restart",),
     "설치": ("installed", "wheel"),
     "클라이언트": ("client", "handoff"),
     "패키지": ("package", "scope"),
@@ -65,14 +61,13 @@ _RECALL_ALIASES = {
 def estimate_tokens(value: str) -> int:
     """Return a conservative dependency-free token estimate.
 
-    Exact tokenization belongs at the client/model boundary.  The server only
-    needs a stable upper-bound-like measure to avoid returning large payloads.
+    Exact tokenization belongs at the client/model boundary. The server
+    needs a stable upper-bound-like measure to bound payloads.
     """
     cjk = len(_CJK.findall(value))
     remainder = _CJK.sub(" ", value)
     word_cost = sum(
-        max(1, math.ceil(len(word) / 4))
-        for word in _WORDS.findall(remainder)
+        max(1, math.ceil(len(word) / 4)) for word in _WORDS.findall(remainder)
     )
     punctuation = len(re.findall(r"[^\w\s]", remainder, flags=re.UNICODE))
     return cjk + word_cost + math.ceil(punctuation / 2)
@@ -80,14 +75,12 @@ def estimate_tokens(value: str) -> int:
 
 def _terms(value: str) -> set[str]:
     return {
-        token
-        for token in _WORDS.findall(value.casefold())
-        if len(token) > 1
+        token for token in _WORDS.findall(value.casefold()) if len(token) > 1
     }
 
 
 def _compact_text(value: str, query: str, limit: int = 240) -> str:
-    """Select query-bearing sentences before falling back to the lead."""
+    """Select query-bearing sentences, or fall back to the lead."""
     normalized = " ".join(value.split())
     if len(normalized) <= limit:
         return normalized
@@ -116,7 +109,7 @@ def _project_name_terms(value: str) -> set[str]:
 
 
 def _artifact_paths(value: str) -> list[str]:
-    """Recover explicit and directory-elided file paths from memory text."""
+    """Recover explicit and directory-elided file paths."""
     paths: list[str] = []
     directory = ""
     for match in _FILE_PATHS.findall(value):
@@ -132,7 +125,7 @@ def _artifact_paths(value: str) -> list[str]:
 
 
 def _cross_language_glosses(value: str, limit: int = 3) -> list[str]:
-    """Expose a few deterministic English action terms from mixed KO/EN text."""
+    """Expose deterministic English actions from mixed KO/EN text."""
     glosses = [
         f"same {match.group(1)}"
         for match in re.finditer(
@@ -157,7 +150,7 @@ def _repository_artifacts(
     max_bytes: int = 256 * 1024,
     max_entries: int = 512,
 ) -> list[str]:
-    """Find a few relevant artifact paths within a bounded repository scan."""
+    """Find relevant paths within a bounded repository scan."""
     root = Path(repository_path)
     if not root.is_dir():
         return []
@@ -230,7 +223,7 @@ class RecallAssembler:
     def _active_project_memories(
         self, project_id: str, limit: int
     ) -> list[dict[str, Any]]:
-        """Load a small current-state bundle after project identification."""
+        """Load current state after project identification."""
         timestamp = datetime.now(timezone.utc).isoformat()
         rows = [
             dict(row)
@@ -260,7 +253,7 @@ class RecallAssembler:
     def _recent_project_events(
         self, project_id: str, scope_id: str | None, limit: int
     ) -> list[dict[str, Any]]:
-        """Load a bounded newest-first tail when review has not made memory yet."""
+        """Load recent events when review has not made memory yet."""
         cursor = self.store.cursor_for_recent_events(
             project_id,
             list(PROMOTABLE_EVENT_KINDS),
@@ -279,7 +272,7 @@ class RecallAssembler:
     def _discover_recent_events(
         self, query: str, limit: int
     ) -> tuple[str | None, list[dict[str, Any]]]:
-        """Select one unambiguous project from a bounded raw-event window."""
+        """Select one project from a bounded raw-event window."""
         placeholders = ",".join("?" for _ in PROMOTABLE_EVENT_KINDS)
         rows = [
             dict(row)
@@ -295,11 +288,12 @@ class RecallAssembler:
         grouped: dict[str, list[tuple[int, dict[str, Any]]]] = {}
         for row in rows:
             overlap = len(
-                query_terms
-                & _terms(f"{row['project_name']} {row['content']}")
+                query_terms & _terms(f"{row['project_name']} {row['content']}")
             )
             if overlap:
-                grouped.setdefault(row["project_id"], []).append((overlap, row))
+                grouped.setdefault(row["project_id"], []).append(
+                    (overlap, row)
+                )
         ranked = sorted(
             (
                 (max(score for score, _ in events), len(events), project_id)
@@ -332,27 +326,36 @@ class RecallAssembler:
             raise ValueError("query must not be empty")
         budget = max(64, min(token_budget, 2048))
         limit = max(1, min(max_items, 12))
-        resolved = self.store.resolve_project(cwd)
-        origin_id = resolved["project"]["id"]
+        resolved = self.store.project_evidence.find_project(cwd)
+        origin = resolved.get("project")
+        origin_id = origin["id"] if origin else None
         origin_scope_id = resolved.get("scope_id")
         retrieval_query = _expand_recall_query(query)
-        local_candidates = self.store.search(
-            origin_id,
-            retrieval_query,
-            limit * 4,
-            ["active", "disputed"],
-            None,
-            False,
+        local_candidates = (
+            self.store.search(
+                origin_id,
+                retrieval_query,
+                limit * 4,
+                ["active", "disputed"],
+                None,
+                False,
+            )
+            if origin_id
+            else []
         )
         local_gate = self.store._retrieval_gate(local_candidates)
-        origin_memories = self._active_project_memories(origin_id, limit * 2)
+        origin_memories = (
+            self._active_project_memories(origin_id, limit * 2)
+            if origin_id
+            else []
+        )
 
         selected_project_id: str | None = None
         selection_reason = "no_confident_match"
         discovery_candidates: list[dict[str, Any]] = []
         if origin_memories:
             # A registered cwd is an identity hint even when a natural
-            # continuation phrase has little lexical overlap with memory text.
+            # continuation phrase has little memory-text overlap.
             selected_project_id = origin_id
             selection_reason = (
                 "local_match"
@@ -398,8 +401,12 @@ class RecallAssembler:
 
         recent_events: list[dict[str, Any]] = []
         if selected_project_id is None:
-            recent_events = self._recent_project_events(
-                origin_id, origin_scope_id, limit * 2
+            recent_events = (
+                self._recent_project_events(
+                    origin_id, origin_scope_id, limit * 2
+                )
+                if origin_id
+                else []
             )
             if recent_events:
                 selected_project_id = origin_id
@@ -425,10 +432,7 @@ class RecallAssembler:
             for memory in self._active_project_memories(
                 selected_project_id, limit * 2
             ):
-                if (
-                    memory["id"] in seen
-                    or memory["type"] in represented_types
-                ):
+                if memory["id"] in seen or memory["type"] in represented_types:
                     continue
                 candidates.append(memory)
                 represented_types.add(memory["type"])
@@ -454,8 +458,10 @@ class RecallAssembler:
             )
             if artifacts:
                 item["artifacts"] = artifacts
-            cost = estimate_tokens(text) + 12 + estimate_tokens(
-                " ".join(artifacts)
+            cost = (
+                estimate_tokens(text)
+                + 12
+                + estimate_tokens(" ".join(artifacts))
             )
             if used + cost > budget:
                 continue
@@ -480,8 +486,10 @@ class RecallAssembler:
                 artifacts = _artifact_paths(event["content"])
                 if artifacts:
                     item["artifacts"] = artifacts
-                cost = estimate_tokens(text) + 10 + estimate_tokens(
-                    " ".join(artifacts)
+                cost = (
+                    estimate_tokens(text)
+                    + 10
+                    + estimate_tokens(" ".join(artifacts))
                 )
                 if used + cost > budget:
                     continue
@@ -521,9 +529,7 @@ class RecallAssembler:
                     ]
                     break
         known = {
-            artifact
-            for item in pack
-            for artifact in item.get("artifacts", [])
+            artifact for item in pack for artifact in item.get("artifacts", [])
         }
         if paths and pack and len(known) < 3:
             packed_context = " ".join(item["text"] for item in pack)

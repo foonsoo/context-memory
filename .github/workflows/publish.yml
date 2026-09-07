@@ -17,7 +17,25 @@ permissions:
   contents: read
 
 jobs:
+  required-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Run release-tag unit, lint, and compile checks
+        run: |
+          python -m pip install '.[dev]'
+          PYTHONPATH=src python -m unittest discover -s tests -v
+          ruff check .
+          ruff format --check .
+          python -m compileall -q src benchmarks scripts
+
   build:
+    needs: required-tests
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -53,6 +71,8 @@ jobs:
           release-test/bin/pip install --no-deps "$RUNNER_TEMP"/dist-one/*.whl
           release-test/bin/python tests/installed_e2e.py
           release-test/bin/python tests/registration_e2e.py
+          release-test/bin/pip install 'mcp==2.0.0'
+          release-test/bin/python tests/official_sdk_e2e.py
           release-test/bin/python tests/upgrade_e2e.py "$RUNNER_TEMP"/dist-one/*.whl
           release-test/bin/python tests/uninstall_e2e.py
       - uses: actions/attest-build-provenance@v2

@@ -63,6 +63,13 @@ class RecallTests(unittest.TestCase):
             _expand_recall_query("다른 클라이언트에서 하던 작업 계속하자"),
         )
 
+    def test_global_recall_aliases_do_not_encode_fixture_answers(self):
+        api = _expand_recall_query("authentication API")
+        restart = _expand_recall_query("서버 재시작")
+        self.assertNotIn("pagination", api)
+        self.assertNotIn("journey", restart)
+        self.assertIn("restart", restart)
+
     def test_artifact_paths_expand_directory_elided_filenames(self):
         paths = _artifact_paths(
             "Files: docs/blog/01-first.md, 02-second.md, 03-third.md"

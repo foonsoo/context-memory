@@ -9,7 +9,13 @@ from typing import Any
 
 from . import __version__
 from .contracts import PROMOTABLE_EVENT_KINDS
-from .mcp_tools import CORE_TOOL_NAMES, TOOL_BY_NAME, TOOL_PAGE_SIZE, TOOLS
+from .mcp_tools import (
+    CORE_TOOL_NAMES,
+    MINIMAL_TOOL_NAMES,
+    TOOL_BY_NAME,
+    TOOL_PAGE_SIZE,
+    TOOLS,
+)
 from .store import MemoryStore
 
 PROTOCOL = "2025-06-18"
@@ -23,6 +29,13 @@ INSTRUCTIONS = (
     "only for confirmed facts/decisions. Retrieve original evidence with "
     "get_source. Record consequential decisions during work and end the "
     "session when done."
+)
+MINIMAL_INSTRUCTIONS = (
+    "Start with context_bootstrap. Record evidence with record_event, then "
+    "save a memory with memory_upsert and source_event_ids. "
+    "Use context_recall to retrieve, get_source to inspect evidence, "
+    "memory_transition to change a decision's lifecycle, and session_end when "
+    "done. Active memories require a same-project source event."
 )
 
 
@@ -111,13 +124,17 @@ class LocalThreadingHTTPServer(ThreadingHTTPServer):
 
 class MCPServer:
     def __init__(self, store: MemoryStore, tool_profile: str = "all"):
-        if tool_profile not in {"core", "admin", "all"}:
-            raise ValueError("tool_profile must be core, admin, or all")
+        if tool_profile not in {"minimal", "core", "admin", "all"}:
+            raise ValueError(
+                "tool_profile must be minimal, core, admin, or all"
+            )
         self.store = store
         self.tool_profile = tool_profile
         self.tools = (
             TOOLS
             if tool_profile == "all"
+            else [t for t in TOOLS if t["name"] in MINIMAL_TOOL_NAMES]
+            if tool_profile == "minimal"
             else [
                 t
                 for t in TOOLS
@@ -317,7 +334,11 @@ class MCPServer:
                         "name": "context-memory",
                         "version": __version__,
                     },
-                    "instructions": INSTRUCTIONS,
+                    "instructions": (
+                        MINIMAL_INSTRUCTIONS
+                        if self.tool_profile == "minimal"
+                        else INSTRUCTIONS
+                    ),
                 }
             elif method == "ping":
                 result = {}

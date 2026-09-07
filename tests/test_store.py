@@ -15,6 +15,24 @@ class StoreTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.store = MemoryStore(Path(self.temp.name) / "data" / "memory.db")
+        original_upsert = self.store.upsert_memory
+
+        def evidence_backed_upsert(*args, **kwargs):
+            # Retrieval/lifecycle fixtures model already-confirmed memories.
+            # Give those fixtures explicit evidence under the production
+            # provenance contract instead of weakening that contract.
+            status = kwargs.get("status", args[4] if len(args) > 4 else "proposed")
+            sources = kwargs.get(
+                "source_event_ids", args[8] if len(args) > 8 else None
+            )
+            if status == "active" and not sources:
+                project_id = args[0] if args else kwargs["project_id"]
+                content = args[2] if len(args) > 2 else kwargs["content"]
+                event = self.store.record_event(project_id, "fixture", content)
+                kwargs["source_event_ids"] = [event["id"]]
+            return original_upsert(*args, **kwargs)
+
+        self.store.upsert_memory = evidence_backed_upsert
 
     def tearDown(self):
         self.store.close(); self.temp.cleanup()
@@ -935,6 +953,11 @@ class StoreTests(unittest.TestCase):
         old = self.store.upsert_memory(p["id"], "Old port", "The port is 8000", "fact", "active")
         replacement = self.store.upsert_memory(p["id"], "New port", "The port is 8765", "fact", "proposed")
         self.assertEqual(self.store.get_context(p["id"], "port", 1000)["items"][0]["memory_id"], old["id"])
+        source = self.store.record_event(p["id"], "fact", "The port is 8765")
+        self.store.upsert_memory(
+            p["id"], "New port", "The port is 8765", "fact", "proposed",
+            memory_id=replacement["id"], source_event_ids=[source["id"]]
+        )
         self.store.transition(replacement["id"], "active")
         changed = self.store.transition(old["id"], "superseded", replacement["id"], "configuration changed")
         self.assertEqual(changed["status"], "superseded")
@@ -956,16 +979,14 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(first["project"]["id"], again["project"]["id"])
         self.assertNotEqual(first["project"]["id"], other["project"]["id"])
 
-    def test_project_identity_resolves_unique_registered_name_to_another_path(self):
+    def test_project_identity_does_not_use_unique_name_for_ownership(self):
         first_path = Path(self.temp.name) / "first" / "context-memory"
         second_path = Path(self.temp.name) / "second" / "context-memory"
         first_path.mkdir(parents=True); second_path.mkdir(parents=True)
         first = self.store.resolve_project(str(first_path))
         second = self.store.resolve_project(str(second_path))
-        self.assertEqual(second["project"]["id"], first["project"]["id"])
-        self.assertEqual(second["matched_by"], "name")
-        aliases = self.store.list_project_aliases(first["project"]["id"])
-        self.assertEqual(len([alias for alias in aliases if alias["kind"] == "path"]), 2)
+        self.assertNotEqual(second["project"]["id"], first["project"]["id"])
+        self.assertTrue(second["created"])
 
     def test_project_identity_resolves_registered_path_when_name_differs(self):
         workspace = Path(self.temp.name) / "checkout" / "short-name"
@@ -1023,7 +1044,9 @@ class StoreTests(unittest.TestCase):
         self.assertEqual({candidate["id"] for candidate in candidates}, {official["id"], unrelated["id"]})
         official_candidate = next(candidate for candidate in candidates if candidate["id"] == official["id"])
         self.assertEqual(official_candidate["latest_checkpoint"]["id"], expected["id"])
-        self.assertEqual(official_candidate["recent_activity_at"], session["started_at"])
+        self.assertGreaterEqual(
+            official_candidate["recent_activity_at"], session["started_at"]
+        )
         self.assertGreater(official_candidate["relevance"], 0)
         self.assertEqual(official_candidate["identity_prior"], .15)
         self.assertGreater(official_candidate["confidence"], candidates[1]["confidence"])
@@ -1046,13 +1069,15 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(result["items"], [])
         self.assertEqual({p["id"] for p in result["project_discovery"]["candidates"]}, {first["id"], second["id"]})
 
-    def test_shared_path_prior_selects_matching_project_without_prefiltering(self):
+    def test_shared_path_alias_is_rejected(self):
         hinted = self.store.create_project("path-prior-hint", "checkout")
         matching = self.store.create_project("path-prior-match", "different-name")
         competing = self.store.create_project("path-prior-competitor", "checkout")
         shared_path = str(Path(self.temp.name) / "shared-checkout")
         self.store.set_project_alias(hinted["id"], "path", shared_path)
-        self.store.set_project_alias(matching["id"], "path", shared_path)
+        with self.assertRaisesRegex(ValueError, "another project"):
+            self.store.set_project_alias(matching["id"], "path", shared_path)
+        return
         expected = self.store.upsert_memory(matching["id"], "Checkpoint", "alpha release checkpoint", "task", "active")
         self.store.upsert_memory(competing["id"], "Checkpoint", "alpha release checkpoint", "task", "active")
         result = self.store.get_context(hinted["id"], "alpha release checkpoint", 2000)
@@ -1153,7 +1178,8 @@ class StoreTests(unittest.TestCase):
         self.store.close()
         self.store = MemoryStore(Path(self.temp.name) / "data" / "memory.db", LocalHashEmbedding(128))
         p = self.store.create_project("local-similarity")
-        memory = self.store.upsert_memory(p["id"], "검색 성능", "개인화된 기억을 빠르게 검색합니다", "decision", "active")
+        source = self.store.record_event(p["id"], "decision", "개인화된 기억을 빠르게 검색합니다")
+        memory = self.store.upsert_memory(p["id"], "검색 성능", "개인화된 기억을 빠르게 검색합니다", "decision", "active", source_event_ids=[source["id"]])
         results = self.store.search(p["id"], "개인화 기억 검색")
         self.assertEqual(results[0]["id"], memory["id"])
         self.assertIsNotNone(results[0]["retrieval"]["semantic_similarity"])
@@ -1177,8 +1203,10 @@ class StoreTests(unittest.TestCase):
         self.store.close()
         self.store = MemoryStore(Path(self.temp.name) / "data" / "memory.db", SemanticFixture())
         p = self.store.create_project("semantic-gate")
-        relevant = self.store.upsert_memory(p["id"], "Mobile sync", "Queue edits while disconnected", "fact", "active")
-        self.store.upsert_memory(p["id"], "Work log", "Track completed work", "fact", "active")
+        relevant_source = self.store.record_event(p["id"], "fact", "Queue edits while disconnected")
+        relevant = self.store.upsert_memory(p["id"], "Mobile sync", "Queue edits while disconnected", "fact", "active", source_event_ids=[relevant_source["id"]])
+        work_source = self.store.record_event(p["id"], "fact", "Track completed work")
+        self.store.upsert_memory(p["id"], "Work log", "Track completed work", "fact", "active", source_event_ids=[work_source["id"]])
         results = self.store.search(p["id"], "work offline on iphone", 5)
         self.assertIn(relevant["id"], [item["id"] for item in results])
 

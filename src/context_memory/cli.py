@@ -32,6 +32,7 @@ def mcp_config(
     db_path: str,
     launcher: str = "uvx",
     package: str = "context-memory-mcp",
+    tool_profile: str = "core",
 ) -> dict[str, object]:
     """Return a portable stdio MCP definition for common clients."""
     if launcher == "uvx":
@@ -73,6 +74,8 @@ def mcp_config(
                 "stdio",
             ],
         )
+    if tool_profile != "core":
+        args.extend(["--tool-profile", tool_profile])
     return {"type": "stdio", "command": command, "args": args}
 
 
@@ -479,10 +482,11 @@ def init_workspaces(
     register: bool,
     package: str = "context-memory-mcp",
     cursor_config: Path | None = None,
+    tool_profile: str = "core",
 ) -> dict[str, object]:
     root = str(Path(workspace).expanduser().resolve())
     resolved = store.resolve_project(root)
-    config = mcp_config(str(store.path), launcher, package)
+    config = mcp_config(str(store.path), launcher, package, tool_profile)
     expanded = detect_clients() if clients == ["auto"] else clients
     if not expanded:
         expanded = ["generic"]
@@ -555,6 +559,16 @@ def doctor(store: MemoryStore) -> dict[str, object]:
     )
     integrity = store.conn.execute("PRAGMA integrity_check").fetchone()[0]
     permissions_private = (store.path.parent.stat().st_mode & 0o077) == 0
+    unsupported_active = [
+        row["id"]
+        for row in store.conn.execute(
+            """SELECT m.id FROM memories m WHERE m.status='active'
+            AND NOT EXISTS (
+              SELECT 1 FROM memory_sources s JOIN events e ON e.id=s.event_id
+              WHERE s.memory_id=m.id AND e.project_id=m.project_id
+            ) ORDER BY m.id"""
+        )
+    ]
     return {
         "ok": fts5 and integrity == "ok" and permissions_private,
         "database": str(store.path),
@@ -563,6 +577,10 @@ def doctor(store: MemoryStore) -> dict[str, object]:
         "integrity": integrity,
         "permissions_private": permissions_private,
         "projects": len(store.list_projects()),
+        "active_without_sources": {
+            "count": len(unsupported_active),
+            "memory_ids": unsupported_active,
+        },
     }
 
 
@@ -876,6 +894,7 @@ def _run_init(
             args.launcher,
             args.register,
             args.package,
+            tool_profile=args.tool_profile,
         )
     )
 
@@ -1150,7 +1169,7 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--token")
     serve.add_argument(
         "--tool-profile",
-        choices=["core", "admin", "all"],
+        choices=["minimal", "core", "admin", "all"],
         default="core",
         help=(
             "Expose the compact working set, administrative tools, or every "
@@ -1194,6 +1213,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="uvx package or git+ URL pinned to a full commit SHA",
     )
     init.add_argument("--register", action="store_true")
+    init.add_argument(
+        "--tool-profile",
+        choices=["minimal", "core", "admin", "all"],
+        default="core",
+        help="Choose the MCP tools written to the generated registration",
+    )
     unregister = sub.add_parser(
         "unregister",
         help="Plan or remove Context Memory client registrations",

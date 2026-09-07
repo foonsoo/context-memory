@@ -12,11 +12,15 @@ class RetrievalRepositoryTests(unittest.TestCase):
             store = MemoryStore(Path(temporary) / "memory.db")
             try:
                 project = store.create_project("retrieval-repository")
+                source = store.record_event(
+                    project["id"], "fact", "Retrieval SQL lives behind the facade"
+                )
                 store.upsert_memory(
                     project["id"],
                     "Bounded retrieval",
                     "Retrieval SQL lives behind the facade",
                     status="active",
+                    source_event_ids=[source["id"]],
                 )
                 with patch.object(
                     store.retrieval_repository,

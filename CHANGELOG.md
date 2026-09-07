@@ -56,3 +56,13 @@ uses semantic versioning for the public Python package and MCP/CLI contracts.
 
 [Unreleased]: https://github.com/foonsoo/context-memory/compare/v0.6.2...HEAD
 [0.6.2]: https://github.com/foonsoo/context-memory/releases/tag/v0.6.2
+# Unreleased
+
+- Project auto-registration now uses canonical paths or explicit path aliases,
+  never a matching leaf folder name; conflicting path ownership is rejected.
+- New active memories require same-project source events. Legacy unsupported
+  active records remain intact and are listed by `doctor` without their bodies.
+- `context_recall` performs no persistent writes and global answer-key aliases
+  were removed.
+- Added an opt-in `minimal` MCP profile, synthetic restart demo, public-project
+  documentation, contribution/security guidance, and macOS/release CI gates.

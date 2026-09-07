@@ -240,7 +240,7 @@ class ProjectEvidenceRepository:
         scope_id: str | None = None,
         limit: int = 6,
     ) -> int:
-        """Return a cursor that exposes the newest matching event tail."""
+        """Return a cursor exposing the newest matching event tail."""
         if not 1 <= limit <= 1000:
             raise ValueError("limit must be 1..1000")
         if kinds is not None and (
@@ -526,6 +526,17 @@ class ProjectEvidenceRepository:
         )
         if current and current["value"] == value:
             return current
+        if kind == "path":
+            owner = self.store._row(
+                "SELECT project_id FROM project_aliases WHERE kind='path'"
+                " AND normalized=? AND project_id<>?",
+                (normalized, project_id),
+            )
+            if owner:
+                raise ValueError(
+                    "path alias is already registered to another project: "
+                    f"{owner['project_id']}"
+                )
         with self.store.tx() as cx:
             existing = cx.execute(
                 "SELECT created_at FROM project_aliases WHERE project_id=? AND"
@@ -642,7 +653,7 @@ class ProjectEvidenceRepository:
         return item
 
     def resolve_project(self, cwd: str) -> dict[str, Any]:
-        """Resolve a workspace by path, then repository identity."""
+        """Resolve or register a workspace using path identity only."""
         path = str(Path(cwd).expanduser().resolve())
         identities = self._workspace_identities(path)
         row = self.store.conn.execute(
@@ -678,40 +689,6 @@ class ProjectEvidenceRepository:
                 "created": False,
                 "matched_by": "path",
             }
-        # A repository name resolves ownership only when it identifies
-        # one project.
-        # Ambiguous names remain separate and are handled by retrieval
-        # discovery.
-        for kind in ("name",):
-            if kind not in identities:
-                continue
-            normalized = self._normalize_project_alias(kind, identities[kind])
-            matches = list(
-                self.store.conn.execute(
-                    "SELECT DISTINCT project_id FROM project_aliases WHERE"
-                    " kind=? AND normalized=?",
-                    (kind, normalized),
-                )
-            )
-            if len(matches) != 1:
-                continue
-            project = self.store._row(
-                "SELECT * FROM projects WHERE id=?",
-                (matches[0]["project_id"],),
-            )
-            path_digest = hashlib.sha256(path.encode()).hexdigest()[:12]
-            scope = self.create_scope(
-                project["id"],
-                f"__workspace__:{path_digest}",
-                path,
-            )
-            self._register_project_identities(project["id"], identities)
-            return {
-                "project": project,
-                "scope_id": scope["id"],
-                "created": False,
-                "matched_by": kind,
-            }
         base = (
             re.sub(r"[^a-z0-9._-]+", "-", Path(path).name.lower()).strip("-._")
             or "workspace"
@@ -742,6 +719,41 @@ class ProjectEvidenceRepository:
         scope = self.create_scope(project["id"], "__root__", path)
         self._register_project_identities(project["id"], identities)
         return {"project": project, "scope_id": scope["id"], "created": True}
+
+    def find_project(self, cwd: str) -> dict[str, Any]:
+        """Look up an exact path without persistent side effects."""
+        path = str(Path(cwd).expanduser().resolve())
+        rows = list(
+            self.store.conn.execute(
+                """SELECT p.*,s.id AS scope_id,'scope' AS matched_by
+                FROM scopes s JOIN projects p ON p.id=s.project_id
+                WHERE s.path=?
+                UNION ALL
+                SELECT p.*,NULL AS scope_id,'path' AS matched_by
+                FROM project_aliases a JOIN projects p ON p.id=a.project_id
+                WHERE a.kind='path' AND a.normalized=?""",
+                (path, path),
+            )
+        )
+        project_ids = {row["id"] for row in rows}
+        if len(project_ids) > 1:
+            return {"project": None, "scope_id": None, "ambiguous": True}
+        if not rows:
+            return {"project": None, "scope_id": None, "ambiguous": False}
+        project_id = rows[0]["id"]
+        project = self.store._row(
+            "SELECT * FROM projects WHERE id=?", (project_id,)
+        )
+        scope = next(
+            (row["scope_id"] for row in rows if row["scope_id"]), None
+        )
+        return {
+            "project": project,
+            "scope_id": scope,
+            "created": False,
+            "matched_by": "path",
+            "ambiguous": False,
+        }
 
     def start_session(
         self,

@@ -55,3 +55,18 @@ Never copy only a live `memory.db` while WAL mode is active. Install the new rel
 ```
 
 The command uses SQLite's Online Backup API, includes committed WAL pages, validates integrity, writes through a temporary file, and sets mode `0600`. It refuses to overwrite a destination. `--replace` first creates `memory.db.pre-migration.bak`; use it only after checking both paths. Run `doctor`, then re-register clients against the new database.
+# Client verification evidence
+
+Do not infer GUI-client support from protocol compatibility. Record direct runs
+in this table; unknown entries stay unverified.
+
+| Client/version | OS | Date | Verification method | Result |
+| --- | --- | --- | --- | --- |
+| CLI shim (repository test) | CI Linux | per CI run | installed wheel, stdio restart | automated |
+| Official MCP Python SDK 2.0.0 | CI Linux | per CI run | SDK stdio calls | automated |
+| macOS runner / Python 3.14 | macOS | pending first CI run | unit tests and installed restart demo | configured, result unconfirmed |
+| Claude Code / Cursor / VS Code / Craft | — | — | real application execution | not verified by this change |
+
+The CLI shim checks the packaged command, the official SDK checks protocol
+interop, and real-client validation additionally checks each application's
+registration, lifecycle, and UI behavior. These are not interchangeable.
