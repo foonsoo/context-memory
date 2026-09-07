@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "classification": "synthetic regression data; not independent evaluation",
+  "conditions": {
+    "python": "3.14",
+    "embeddings": "default local-hash",
+    "continuation_fixture": "benchmarks/fixtures/continuation-scenarios-v1.json",
+    "repeats": 1,
+    "before_command": "PYTHONPATH=src python3 benchmarks/run_continuation_evaluation.py --repeats 1 --output /tmp/context-memory-alias-before.json",
+    "after_command": "PYTHONPATH=src python3 benchmarks/run_continuation_evaluation.py --repeats 1 --output /tmp/context-memory-alias-after.json",
+    "focused_command": "PYTHONPATH=src python3 benchmarks/run_recall_alias_regression.py --output benchmarks/results/recall-alias-regression-2026-09-07.json"
+  },
+  "continuation_vnext": {
+    "before": {
+      "continuation_recall": 0.9583333333333334,
+      "false_absence_rate": 0.041666666666666664,
+      "wrong_project_rate": 0.0,
+      "stale_error_leakage": 0.0,
+      "source_recovery": 1.0
+    },
+    "after": {
+      "continuation_recall": 0.9166666666666666,
+      "false_absence_rate": 0.08333333333333333,
+      "wrong_project_rate": 0.0,
+      "stale_error_leakage": 0.0,
+      "source_recovery": 1.0
+    },
+    "note": "Recall fell by 1 of 24 prompts after task-specific global bridges were removed; no answer-key compensation was added. Configure project search aliases where that vocabulary is valid."
+  },
+  "focused_alias_regression": {
+    "legacy_global": {"passed": 5, "total": 7, "accuracy": 0.7142857142857143},
+    "default": {"passed": 7, "total": 7, "accuracy": 1.0},
+    "project_configured": {"passed": 7, "total": 7, "accuracy": 1.0}
+  }
+}

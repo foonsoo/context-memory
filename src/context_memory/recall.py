@@ -48,13 +48,13 @@ _RECALL_ALIASES = {
     "글": ("블로그", "blog"),
     "블로그": ("blog",),
     "배포": ("deploy", "deployment", "rollout"),
-    "리디자인": ("redesign", "navigation"),
+    "리디자인": ("redesign",),
     "마이그레이션": ("migration",),
     "재시작": ("restart",),
-    "설치": ("installed", "wheel"),
-    "클라이언트": ("client", "handoff"),
-    "패키지": ("package", "scope"),
-    "옮겼는데": ("moved", "scope"),
+    "설치": ("install", "installed"),
+    "클라이언트": ("client",),
+    "패키지": ("package",),
+    "옮겼는데": ("moved",),
 }
 
 

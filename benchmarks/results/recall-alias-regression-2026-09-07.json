@@ -1,0 +1,203 @@
+{
+  "schema_version": 1,
+  "dataset": "synthetic-regression-not-independent-evaluation",
+  "embeddings": "default local-hash",
+  "modes": {
+    "legacy-global": {
+      "accuracy": 0.7142857142857143,
+      "passed": 5,
+      "total": 7,
+      "outcomes": [
+        {
+          "case": "auth-api-no-answer",
+          "query": "인증 API 설치",
+          "expected_memory_id": null,
+          "returned_memory_ids": [
+            "753dab34-ff9c-4d8d-a675-193255db005e"
+          ],
+          "passed": false
+        },
+        {
+          "case": "payment-api-no-answer",
+          "query": "결제 API 클라이언트",
+          "expected_memory_id": null,
+          "returned_memory_ids": [],
+          "passed": true
+        },
+        {
+          "case": "server-restart",
+          "query": "서버 재시작 검증",
+          "expected_memory_id": "2e23f6dc-c653-4eeb-bc21-95a21df75d80",
+          "returned_memory_ids": [
+            "2e23f6dc-c653-4eeb-bc21-95a21df75d80"
+          ],
+          "passed": true
+        },
+        {
+          "case": "generic-app-install",
+          "query": "일반 앱 설치",
+          "expected_memory_id": "025e4e2b-d0b8-463d-b58e-0519cb82ff6f",
+          "returned_memory_ids": [
+            "025e4e2b-d0b8-463d-b58e-0519cb82ff6f"
+          ],
+          "passed": true
+        },
+        {
+          "case": "other-project-only",
+          "query": "설치 검증",
+          "expected_memory_id": null,
+          "returned_memory_ids": [
+            "753dab34-ff9c-4d8d-a675-193255db005e"
+          ],
+          "passed": false
+        },
+        {
+          "case": "mixed-project-alias",
+          "query": "설치 검증",
+          "expected_memory_id": "753dab34-ff9c-4d8d-a675-193255db005e",
+          "returned_memory_ids": [
+            "753dab34-ff9c-4d8d-a675-193255db005e"
+          ],
+          "passed": true
+        },
+        {
+          "case": "stale-decision",
+          "query": "이전 설치 결정",
+          "expected_memory_id": "7db74fde-0da6-4191-be35-3b5578789556",
+          "returned_memory_ids": [
+            "7db74fde-0da6-4191-be35-3b5578789556"
+          ],
+          "passed": true
+        }
+      ]
+    },
+    "default": {
+      "accuracy": 1.0,
+      "passed": 7,
+      "total": 7,
+      "outcomes": [
+        {
+          "case": "auth-api-no-answer",
+          "query": "인증 API 설치",
+          "expected_memory_id": null,
+          "returned_memory_ids": [],
+          "passed": true
+        },
+        {
+          "case": "payment-api-no-answer",
+          "query": "결제 API 클라이언트",
+          "expected_memory_id": null,
+          "returned_memory_ids": [],
+          "passed": true
+        },
+        {
+          "case": "server-restart",
+          "query": "서버 재시작 검증",
+          "expected_memory_id": "2e23f6dc-c653-4eeb-bc21-95a21df75d80",
+          "returned_memory_ids": [
+            "2e23f6dc-c653-4eeb-bc21-95a21df75d80"
+          ],
+          "passed": true
+        },
+        {
+          "case": "generic-app-install",
+          "query": "일반 앱 설치",
+          "expected_memory_id": "025e4e2b-d0b8-463d-b58e-0519cb82ff6f",
+          "returned_memory_ids": [
+            "025e4e2b-d0b8-463d-b58e-0519cb82ff6f"
+          ],
+          "passed": true
+        },
+        {
+          "case": "other-project-only",
+          "query": "설치 검증",
+          "expected_memory_id": null,
+          "returned_memory_ids": [],
+          "passed": true
+        },
+        {
+          "case": "mixed-project-alias",
+          "query": "설치 검증",
+          "expected_memory_id": "753dab34-ff9c-4d8d-a675-193255db005e",
+          "returned_memory_ids": [
+            "753dab34-ff9c-4d8d-a675-193255db005e"
+          ],
+          "passed": true
+        },
+        {
+          "case": "stale-decision",
+          "query": "이전 설치 결정",
+          "expected_memory_id": "7db74fde-0da6-4191-be35-3b5578789556",
+          "returned_memory_ids": [
+            "7db74fde-0da6-4191-be35-3b5578789556"
+          ],
+          "passed": true
+        }
+      ]
+    },
+    "project-configured": {
+      "accuracy": 1.0,
+      "passed": 7,
+      "total": 7,
+      "outcomes": [
+        {
+          "case": "auth-api-no-answer",
+          "query": "인증 API 설치",
+          "expected_memory_id": null,
+          "returned_memory_ids": [],
+          "passed": true
+        },
+        {
+          "case": "payment-api-no-answer",
+          "query": "결제 API 클라이언트",
+          "expected_memory_id": null,
+          "returned_memory_ids": [],
+          "passed": true
+        },
+        {
+          "case": "server-restart",
+          "query": "서버 재시작 검증",
+          "expected_memory_id": "2e23f6dc-c653-4eeb-bc21-95a21df75d80",
+          "returned_memory_ids": [
+            "2e23f6dc-c653-4eeb-bc21-95a21df75d80"
+          ],
+          "passed": true
+        },
+        {
+          "case": "generic-app-install",
+          "query": "일반 앱 설치",
+          "expected_memory_id": "025e4e2b-d0b8-463d-b58e-0519cb82ff6f",
+          "returned_memory_ids": [
+            "025e4e2b-d0b8-463d-b58e-0519cb82ff6f"
+          ],
+          "passed": true
+        },
+        {
+          "case": "other-project-only",
+          "query": "설치 검증",
+          "expected_memory_id": null,
+          "returned_memory_ids": [],
+          "passed": true
+        },
+        {
+          "case": "mixed-project-alias",
+          "query": "설치 검증",
+          "expected_memory_id": "753dab34-ff9c-4d8d-a675-193255db005e",
+          "returned_memory_ids": [
+            "753dab34-ff9c-4d8d-a675-193255db005e"
+          ],
+          "passed": true
+        },
+        {
+          "case": "stale-decision",
+          "query": "이전 설치 결정",
+          "expected_memory_id": "7db74fde-0da6-4191-be35-3b5578789556",
+          "returned_memory_ids": [
+            "7db74fde-0da6-4191-be35-3b5578789556"
+          ],
+          "passed": true
+        }
+      ]
+    }
+  }
+}

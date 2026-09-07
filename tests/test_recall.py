@@ -69,6 +69,35 @@ class RecallTests(unittest.TestCase):
         self.assertNotIn("pagination", api)
         self.assertNotIn("journey", restart)
         self.assertIn("restart", restart)
+        for query, forbidden in (
+            ("일반 앱 설치", "wheel"),
+            ("다른 클라이언트", "handoff"),
+            ("패키지를 옮겼는데", "scope"),
+            ("모바일 리디자인", "navigation"),
+        ):
+            self.assertNotIn(forbidden, _expand_recall_query(query))
+
+    def test_project_search_alias_does_not_affect_other_project(self):
+        first_path = Path(self.temp.name) / "first"
+        second_path = Path(self.temp.name) / "second"
+        first = self.store.resolve_project(str(first_path))["project"]
+        second = self.store.resolve_project(str(second_path))["project"]
+        event = self.store.record_event(
+            first["id"], "task", "Run the wheel verification"
+        )
+        memory = self.store.upsert_memory(
+            first["id"], "Verification", "Run the wheel verification",
+            "task", "active", source_event_ids=[event["id"]],
+        )
+        self.store.set_search_aliases(first["id"], "설치", ["wheel"])
+
+        configured = self.store.context_recall(str(first_path), "설치 검증")
+        isolated = self.store.context_recall(str(second_path), "일반 앱 설치")
+
+        self.assertEqual(configured["items"][0]["memory_id"], memory["id"])
+        self.assertFalse(
+            any(item.get("memory_id") == memory["id"] for item in isolated["items"])
+        )
 
     def test_artifact_paths_expand_directory_elided_filenames(self):
         paths = _artifact_paths(
