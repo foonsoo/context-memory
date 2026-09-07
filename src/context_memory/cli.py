@@ -946,7 +946,17 @@ def _run_import(
         for line in source_path.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-    output({"ok": True, **store.import_project(records)})
+    output(
+        {
+            "ok": True,
+            **store.import_project(
+                records,
+                allow_legacy_active_without_sources=(
+                    args.allow_legacy_active_without_sources
+                ),
+            ),
+        }
+    )
 
 
 def _run_policy(
@@ -1405,6 +1415,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     import_cmd.add_argument("input")
+    import_cmd.add_argument(
+        "--allow-legacy-active-without-sources",
+        action="store_true",
+        help=(
+            "Explicitly restore historical active memories that have no "
+            "source links; invalid or cross-project links remain rejected"
+        ),
+    )
     repair = sub.add_parser(
         "repair",
         help=(

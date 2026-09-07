@@ -498,6 +498,29 @@ class ProjectEvidenceRepository:
             return str(Path(value).expanduser().resolve())
         return value.casefold()
 
+    @classmethod
+    def _normalize_owned_path(cls, value: str) -> str:
+        return cls._normalize_project_alias("path", value)
+
+    @staticmethod
+    def _require_path_ownership_available(
+        connection: sqlite3.Connection, project_id: str, normalized: str
+    ) -> None:
+        owner = connection.execute(
+            """SELECT project_id FROM (
+              SELECT project_id FROM scopes WHERE path=?
+              UNION
+              SELECT project_id FROM project_aliases
+                WHERE kind='path' AND normalized=?
+            ) WHERE project_id<>? ORDER BY project_id LIMIT 1""",
+            (normalized, normalized, project_id),
+        ).fetchone()
+        if owner:
+            raise ValueError(
+                "path is already registered to another project: "
+                f"{owner['project_id']}"
+            )
+
     def set_project_alias(
         self, project_id: str, kind: str, value: str
     ) -> dict[str, Any]:
@@ -519,25 +542,18 @@ class ProjectEvidenceRepository:
             "created_at": ts,
             "updated_at": ts,
         }
-        current = self.store._row(
-            "SELECT * FROM project_aliases WHERE project_id=? AND kind=? AND"
-            " normalized=?",
-            (project_id, kind, normalized),
-        )
-        if current and current["value"] == value:
-            return current
-        if kind == "path":
-            owner = self.store._row(
-                "SELECT project_id FROM project_aliases WHERE kind='path'"
-                " AND normalized=? AND project_id<>?",
-                (normalized, project_id),
-            )
-            if owner:
-                raise ValueError(
-                    "path alias is already registered to another project: "
-                    f"{owner['project_id']}"
-                )
         with self.store.tx() as cx:
+            if kind == "path":
+                self._require_path_ownership_available(
+                    cx, project_id, normalized
+                )
+            current = cx.execute(
+                "SELECT * FROM project_aliases WHERE project_id=? AND kind=?"
+                " AND normalized=?",
+                (project_id, kind, normalized),
+            ).fetchone()
+            if current and current["value"] == value:
+                return dict(current)
             existing = cx.execute(
                 "SELECT created_at FROM project_aliases WHERE project_id=? AND"
                 " kind=? AND normalized=?",
@@ -638,14 +654,25 @@ class ProjectEvidenceRepository:
     def create_scope(
         self, project_id: str, name: str, path: str | None = None
     ) -> dict[str, Any]:
+        normalized_path = self._normalize_owned_path(path) if path else None
         item = {
             "id": self.uid(),
             "project_id": project_id,
             "name": name,
-            "path": path,
+            "path": normalized_path,
             "created_at": self.now(),
         }
         with self.store.tx() as cx:
+            if normalized_path:
+                self._require_path_ownership_available(
+                    cx, project_id, normalized_path
+                )
+                existing = cx.execute(
+                    "SELECT * FROM scopes WHERE project_id=? AND path=?",
+                    (project_id, normalized_path),
+                ).fetchone()
+                if existing:
+                    return dict(existing)
             self.insert_scope(cx, item)
             self.store._audit(
                 cx, project_id, "scope", item["id"], "created", item

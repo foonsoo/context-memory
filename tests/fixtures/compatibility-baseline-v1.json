@@ -55,7 +55,7 @@
   "cli": {
     "prog":"context-memory",
     "arguments":["db"],
-    "sha256":"954b2a21fe5e09c51100af38e378834f74482e20c2d0ac6e6535d795069826b0",
+    "sha256":"5f31536c0c6cb8813820103d21cbe50d6583a43498c05cbadbf8ebaece67378a",
     "commands":[
       {"name":"serve","arguments":["transport","host","port","token","tool_profile"],"sha256":"2c148985ded86073d32463e4d3d7de16e511ce0e501df69295991b62cd128769"},
       {"name":"init","arguments":["workspace","client","clients","launcher","package","register","tool_profile"],"sha256":"ed93d87f98e1047f5a9b28c0c6c292c02ecb4f95244222bde0b4f23c2d9ebe40"},
@@ -78,7 +78,7 @@
       {"name":"memory-correct","arguments":["project_id","memory_id","content","title"],"sha256":"fed4e592c1676ea18aa79aa6e143df4301530efa746075c2f1907307d20c664e"},
       {"name":"memory-transition","arguments":["memory_id","status","related_memory_id","note"],"sha256":"db84ba5722687876e7af096c6a19ec311da90dd569485ea58a327c637e205de0"},
       {"name":"export","arguments":["project_id","output"],"sha256":"6b314c1e21f26eec2f08aedf505414f0cfec00af6058c628b91f738f5335ee73"},
-      {"name":"import","arguments":["input"],"sha256":"0827a0c4333886c66b52dee57f6ee966dc4c78603bb96f590d8949cbae3ceb4b"},
+      {"name":"import","arguments":["input","allow_legacy_active_without_sources"],"sha256":"b172a3da91d8db44d1ad9974535912cac8b2f88780e8f278a4d4c8d5cac03832"},
       {"name":"repair","arguments":["project_id"],"sha256":"defaf6563dd4fa4ab344b8733b1a2b66adf136ddd9137814f468d703b5d6d40c"},
       {"name":"policy","arguments":["project_id","max_context_chars","max_context_items","audit_keep_entries","terminal_memory_days","checkpoint_soft_usage","checkpoint_hard_usage","checkpoint_elapsed_seconds","checkpoint_event_count","checkpoint_max_age_seconds","checkpoint_cooldown_seconds","checkpoint_hysteresis","maintenance_interval_seconds","message_ttl_seconds"],"sha256":"78534c6dcb3f36552e5939b9d7723f61e0d82ae00b0008c85f9d291d478080c1"},
       {"name":"maintain","arguments":["project_id","apply","scheduled"],"sha256":"3dd00a3a24f25b5dc0813b3fd0a9468af6683a8ac224c33b99c1f692f7eee410"},

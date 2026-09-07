@@ -1113,8 +1113,17 @@ class MemoryStore:
     def export_project(self, project_id: str) -> list[dict[str, Any]]:
         return self.transfer.export_project(project_id)
 
-    def import_project(self, records: list[dict[str, Any]]) -> dict[str, Any]:
-        return self.transfer.import_project(records)
+    def import_project(
+        self,
+        records: list[dict[str, Any]],
+        *,
+        allow_legacy_active_without_sources: bool = False,
+    ) -> dict[str, Any]:
+        if not allow_legacy_active_without_sources:
+            return self.transfer.import_project(records)
+        return self.transfer.import_project(
+            records, allow_legacy_active_without_sources=True
+        )
 
     def rebuild_fts(self, project_id: str | None = None) -> dict[str, Any]:
         return self.operations.rebuild_fts(project_id)

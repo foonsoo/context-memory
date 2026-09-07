@@ -131,7 +131,12 @@ class TransferRepository:
             )
         return records
 
-    def import_project(self, records: list[dict[str, Any]]) -> dict[str, Any]:
+    def import_project(
+        self,
+        records: list[dict[str, Any]],
+        *,
+        allow_legacy_active_without_sources: bool = False,
+    ) -> dict[str, Any]:
         """Restore a project without overwriting project IDs."""
         if not records or records[0].get("record_type") != "project":
             raise ValueError("export must begin with a project record")
@@ -426,6 +431,10 @@ class TransferRepository:
         counts: dict[str, int] = {}
         imported_event_seq = 0
         with self.store.tx() as cx:
+            # Exports are deterministic, but deferred checks also make
+            # validation independent of record ordering and let the common
+            # provenance validator report missing links before commit.
+            cx.execute("PRAGMA defer_foreign_keys=ON")
             for record in records:
                 kind, data = record["record_type"], dict(record["data"])
                 if kind == "event":
@@ -435,6 +444,24 @@ class TransferRepository:
                     )
                 if kind == "memory":
                     data.setdefault("visibility", "project")
+                if kind == "scope" and data.get("path"):
+                    data["path"] = (
+                        self.store.project_evidence._normalize_owned_path(
+                            data["path"]
+                        )
+                    )
+                    self.store.project_evidence._require_path_ownership_available(
+                        cx, data["project_id"], data["path"]
+                    )
+                if kind == "project_alias" and data.get("kind") == "path":
+                    data["normalized"] = (
+                        self.store.project_evidence._normalize_owned_path(
+                            data["value"]
+                        )
+                    )
+                    self.store.project_evidence._require_path_ownership_available(
+                        cx, data["project_id"], data["normalized"]
+                    )
                 if kind == "investigation_claim":
                     data.setdefault("expected_outcome", None)
                     data.setdefault("outcome_effect", None)
@@ -509,9 +536,27 @@ class TransferRepository:
                 " project_id=?",
                 (imported_event_seq + 1, project["id"]),
             )
-        return {
+            legacy_ids = self.store.memories.validate_imported_active_sources(
+                cx,
+                project["id"],
+                allow_legacy_without_sources=(
+                    allow_legacy_active_without_sources
+                ),
+            )
+        result = {
             "project_id": project["id"],
             "slug": project["slug"],
             "records": len(records),
             "counts": counts,
         }
+        if legacy_ids:
+            result["legacy_active_without_sources"] = {
+                "count": len(legacy_ids),
+                "memory_ids": legacy_ids,
+                "warning": (
+                    "Imported active memories without source links for legacy "
+                    "recovery. Traceability is absent; no content was "
+                    "returned."
+                ),
+            }
+        return result

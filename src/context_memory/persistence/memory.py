@@ -134,6 +134,52 @@ class MemoryRepository:
                 "and connect its id with source_event_ids before activation"
             )
 
+    @staticmethod
+    def validate_imported_active_sources(
+        connection: sqlite3.Connection,
+        project_id: str,
+        *,
+        allow_legacy_without_sources: bool = False,
+    ) -> list[str]:
+        """Validate imported active-memory provenance after all rows
+        exist.
+
+        A source link provides traceability, not a truth guarantee.
+        Invalid or cross-project links are never compatible legacy data.
+        """
+        invalid = connection.execute(
+            """SELECT ms.memory_id,ms.event_id FROM memory_sources ms
+            JOIN memories m ON m.id=ms.memory_id
+            LEFT JOIN events e ON e.id=ms.event_id
+            WHERE m.project_id=? AND (e.id IS NULL OR e.project_id<>?)
+            ORDER BY ms.memory_id,ms.event_id LIMIT 1""",
+            (project_id, project_id),
+        ).fetchone()
+        if invalid:
+            raise ValueError(
+                "invalid imported source event for memory "
+                f"{invalid['memory_id']}: {invalid['event_id']}"
+            )
+        missing = [
+            row["id"]
+            for row in connection.execute(
+                """SELECT m.id FROM memories m WHERE m.project_id=?
+                AND m.status='active' AND NOT EXISTS (
+                  SELECT 1 FROM memory_sources ms JOIN events e
+                    ON e.id=ms.event_id
+                  WHERE ms.memory_id=m.id AND e.project_id=m.project_id)
+                ORDER BY m.id""",
+                (project_id,),
+            )
+        ]
+        if missing and not allow_legacy_without_sources:
+            raise ValueError(
+                "active imported memories require at least one source event "
+                "from the same project; use the explicit legacy compatibility "
+                "option only to restore historical source-less data"
+            )
+        return missing
+
     def upsert_memory(
         self,
         project_id: str,
