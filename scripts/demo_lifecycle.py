@@ -12,7 +12,12 @@ from pathlib import Path
 from typing import Any
 
 
-def mcp_session(db: Path, calls: list[tuple[str, dict[str, Any]]]) -> list[Any]:
+def mcp_session(
+    db: Path,
+    calls: list[tuple[str, dict[str, Any]]],
+    *,
+    timeout: float = 20.0,
+) -> list[Any]:
     requests = [
         {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
         *[
@@ -25,31 +30,117 @@ def mcp_session(db: Path, calls: list[tuple[str, dict[str, Any]]]) -> list[Any]:
             for index, (name, arguments) in enumerate(calls)
         ],
     ]
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "context_memory.cli",
-            "--db",
-            str(db),
-            "serve",
-            "--transport",
-            "stdio",
-            "--tool-profile",
-            "minimal",
-        ],
-        input="".join(json.dumps(item) + "\n" for item in requests),
-        text=True,
-        capture_output=True,
-        check=True,
-    )
-    responses = [json.loads(line) for line in completed.stdout.splitlines()]
+    command = [
+        sys.executable,
+        "-m",
+        "context_memory.cli",
+        "--db",
+        str(db),
+        "serve",
+        "--transport",
+        "stdio",
+        "--tool-profile",
+        "minimal",
+    ]
+    try:
+        completed = subprocess.run(
+            command,
+            input="".join(json.dumps(item) + "\n" for item in requests),
+            text=True,
+            capture_output=True,
+            check=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError(
+            f"MCP demo subprocess timed out after {timeout}s; "
+            f"stdout={error.stdout!r}; stderr={error.stderr!r}"
+        ) from error
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError(
+            f"MCP demo subprocess exited {error.returncode}; "
+            f"stdout={error.stdout!r}; stderr={error.stderr!r}"
+        ) from error
+    try:
+        responses = [
+            json.loads(line) for line in completed.stdout.splitlines()
+        ]
+    except json.JSONDecodeError as error:
+        raise RuntimeError(
+            f"MCP demo returned invalid JSON; stdout={completed.stdout!r}; "
+            f"stderr={completed.stderr!r}"
+        ) from error
+    if len(responses) != len(requests):
+        raise RuntimeError(
+            f"MCP response count mismatch: requested {len(requests)}, "
+            f"received {len(responses)}; stdout={completed.stdout!r}; "
+            f"stderr={completed.stderr!r}"
+        )
     results = []
-    for response in responses[1:]:
+    for request, response in zip(requests, responses, strict=True):
+        if response.get("id") != request["id"]:
+            raise RuntimeError(
+                f"MCP response id mismatch: expected {request['id']}, "
+                f"received {response.get('id')!r}"
+            )
         if "error" in response:
-            raise RuntimeError(response["error"])
-        results.append(json.loads(response["result"]["content"][0]["text"]))
+            raise RuntimeError(f"MCP JSON-RPC error: {response['error']}")
+        if request["method"] == "initialize":
+            continue
+        result = response.get("result", {})
+        if result.get("isError"):
+            raise RuntimeError(f"MCP tool error: {result!r}")
+        try:
+            results.append(json.loads(result["content"][0]["text"]))
+        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
+            raise RuntimeError(f"Malformed MCP tool response: {result!r}") from error
+    if len(results) != len(calls):
+        raise RuntimeError(
+            f"MCP tool result count mismatch: called {len(calls)}, "
+            f"received {len(results)}"
+        )
     return results
+
+
+def _recall_ids(recall: dict[str, Any]) -> tuple[set[str], set[str]]:
+    items = recall.get("items")
+    if not isinstance(items, list):
+        raise RuntimeError("Recall response has no items list")
+    memory_ids = {item.get("memory_id") for item in items}
+    source_ids = {
+        event_id
+        for item in items
+        for event_id in item.get("source_event_ids", [])
+    }
+    return memory_ids, source_ids
+
+
+def validate_demo(result: dict[str, Any]) -> None:
+    """Fail the demo when persistence or lifecycle invariants are wrong."""
+    sqlite_id = result["sqlite_memory"]["id"]
+    postgres_id = result["postgres_memory"]["id"]
+    initial_memories, initial_sources = _recall_ids(result["initial_recall"])
+    current_memories, current_sources = _recall_ids(result["current_recall"])
+    checks = {
+        "initial recall contains SQLite memory": sqlite_id in initial_memories,
+        "restart reads the same SQLite source": (
+            result["initial_source"] in initial_sources
+        ),
+        "final recall contains PostgreSQL memory": postgres_id in current_memories,
+        "final recall excludes superseded SQLite memory": (
+            sqlite_id not in current_memories
+        ),
+        "final recall reads the same PostgreSQL source": (
+            result["current_source"] in current_sources
+        ),
+        "old memory is superseded": (
+            result["sqlite_memory"]["status"] == "superseded"
+        ),
+        "new memory is active": result["postgres_memory"]["status"] == "active",
+    }
+    failed = [name for name, passed in checks.items() if not passed]
+    if failed:
+        raise RuntimeError("Demo validation failed: " + "; ".join(failed))
 
 
 def run(root: Path) -> dict[str, Any]:
@@ -95,7 +186,7 @@ def run(root: Path) -> dict[str, Any]:
         db,
         [("context_recall", {"cwd": str(workspace), "query": "current database PostgreSQL"}), ("get_source", {"event_id": postgres_event["id"]})],
     )
-    return {
+    result = {
         "database": str(db),
         "initial_recall": recalled[0],
         "initial_source": recalled[1]["id"],
@@ -110,6 +201,8 @@ def run(root: Path) -> dict[str, Any]:
             "status": postgres_memory["status"],
         },
     }
+    validate_demo(result)
+    return result
 
 
 def main() -> None:
