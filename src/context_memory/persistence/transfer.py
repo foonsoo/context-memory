@@ -432,8 +432,9 @@ class TransferRepository:
         imported_event_seq = 0
         with self.store.tx() as cx:
             # Exports are deterministic, but deferred checks also make
-            # validation independent of record ordering and let the common
-            # provenance validator report missing links before commit.
+            # validation independent of record ordering and let the
+            # common provenance validator report missing links before
+            # commit.
             cx.execute("PRAGMA defer_foreign_keys=ON")
             for record in records:
                 kind, data = record["record_type"], dict(record["data"])
